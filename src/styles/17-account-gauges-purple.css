@@ -1,0 +1,257 @@
+/* Technically Not · 17-account-gauges-purple.css — the Overview's AI accounts card as fuel gauges (98). One lane per account: CLI tile,
+   name and plan, then Session (thick, bright) and Week (thin, softer) gauges with % used, a time-gone tick and "resets in …".
+   roomy (1–2 accounts): label line above each bar. dense (3–4): one line per window. Tokens from 08's #pgOverview (--o-*). */
+.pgo-accts.ag {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+}
+.ag-acct {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  column-gap: 14px;
+  align-items: center;
+  min-width: 0;
+  padding: 7px 0;
+  transition: opacity 0.4s var(--o-ease);
+}
+.ag-acct + .ag-acct {
+  border-top: 1px solid color-mix(in srgb, var(--o-line) 70%, transparent);
+}
+.ag-acct:first-child {
+  padding-top: 2px;
+}
+.ag-acct.stale {
+  opacity: 0.5;
+}
+.ag-who {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.ag-ic {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  font: 600 13px/1 var(--o-sans);
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 34%, transparent);
+}
+.ag-nm {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ag-nm b {
+  font: 500 12.5px/1.2 var(--o-sans);
+  color: var(--o-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ag-nm small {
+  font-size: 10.5px;
+  line-height: 1.2;
+  color: var(--o-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ag-nm small:empty {
+  display: none;
+}
+.ag-wins {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.ag-acc {
+  display: none;
+  margin-top: 3px;
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--o-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ag-note {
+  font-size: 11.5px;
+  color: var(--o-text-3);
+}
+
+/* one gauge */
+.ag-w {
+  display: grid;
+  align-items: center;
+  min-width: 0;
+  column-gap: 8px;
+  cursor: default;
+}
+.ag-l {
+  font: 500 11.5px/1 var(--o-sans);
+  color: var(--o-text-2);
+  white-space: nowrap;
+}
+.ag-w.k .ag-l {
+  color: var(--o-text-3);
+  font-weight: 400;
+}
+.ag-r {
+  font: 400 10.5px/1 var(--o-sans);
+  color: var(--o-text-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.ag-p {
+  font: 500 12px/1 var(--o-mono);
+  color: var(--o-text);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ag-w.k .ag-p {
+  color: var(--o-text-2);
+  font-weight: 400;
+  font-size: 11px;
+}
+.ag-tr {
+  position: relative;
+  display: block;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--o-panel-2);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--o-line) 60%, transparent);
+}
+.ag-w.k .ag-tr {
+  height: 4px;
+}
+.ag-f {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--o-accent) 55%, transparent),
+    var(--o-accent)
+  );
+  transition:
+    width 1.4s var(--o-ease),
+    background 0.4s;
+}
+.ag-w.k .ag-f {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--o-accent-2) 30%, transparent),
+    color-mix(in srgb, var(--o-accent-2) 75%, transparent)
+  );
+}
+.ag-w[data-lv='hot'] .ag-f {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--o-wait) 45%, transparent),
+    var(--o-wait)
+  );
+}
+.ag-w[data-lv='crit'] .ag-f {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--o-err) 45%, transparent),
+    var(--o-err)
+  );
+}
+.ag-w[data-lv='hot'] .ag-p {
+  color: var(--o-wait);
+}
+.ag-w[data-lv='crit'] .ag-p {
+  color: var(--o-err);
+}
+/* the time-gone tick: how far through its window the account is */
+.ag-m {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--o-text-2);
+  box-shadow: 0 0 0 1.5px var(--o-solid);
+  transition: left 1.4s var(--o-ease);
+}
+.ag-m[hidden] {
+  display: none;
+}
+
+/* 1–2 accounts: label, reset and % on a line, the bar under it */
+.ag.roomy .ag-acct {
+  padding: 9px 0;
+}
+.ag.roomy .ag-w {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: 'l r p' 't t t';
+  row-gap: 6px;
+}
+.ag.roomy .ag-w + .ag-w {
+  margin-top: 10px;
+}
+.ag.roomy .ag-l {
+  grid-area: l;
+}
+.ag.roomy .ag-r {
+  grid-area: r;
+}
+.ag.roomy .ag-p {
+  grid-area: p;
+}
+.ag.roomy .ag-tr {
+  grid-area: t;
+}
+/* 3–4 accounts: one line per window */
+.ag.dense .ag-acct {
+  padding: 2px 0;
+  column-gap: 10px;
+}
+.ag.dense .ag-ic {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  font-size: 11px;
+}
+.ag.dense .ag-w {
+  grid-template-columns: 48px minmax(0, 1fr) 32px 70px;
+  grid-template-areas: 'l t p r';
+  height: 14px;
+}
+.ag.dense .ag-l {
+  grid-area: l;
+  font-size: 10.5px;
+}
+.ag.dense .ag-tr {
+  grid-area: t;
+}
+.ag.dense .ag-p {
+  grid-area: p;
+  font-size: 11px;
+}
+.ag.dense .ag-r {
+  grid-area: r;
+  font-size: 10px;
+}
+.ag.dense .ag-tr {
+  height: 5px;
+}
+.ag.dense .ag-w.k .ag-tr {
+  height: 3px;
+}

@@ -1,0 +1,554 @@
+/* Technically Not · the thread view's past conversations and another computer's agent.
+   Markup comes from src/scripts/138-thread-history.js (the two buttons, the popover, the box in
+   the thread's main area) and from 116-remote-agents.js (the detail drawn into that box). The
+   tokens are the frame's (27-thread-frame.css); the popover is the app's menu panel (.tnt-menu)
+   with its own rows. No lines between parts: they are set apart by space, and a surface is a soft
+   fill. */
+
+/* ---------------------------------------------------------------- the button at the list's foot */
+/* The thread list's island ends with it, on every page and with no thread open. The same inset as
+   the list's rows, so its icon stands under their characters. */
+.tnh-foot {
+  flex: none;
+  padding: 0 12px 12px;
+  box-sizing: border-box;
+}
+.tnh-foot .tnh-foot-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 34px;
+  margin: 0;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  color: var(--pg-text-3);
+  font: 500 12.5px/1 var(--pg-sans);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+.tnh-foot .tnh-foot-btn:hover,
+.tnh-foot .tnh-foot-btn[aria-expanded='true'] {
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+}
+/* under the pointer only; the pressed or chosen state keeps its own surface */
+.tnh-foot .tnh-foot-btn:hover {
+  background: var(--pg-panel-hover);
+}
+.tnh-foot .tnh-foot-btn:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+.tnh-foot-btn svg {
+  flex: none;
+  display: block;
+}
+.tnh-foot-btn span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* the button in the thread's top row is 29's icon button; open, it keeps the hover fill */
+.tnt-view .tnt-icon-btn.tnh-open[aria-expanded='true'] {
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+}
+
+/* ---------------------------------------------------------------- the popover */
+.tnt-menu.tnh-pop {
+  width: min(360px, calc(100vw - 16px));
+}
+.tnt-menu.tnh-pop:focus {
+  outline: none;
+}
+.tnh-pop * {
+  box-sizing: border-box;
+}
+.tnh-pop [hidden] {
+  display: none !important;
+}
+.tnh-note {
+  margin: 0;
+  padding: 0 var(--inset) 8px;
+  color: var(--pg-text-3);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* A row: the tool's mark, the conversation's first words, and under them its tool, its agent and
+   its date. Two lines, one height. */
+.tnh-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tnh-pop .tnh-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  column-gap: 10px;
+  align-items: center;
+  width: 100%;
+  height: 46px;
+  margin: 0;
+  padding: 0 var(--inset);
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  color: var(--pg-text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tnh-pop .tnh-row:hover,
+.tnh-pop .tnh-row:focus-visible {
+  outline: none;
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+}
+/* under the pointer only; the pressed or chosen state keeps its own surface */
+.tnh-pop .tnh-row:hover {
+  background: var(--pg-panel-hover);
+}
+.tnh-mark {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  color: var(--pg-text-3);
+  font: 600 11px/1 var(--pg-mono);
+}
+.tnh-mark svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+.tnh-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.tnh-row b,
+.tnh-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tnh-row b {
+  color: var(--pg-text);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+.tnh-row small {
+  color: var(--pg-text-3);
+  font-size: 11.5px;
+  line-height: 1.2;
+}
+
+/* One conversation, read-only: a way back and its first words, what is known, the short parts
+   that were read, and Resume. */
+.tnh-one-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+}
+.tnh-pop .tnh-back {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  color: var(--pg-text-3);
+  cursor: pointer;
+}
+.tnh-pop .tnh-back:hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+.tnh-pop .tnh-back:focus-visible,
+.tnh-pop .tnh-resume:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+.tnh-back svg {
+  display: block;
+}
+.tnh-one-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pg-text);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tnh-one-sub,
+.tnh-one-note {
+  margin: 6px 0 0;
+  padding: 0 var(--inset);
+  color: var(--pg-text-3);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.tnh-one-note {
+  color: var(--pg-text-2);
+}
+.tnh-kv {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 5px 12px;
+  margin: 12px 0 0;
+  padding: 0 var(--inset);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.tnh-kv dt {
+  color: var(--pg-text-3);
+}
+.tnh-kv dd {
+  margin: 0;
+  color: var(--pg-text-2);
+  overflow-wrap: anywhere;
+}
+.tnh-excerpt {
+  margin-top: 12px;
+  padding: 0 var(--inset);
+}
+.tnh-excerpt p {
+  margin: 0 0 4px;
+  color: var(--pg-text-3);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.tnh-excerpt p.tnh-text {
+  max-height: 96px;
+  margin-bottom: 10px;
+  overflow: hidden auto;
+  color: var(--pg-text);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+.tnh-one-acts {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px var(--inset) 0;
+}
+
+/* Resume is the popover's one filled button: the look of a question card's "yes" (29). */
+.tnh-pop .tnh-resume {
+  height: 30px;
+  margin: 0;
+  padding: 0 14px;
+  border: 1px solid rgba(var(--pg-accent-rgb), 0.5);
+  border-radius: var(--pg-r-sm);
+  background: rgba(var(--pg-accent-rgb), 0.22);
+  color: var(--pg-text);
+  font: 500 12.5px/1 var(--pg-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tnh-pop .tnh-resume:hover:not(:disabled) {
+  border-color: var(--pg-accent);
+}
+.tnh-pop .tnh-resume:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------- another computer's agent */
+/* While it is the open thread, its box fills the main island and 120's own island is not shown.
+   The box is the thread view in small: one inset, a top row with the name and the buttons, and
+   under it what that computer shows of the agent beside what it reports. */
+.tnt-main.tnh-on > .tnt-view {
+  display: none;
+}
+.tnh-view {
+  --inset: 20px;
+  container: tnh-main / inline-size;
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.tnh-view[hidden] {
+  display: none;
+}
+.tnh-view * {
+  box-sizing: border-box;
+}
+.tnh-view [hidden] {
+  display: none !important;
+}
+.tnh-view .ap-far {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* the top row: 29's .tnt-head in the same sizes */
+.tnh-view .ap-head {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+  padding: 14px var(--inset) 10px;
+}
+
+/* a thread's top row names its tool in words; the old page's round mark is not drawn */
+.tnh-view .ap-head > .ap-avatar.agent-avatar {
+  display: none;
+}
+.tnh-view .ap-id {
+  flex: 1 1 180px;
+  min-width: 0;
+  overflow: hidden;
+}
+.tnh-view .ap-id h2 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--pg-text);
+  font: 600 18px/1.25 var(--pg-sans);
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tnh-view .ap-id small {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--pg-text-3);
+  font-size: 12.5px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tnh-view .ap-actions {
+  flex: 0 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* its buttons: the buttons of a question card (29) */
+.tnh-view .ap-actions button,
+.tnh-view .ap-term-tools button {
+  height: 30px;
+  margin: 0;
+  padding: 0 12px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+  font: 500 12.5px/1 var(--pg-sans);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    opacity 0.15s;
+}
+.tnh-view .ap-term-tools button {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+.tnh-view .ap-actions button:hover:not(:disabled),
+.tnh-view .ap-term-tools button:hover:not(:disabled) {
+  border-color: var(--pg-accent);
+  color: var(--pg-text);
+}
+.tnh-view .ap-actions button[aria-pressed='true'] {
+  border-color: rgba(var(--pg-accent-rgb), 0.5);
+  background: rgba(var(--pg-accent-rgb), 0.22);
+  color: var(--pg-text);
+}
+
+/* Stop ends a process on another computer: its word is in the error color, as on the old page */
+.tnh-view .ap-actions button[data-act='stop'] {
+  color: var(--pg-err);
+}
+.tnh-view .ap-actions button[data-act='stop']:hover:not(:disabled) {
+  border-color: var(--pg-err);
+  color: var(--pg-err);
+}
+.tnh-view .ap-actions button:disabled,
+.tnh-view .ap-term-tools button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.tnh-view .ap-actions button:focus-visible,
+.tnh-view .ap-term-tools button:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+
+/* under the top row: that computer's picture of the agent's terminal panel, and beside it what
+   is known of the agent */
+.tnh-view .ap-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+  gap: 24px;
+  min-height: 0;
+  padding: 4px var(--inset) 16px;
+  overflow: hidden;
+}
+.tnh-view .ap-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.tnh-view .ap-term-sec {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
+}
+.tnh-view .ap-term-bar {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+  min-height: 30px;
+  margin-bottom: 6px;
+  color: var(--pg-text-3);
+  font: 500 12px/1 var(--pg-sans);
+  letter-spacing: 0.02em;
+}
+.tnh-view .ap-term-tools {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.tnh-view .ap-term-tools em:empty,
+.tnh-view .ap-picks:empty {
+  display: none;
+}
+.tnh-view .ap-picks {
+  display: inline-flex;
+  gap: 4px;
+}
+.tnh-view .ap-term {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+.tnh-view .ap-term > .dv-screen {
+  height: 100%;
+  max-height: none;
+  padding: 8px 12px;
+  color: var(--pg-text);
+}
+.tnh-view .ap-term > .ap-none {
+  margin: 0;
+  padding: 16px;
+  color: var(--pg-text-3);
+  font: 400 13px/1.5 var(--pg-sans);
+  text-align: left;
+}
+.tnh-view .ap-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+.tnh-view .ap-sec {
+  margin: 0;
+}
+.tnh-view .ap-sec h3 {
+  margin: 0 0 6px;
+  color: var(--pg-text-3);
+  font: 500 12px/30px var(--pg-sans);
+  letter-spacing: 0.02em;
+}
+.tnh-view .ap-kv {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.tnh-view .ap-kv dt {
+  color: var(--pg-text-3);
+}
+.tnh-view .ap-kv dd {
+  margin: 0;
+  color: var(--pg-text-2);
+  overflow-wrap: anywhere;
+}
+.tnh-view [data-sec='last'] p {
+  margin: 0 0 8px;
+  color: var(--pg-text-2);
+  font: 400 12.5px/1.5 var(--pg-sans);
+  overflow-wrap: anywhere;
+}
+.tnh-view [data-sec='last'] p.ap-far-text {
+  max-height: 40vh;
+  overflow: auto;
+  color: var(--pg-text);
+  white-space: pre-wrap;
+}
+
+/* A narrow island: what is known goes under the picture, and the two scroll as one. */
+@container tnh-main (max-width: 700px) {
+  .tnh-view .ap-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: max-content;
+    gap: 16px;
+    overflow: hidden auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--pg-line-2) transparent;
+  }
+  .tnh-view .ap-term {
+    flex: none;
+    height: 240px;
+  }
+  .tnh-view .ap-side {
+    overflow: visible;
+  }
+}

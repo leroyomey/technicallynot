@@ -1,0 +1,80 @@
+name: Something is broken
+description: The app, the relay or the phone page does not do what it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time. A security problem does not belong here: see SECURITY.md.
+        Please take out names, keys and anything private before you paste a picture or a log.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, in a few plain sentences.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to make it happen
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Technically Not version and build
+      description: Settings shows it.
+      placeholder: 0.3.68 build 74
+    validations:
+      required: true
+
+  - type: dropdown
+    id: system
+    attributes:
+      label: Your system
+      options:
+        - Windows 11
+        - Windows 10
+        - Linux (x64)
+        - Linux (arm64)
+        - Something else (say which below)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installed-from
+    attributes:
+      label: How you got the app
+      options:
+        - The installer from the Releases page
+        - Run from source (npm start)
+        - A build of my own (npm run dist)
+    validations:
+      required: true
+
+  - type: input
+    id: agent-program
+    attributes:
+      label: Which agent program was running, and its version
+      placeholder: Claude Code 2.1, Codex, OpenCode, Cursor Agent, ...
+
+  - type: textarea
+    id: pictures-and-logs
+    attributes:
+      label: Pictures or log lines
+      description: Drag a picture in, or paste the lines. Nothing private, please.

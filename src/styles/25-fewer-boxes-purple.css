@@ -1,0 +1,149 @@
+/* Technically Not · 25-fewer-boxes-purple.css — Fewer boxes inside boxes (the thin outlines of boxes within boxes
+   across the app). Loaded last. Look only: surfaces and the boxes inside them keep
+   their fill, size and place and lose their hairline outline, so a screen reads as a few soft areas instead of frames within frames.
+   A line stays on what you press or type in (buttons, inputs, tabs, switches) and on states that carry meaning (selected, in use, error,
+   an empty dashed slot): those rules are more specific than the ones here and still win. Each selector below repeats the original rule's
+   selector exactly, so nothing else about it changes. To undo the whole look, remove this file's <link> in index.html.
+   Settings › Accounts has its own block at the end of 20-usage-accounts-purple.css. */
+
+/* Shared surface: every glass card and rail box */
+.pg-glass {
+  border-color: transparent;
+}
+
+/* Overview Grid view and the agent cards */
+:root:not(#pg) #agentPage .agent-metric {
+  border-color: transparent;
+}
+:root:not(#pg) #agentPage .tnai-live-panel {
+  border-color: transparent;
+}
+:root:not(#pg) :is(#agentPage, .tnai-ovp-body) .tnai-card {
+  border-color: transparent;
+}
+
+/* Files */
+:root:not(#pg) .fd-strip {
+  border-color: transparent;
+}
+:root:not(#pg) .fd-card {
+  border-color: transparent;
+}
+
+/* Skills */
+.sk-agents {
+  border-color: transparent;
+}
+.skills-page .sk-agents {
+  background-origin: border-box;
+}
+.skills-target {
+  border-color: transparent;
+}
+.skill-row {
+  border-color: transparent;
+}
+.sk-detail {
+  border-color: transparent;
+}
+.sk-md {
+  border-color: transparent;
+}
+
+/* Settings */
+:root:not(#pg) .sa-nav {
+  border-color: transparent;
+}
+:root:not(#pg) #settingsPanel-agents .set-card > :not(.sa-cap) {
+  border-color: transparent;
+}
+:root:not(#pg) .sa-agent {
+  border-color: transparent;
+}
+:root:not(#pg) .tnai-usage-state {
+  border-color: transparent;
+}
+
+/* Live preview page */
+:root:not(#pg) .lpp-drawer {
+  border-color: transparent;
+}
+:root:not(#pg) .lpp-stage {
+  margin: 1px;
+  border: 0;
+}
+
+/* Dialogs: the tiles inside "Choose what to open" (a line comes back on hover and focus) */
+:root:not(#pg) .terminal-provider-card {
+  border-color: transparent;
+}
+
+/* Usage */
+:root:not(#pg) .uz-card {
+  border-color: transparent;
+}
+
+/* Terminal page: the workspace tab strip is one soft area; a tab inside it has no line of its own (the open one keeps its fill) */
+:root:not(#pg) .terminal-workspace-tabs {
+  border-color: transparent;
+  background: var(--pg-panel);
+}
+:root:not(#pg) .terminal-workspace-tab {
+  border-color: transparent;
+}
+
+/* Second pass (boxes inside boxes remain): an item inside a card is not a filled shape either. Inside a surface, items
+   sit on it directly and are set apart by space; a soft fill appears only under the pointer or on the selected item. */
+:root:not(#pg) .fd-card {
+  background: none;
+}
+:root:not(#pg) .sa-agent {
+  background: none;
+}
+:root:not(#pg) .terminal-provider-card {
+  background: none;
+}
+:root:not(#pg) #settingsPanel-agents .set-card > :not(.sa-cap) {
+  background: none;
+}
+
+/* Settings › Agents › Context, While working and After finishing (they had boxes in the lines, unlike the Custom agents cards): each captioned group is one soft
+   surface like those cards; no rule between rows and no vertical line beside the rows a switch reveals (the indent alone shows they belong). */
+:root:not(#pg)
+  #settingsPanel-agents
+  :is(.tnai-upkeep-set .set-card, .tnai-next-set .set-card, #agentsWorkCard)
+  > :not(.sa-cap) {
+  background: var(--pg-panel);
+}
+:root:not(#pg)
+  #settingsPanel-agents
+  :is(.tnai-upkeep-set .set-card, .tnai-next-set .set-card, #agentsWorkCard)
+  > .set-sub {
+  background: var(--pg-panel);
+}
+
+/* Rows a switch reveals that another script wraps in a box of its own (Size warnings: 76 adds its
+   rows inside one wrapper) are not direct children of the card, so the rule above missed them and
+   they kept the well every .set-sub starts with: a darker block with square edges under one
+   switch and none under the next. Their wrapper already carries the card's surface. */
+:root:not(#pg) #settingsPanel-agents .set-card > :not(.sa-cap) .set-sub {
+  background: none;
+}
+:root:not(#pg)
+  #settingsPanel-agents
+  :is(.tnai-upkeep-set, .tnai-next-set, #agentsWorkCard)
+  .set-row {
+  border-top: 0;
+}
+:root:not(#pg)
+  #settingsPanel-agents
+  :is(.tnai-upkeep-set, .tnai-next-set, #agentsWorkCard)
+  .set-sub
+  > .set-row::before {
+  content: none;
+}
+
+/* Ghost lines: taking a line or a fill off a box is not enough. Two leftovers still draw a faint line: a small drop
+   shadow (06 gives groups and cards 0 1px 2px) shows as a dark hairline around a box that no longer has a fill or under one that no longer
+   has an outline, and a dark or gradient fill still paints under a transparent border as a rim (the Live preview stage above swaps its 1px border for a 1px margin, same size and place, and gradient cards take background-origin:border-box). When a rule
+   here or elsewhere removes a border or a fill, it also removes the shadow. Proved by the desktop test ghost-lines and tools/ghost-lines.js. */

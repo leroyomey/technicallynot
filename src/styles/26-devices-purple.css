@@ -1,0 +1,769 @@
+/* Technically Not · devices page (purple glass): this account's computers as a card grid, the pairing dialog, activity, what the
+   server sees, Stop everywhere. Tokens only; one soft surface per
+   group and nothing boxed inside it. Markup comes from src/scripts/111-devices-page.js. */
+/* in the app: a section of .layout, shown only in the router's devices-mode (the Agents page's rules in 09, for this page) */
+.layout > .dv-page {
+  display: none;
+}
+.layout.devices-mode {
+  grid-template-columns: var(--nav-width, 205px) minmax(0, 1fr);
+}
+.layout.devices-mode > .sidebar {
+  grid-column: 1;
+  grid-row: 1;
+}
+.layout.devices-mode > .dv-page {
+  display: block;
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.layout.devices-mode > .overview-view,
+.layout.devices-mode > .workspace,
+.layout.devices-mode > .preview,
+.layout.devices-mode > .tnai-resizer {
+  display: none;
+}
+.dv-page {
+  height: 100%;
+  overflow: auto;
+  padding: 24px 28px 28px;
+  container-type: inline-size;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+  color: var(--pg-text);
+  font: 14px/1.45 var(--pg-sans);
+  box-sizing: border-box;
+}
+.dv-page * {
+  box-sizing: border-box;
+}
+.dv-page :is(h1, h2, h3, p, ul) {
+  margin: 0;
+  padding: 0;
+}
+.dv-page ul {
+  list-style: none;
+}
+.dv-page :focus-visible,
+.dv-dlg :focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 2px;
+}
+.dv-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+.dv-eyebrow {
+  color: var(--pg-text-4);
+  font: 11px var(--pg-mono);
+  letter-spacing: 0.14em;
+}
+.dv-head h1 {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.2;
+  margin-top: 4px;
+}
+.dv-kpis {
+  display: flex;
+  gap: 28px;
+  margin-left: auto;
+}
+.dv-kpis div {
+  display: grid;
+  justify-items: end;
+}
+.dv-kpis b {
+  font: 500 22px/1.1 var(--pg-mono);
+}
+.dv-kpis span {
+  color: var(--pg-text-3);
+  font-size: 12px;
+}
+.dv-kpis .dv-wait b {
+  color: var(--pg-wait);
+}
+.dv-master {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 44px;
+  padding: 0 14px 0 16px;
+  border-radius: var(--pg-r);
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+}
+.dv-tog {
+  width: 38px;
+  height: 22px;
+  padding: 0;
+  border-radius: 999px;
+  border: 0;
+  background: var(--pg-line-2);
+  position: relative;
+  flex: none;
+  cursor: pointer;
+  transition: background 0.15s var(--pg-ease);
+}
+.dv-tog::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--pg-text);
+  transition: left 0.15s var(--pg-ease);
+}
+.dv-tog:hover {
+  background: var(--pg-text-4);
+}
+.dv-tog[aria-checked='true'] {
+  background: var(--pg-accent);
+}
+.dv-tog[aria-checked='true']:hover {
+  background: var(--pg-accent-2);
+}
+.dv-tog[aria-checked='true']::after {
+  left: 19px;
+}
+.dv-tog:disabled {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
+}
+.dv-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 14px;
+  align-items: start;
+}
+.dv-pcs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+}
+.dv-aside {
+  display: grid;
+  gap: 14px;
+}
+@container (max-width:900px) {
+  .dv-cols {
+    grid-template-columns: 1fr;
+  }
+  .dv-kpis {
+    display: none;
+  }
+  .dv-master {
+    margin-left: auto;
+  }
+}
+.dv-surf {
+  border-radius: var(--pg-r);
+  background: var(--pg-panel);
+  padding: 18px;
+  min-width: 0;
+}
+.dv-surf > h2 {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--pg-text-3);
+  margin-bottom: 12px;
+}
+
+/* a computer: its character on top (awake = a live session, asleep = not), then name, state, what is happening, actions */
+.dv-pc {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 12px;
+  min-height: 330px;
+}
+.dv-pc.dv-me {
+  background: var(--pg-accent-soft);
+  box-shadow: inset 3px 0 var(--pg-accent);
+}
+.dv-pc.dv-ask {
+  background: none;
+  outline: 1px dashed var(--pg-line-2);
+  outline-offset: -1px;
+}
+.dv-stage {
+  height: 112px;
+  display: grid;
+  place-items: center;
+}
+.dv-ch {
+  position: relative;
+  display: block;
+  height: 104px;
+  aspect-ratio: 850/700;
+  overflow: hidden;
+}
+.dv-ch > * {
+  position: absolute;
+  max-width: none;
+  left: calc(var(--cx) / var(--cw) * -100%);
+  top: calc(var(--cy) / var(--chh) * -100%);
+  width: calc(960 / var(--cw) * 100%);
+  height: calc(780 / var(--chh) * 100%);
+  pointer-events: none;
+}
+.dv-ch .dv-scr {
+  background: linear-gradient(160deg, var(--pg-accent-2), var(--pg-accent) 55%);
+  -webkit-mask: var(--dv-mask) center/100% 100% no-repeat;
+  mask: var(--dv-mask) center/100% 100% no-repeat;
+}
+.dv-asleep :is(.dv-scr, .dv-eyes) {
+  opacity: 0;
+}
+.dv-awake .dv-sleep {
+  opacity: 0;
+}
+.dv-asleep .dv-ch {
+  opacity: 0.6;
+}
+.dv-who {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.dv-who h3 {
+  font-size: 17px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dv-who small {
+  margin-left: auto;
+  color: var(--pg-text-3);
+  font: 12px var(--pg-mono);
+  white-space: nowrap;
+}
+.dv-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--pg-text-2);
+  margin-top: 2px;
+}
+.dv-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dv-c, var(--pg-idle));
+  flex: none;
+}
+.dv-now {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-width: 0;
+}
+.dv-now p {
+  color: var(--pg-text-2);
+  overflow-wrap: anywhere;
+}
+.dv-now .dv-muted {
+  color: var(--pg-text-3);
+}
+.dv-need {
+  padding-left: 12px;
+  box-shadow: inset 2px 0 var(--pg-wait);
+  min-width: 0;
+}
+.dv-need b {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-weight: 500;
+}
+.dv-need span {
+  display: block;
+  color: var(--pg-text-2);
+  overflow-wrap: anywhere;
+}
+/* a longer command to answer: every line, wrapped where it must, never cut in height */
+.dv-need .dv-full {
+  margin: 6px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--pg-line);
+  border-radius: 8px;
+  font: 12px/1.55 var(--pg-mono);
+}
+.dv-need .dv-full span {
+  color: var(--pg-text);
+  white-space: pre-wrap;
+}
+.dv-need time,
+.dv-need small {
+  color: var(--pg-text-3);
+  font: 12px var(--pg-mono);
+  white-space: nowrap;
+}
+.dv-agent {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.dv-agent .dv-dot {
+  margin-top: 6px;
+}
+.dv-agent > div {
+  flex: 1;
+  min-width: 0;
+}
+.dv-agent b {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-weight: 500;
+}
+.dv-agent span {
+  display: block;
+  min-width: 0;
+  color: var(--pg-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dv-agent b span {
+  color: inherit;
+}
+.dv-agent small {
+  color: var(--pg-text-3);
+  font: 12px var(--pg-mono);
+  white-space: nowrap;
+}
+.dv-opt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.dv-opt span {
+  flex: 1;
+  color: var(--pg-text-2);
+  font-size: 13px;
+}
+.dv-acts {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 30px;
+}
+.dv-btn {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: none;
+  color: var(--pg-text-2);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.15s var(--pg-ease),
+    color 0.15s;
+}
+.dv-btn:hover:not(:disabled) {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+.dv-btn.dv-pri {
+  border-color: transparent;
+  background: var(--pg-accent);
+  color: var(--pg-on-accent);
+}
+.dv-btn.dv-pri:hover:not(:disabled) {
+  background: var(--pg-accent-2);
+}
+.dv-btn.dv-danger {
+  border-color: var(--pg-err);
+  color: var(--pg-err);
+}
+.dv-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+/* full control (111): compact buttons on another computer's agent row, on the row's second line beside its task or the
+   result of what was sent; they move to a line of their own, right-aligned, when the card is narrow. The chosen CLI in "New agent". */
+.dv-btn.dv-sm {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+.dv-btn[aria-checked='true'] {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+  color: var(--pg-text);
+}
+.dv-do {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+  margin-top: 2px;
+}
+.dv-do > span[role='button'] {
+  cursor: pointer;
+}
+.dv-do > span {
+  flex: 1 1 96px;
+}
+.dv-do > div {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.dv-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.dv-log li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 12px;
+  padding: 7px 0;
+}
+.dv-log time {
+  color: var(--pg-text-3);
+  font: 12px/1.6 var(--pg-mono);
+  min-width: 64px;
+}
+.dv-log span {
+  overflow-wrap: anywhere;
+}
+.dv-log small {
+  grid-column: 2;
+  color: var(--pg-text-3);
+  font-size: 12px;
+}
+.dv-sees li {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 12px;
+  padding: 5px 0;
+  color: var(--pg-text-2);
+  font-size: 13px;
+}
+.dv-sees b {
+  font-weight: 500;
+  color: var(--pg-text-3);
+}
+.dv-sees .dv-no b {
+  color: var(--pg-work);
+}
+.dv-stop {
+  display: grid;
+  gap: 12px;
+}
+.dv-stop p {
+  color: var(--pg-text-2);
+  font-size: 13px;
+}
+.dv-stop .dv-btn {
+  justify-self: start;
+}
+.dv-owed {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--pg-text-2);
+  font-size: 13px;
+}
+.dv-owed span {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.dv-later {
+  color: var(--pg-text-4);
+  font-size: 12px;
+  margin-top: 16px;
+}
+/* remote off: one composed empty state, nothing else on the page */
+.dv-off {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  max-width: 560px;
+  margin: 7vh auto 0;
+  text-align: center;
+}
+.dv-off .dv-pair {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.dv-off .dv-pair i {
+  width: 72px;
+  border-top: 1px dashed var(--pg-line-2);
+}
+.dv-off .dv-ch {
+  height: 120px;
+}
+.dv-off h2 {
+  font-size: 20px;
+  font-weight: 600;
+}
+.dv-off p {
+  color: var(--pg-text-2);
+}
+.dv-off ul {
+  display: grid;
+  gap: 6px;
+  color: var(--pg-text-3);
+  font-size: 13px;
+  margin-top: 6px;
+}
+/* dialogs: pairing with the two typed codes, rename, and the confirmations */
+.dv-scrim {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--pg-bg) 72%, transparent);
+  display: grid;
+  place-items: center;
+  z-index: 900;
+}
+.dv-dlg {
+  width: min(460px, 92vw);
+  border-radius: var(--pg-r);
+  background: var(--pg-panel-solid);
+  padding: 24px;
+  display: grid;
+  gap: 16px;
+  color: var(--pg-text);
+  font: 14px/1.45 var(--pg-sans);
+  box-sizing: border-box;
+}
+.dv-dlg * {
+  box-sizing: border-box;
+}
+.dv-dlg :is(h2, p) {
+  margin: 0;
+}
+.dv-dlg h2 {
+  font-size: 18px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.dv-dlg p {
+  color: var(--pg-text-2);
+}
+.dv-dlg .dv-hint {
+  color: var(--pg-text-3);
+  font-size: 13px;
+}
+.dv-dlg .dv-warn {
+  color: var(--pg-wait);
+}
+.dv-code {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.dv-code span,
+.dv-code input {
+  width: 46px;
+  height: 58px;
+  border-radius: 12px;
+  background: var(--pg-panel-2);
+  display: grid;
+  place-items: center;
+  font: 26px var(--pg-mono);
+  color: inherit;
+}
+.dv-code input {
+  border: 0;
+  padding: 0;
+  text-align: center;
+  outline: 1px solid var(--pg-line-2);
+  outline-offset: -1px;
+}
+.dv-code input:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+.dv-code :nth-child(3) {
+  margin-right: 12px;
+}
+.dv-name {
+  height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel-2);
+  color: inherit;
+  font: inherit;
+  outline: 1px solid var(--pg-line-2);
+  outline-offset: -1px;
+  width: 100%;
+}
+.dv-name:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+.dv-text {
+  display: block;
+  height: auto;
+  min-height: 104px;
+  max-height: 40vh;
+  padding: 8px 12px;
+  line-height: 1.45;
+  resize: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+.dv-dlg ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dv-all {
+  max-height: 50vh;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+.dv-dlg .dv-acts {
+  margin-top: 4px;
+}
+/* the live view (111): another computer's terminal panel as plain text rows in the dialog's text box.
+   One element a row; a terminal does not reorder letters, so neither may the page (bidi-override). The sixteen colors are this app's
+   own terminal colors, set on the box by 111 (--dv-c0 to --dv-c15); a frame only picks a number from that fixed table. */
+.dv-dlg.dv-wide {
+  width: min(900px, 94vw);
+}
+.dv-screen {
+  max-height: 52vh;
+  overflow: auto;
+  font: 12px/1.35 var(--pg-mono);
+  white-space: normal;
+  cursor: default;
+}
+.dv-screen > div {
+  width: max-content;
+  min-height: 1.35em;
+  white-space: pre;
+  unicode-bidi: bidi-override;
+  direction: ltr;
+}
+.dv-screen .b {
+  font-weight: 700;
+}
+.dv-screen .fd {
+  color: var(--pg-panel-solid);
+}
+.dv-screen .gd {
+  background: var(--pg-text);
+}
+.dv-screen .f0 {
+  color: var(--dv-c0, inherit);
+}
+.dv-screen .f1 {
+  color: var(--dv-c1, inherit);
+}
+.dv-screen .f2 {
+  color: var(--dv-c2, inherit);
+}
+.dv-screen .f3 {
+  color: var(--dv-c3, inherit);
+}
+.dv-screen .f4 {
+  color: var(--dv-c4, inherit);
+}
+.dv-screen .f5 {
+  color: var(--dv-c5, inherit);
+}
+.dv-screen .f6 {
+  color: var(--dv-c6, inherit);
+}
+.dv-screen .f7 {
+  color: var(--dv-c7, inherit);
+}
+.dv-screen .f8 {
+  color: var(--dv-c8, inherit);
+}
+.dv-screen .f9 {
+  color: var(--dv-c9, inherit);
+}
+.dv-screen .f10 {
+  color: var(--dv-c10, inherit);
+}
+.dv-screen .f11 {
+  color: var(--dv-c11, inherit);
+}
+.dv-screen .f12 {
+  color: var(--dv-c12, inherit);
+}
+.dv-screen .f13 {
+  color: var(--dv-c13, inherit);
+}
+.dv-screen .f14 {
+  color: var(--dv-c14, inherit);
+}
+.dv-screen .f15 {
+  color: var(--dv-c15, inherit);
+}
+.dv-screen .g0 {
+  background: var(--dv-c0, transparent);
+}
+.dv-screen .g1 {
+  background: var(--dv-c1, transparent);
+}
+.dv-screen .g2 {
+  background: var(--dv-c2, transparent);
+}
+.dv-screen .g3 {
+  background: var(--dv-c3, transparent);
+}
+.dv-screen .g4 {
+  background: var(--dv-c4, transparent);
+}
+.dv-screen .g5 {
+  background: var(--dv-c5, transparent);
+}
+.dv-screen .g6 {
+  background: var(--dv-c6, transparent);
+}
+.dv-screen .g7 {
+  background: var(--dv-c7, transparent);
+}
+.dv-screen .g8 {
+  background: var(--dv-c8, transparent);
+}
+.dv-screen .g9 {
+  background: var(--dv-c9, transparent);
+}
+.dv-screen .g10 {
+  background: var(--dv-c10, transparent);
+}
+.dv-screen .g11 {
+  background: var(--dv-c11, transparent);
+}
+.dv-screen .g12 {
+  background: var(--dv-c12, transparent);
+}
+.dv-screen .g13 {
+  background: var(--dv-c13, transparent);
+}
+.dv-screen .g14 {
+  background: var(--dv-c14, transparent);
+}
+.dv-screen .g15 {
+  background: var(--dv-c15, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .dv-page *,
+  .dv-dlg * {
+    transition: none !important;
+  }
+}

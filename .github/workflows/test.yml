@@ -1,0 +1,60 @@
+name: Tests
+
+# Runs on every push to a branch and on every pull request: the syntax check, the format check
+# and the plain Node tests. Nothing here opens a window, builds an installer or needs a secret.
+# A pushed tag does not start it: the commit under a tag was tested when its branch was pushed,
+# and the release workflow runs its own checks.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Syntax check
+        run: node tools/check-syntax.js
+
+      - name: Format check
+        run: npm run format:check
+
+      # Every file named tools/*-test.js or tools/*-test.mjs, then the relay's and the phone
+      # page's own tests. One at a time; the run fails when any of them does.
+      - name: Plain Node tests
+        shell: pwsh
+        run: |
+          $tests = @(Get-ChildItem tools -File |
+            Where-Object { $_.Name -match '-test\.(js|mjs)$' } |
+            ForEach-Object { "tools/$($_.Name)" })
+          $tests += 'relay/test/run.mjs'
+          $tests += @(Get-ChildItem phone/test -Filter *.mjs |
+            ForEach-Object { "phone/test/$($_.Name)" })
+
+          $failed = @()
+          foreach ($test in $tests) {
+            Write-Host "::group::$test"
+            node $test
+            if ($LASTEXITCODE -ne 0) { $failed += $test }
+            Write-Host "::endgroup::"
+          }
+
+          if ($failed.Count -gt 0) {
+            Write-Host "Failed: $($failed -join ', ')"
+            exit 1
+          }
+          Write-Host "All $($tests.Count) tests passed."

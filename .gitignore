@@ -1,0 +1,20 @@
+# Installed and built things
+node_modules/
+dist/
+dist-*/
+build-resources/
+
+# Pictures the checks write
+tools/browser-check/out/
+
+# Local settings and secrets of a Cloudflare Worker (the relay)
+.dev.vars
+.wrangler/
+.env
+.env.*
+
+# Python's cache
+__pycache__/
+
+# Your own voice clips for the voice test
+tools/voice-clips/real/

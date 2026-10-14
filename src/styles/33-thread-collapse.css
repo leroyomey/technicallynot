@@ -1,0 +1,107 @@
+/* Technically Not · show and hide for the thread layout's two side columns
+   (src/scripts/127-thread-collapse.js): the thread list on every page, and the preview column of
+   the Terminal page. A hidden column leaves all of its room to the page, at once: no width is
+   animated, so a terminal beside it is fitted once. */
+
+/* ---------------------------------------------------------------- the two buttons */
+/* One kind of button for both columns, the look of the top bar's three-dots button (27): the
+   list's after the logo, the preview's at the end of the Terminal page's top row. */
+.tnt-fold {
+  display: none;
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-fold:not(#lp) {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  box-sizing: border-box;
+  width: 30px;
+  height: 30px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  box-shadow: none;
+  color: var(--pg-text-2);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+/* The list's button follows the logo in a row that has no gap of its own: without room on its
+   left its box lies against the logo, and the hover fill then reads as drawn over it. */
+html.tnt-on:not(#tnt):not(#pg) .top .tnt-fold-list:not(#lp) {
+  margin-left: 8px;
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-fold:not(#lp):hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-fold:not(#lp)[aria-expanded='false'] {
+  color: var(--pg-text-3);
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-fold:not(#lp):focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-fold:not(#lp) svg {
+  display: block;
+}
+
+/* The preview's button carries its word beside the icon, so it reads as the way to put the
+   preview away and to bring it back. In a narrow window the row has no room for the word and the
+   button is the icon alone, as the list's button is. */
+html.tnt-on:not(#tnt):not(#pg) #terminalView .tnt-fold-preview:not(#lp) {
+  grid-auto-flow: column;
+  gap: 6px;
+  width: auto;
+  padding: 0 10px;
+  font: 500 12.5px/1 var(--pg-sans);
+  white-space: nowrap;
+}
+@media (max-width: 1140px) {
+  html.tnt-on:not(#tnt):not(#pg) #terminalView .tnt-fold-preview:not(#lp) {
+    width: 30px;
+    padding: 0;
+  }
+  .tnt-fold-preview .tnt-fold-word {
+    display: none;
+  }
+}
+
+/* The preview's button belongs to the page with the preview column: not in the plain grid of a
+   very small window. */
+html.tnt-on:not(#tnt):not(#pg) #terminalView:not(.tp-on) .tnt-fold-preview:not(#lp) {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- the thread list, hidden */
+/* On the Threads page the list's column has no width and the page's left padding goes, so the
+   column gap alone is the room at the window's edge: the same 12 px as before. */
+html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode.tnt-list-closed {
+  --tnt-list-w: 0px;
+  padding-left: 0;
+}
+html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode.tnt-list-closed > .tnt-list {
+  display: none;
+}
+
+/* On every other page the list stands in the old navigation's column: that column has no width.
+   It stays in the layout, unseen, so the page beside it keeps its own place in the grid. */
+html.tnt-on:not(#tnt):not(#pg) .layout.tnt-list-closed:not(.threads-mode) {
+  --nav-width: 0px !important;
+}
+html.tnt-on:not(#tnt):not(#pg) .layout.tnt-list-closed:not(.threads-mode) > .sidebar {
+  padding: 0;
+  visibility: hidden;
+}
+
+/* ---------------------------------------------------------------- the preview column, hidden */
+/* The Terminal page: the terminals have the whole page, also where the preview had gone under
+   them in a narrow window. */
+html.tnt-on:not(#tnt):not(#pg) #terminalView.tp-on.tp-noprev.tp-noprev {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+html.tnt-on:not(#tnt):not(#pg) #terminalView.tp-on.tp-noprev > :is(.tp-divider, .tp-preview) {
+  display: none;
+}

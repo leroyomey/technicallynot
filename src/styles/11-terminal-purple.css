@@ -1,0 +1,1119 @@
+/* Technically Not · 11-terminal-purple.css — the Terminal page in the purple glass design
+  . Workspace tabs
+   = concept .seg, terminal panels = glass cards with the Agent Tree row header (avatar tile,
+   breathing status, hover actions), input row = concept composer. Behavior and markup stay in
+   04/05/07/10/21; xterm colors come from 32. Loaded with data-pg; the :root:not(#pg) prefix beats
+   the styles the scripts inject. */
+
+/* ---------------------------------------------------------------- workspace tabs: concept
+   segmented control */
+:root:not(#pg) .terminal-workspaces {
+  height: 44px;
+  gap: 10px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+}
+:root:not(#pg) .terminal-workspace-tabs {
+  flex: 0 1 auto;
+  align-self: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--pg-line);
+  border-radius: 9px;
+  background: transparent;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+:root:not(#pg) .terminal-workspace-tab {
+  height: auto;
+  gap: 8px;
+  padding: 3px 4px 3px 10px;
+  border-radius: 7px;
+  color: var(--pg-text-3);
+  transition:
+    color 0.2s,
+    background 0.3s var(--pg-ease);
+}
+:root:not(#pg) .terminal-workspace-tab:hover {
+  color: var(--pg-text-2);
+}
+:root:not(#pg) .terminal-workspace-tab.active {
+  background: var(--pg-panel-2);
+  border-color: transparent;
+  color: var(--pg-text);
+  box-shadow: none;
+}
+:root:not(#pg) .terminal-workspace-tab > span:first-child {
+  font: 400 11.5px var(--pg-sans);
+}
+:root:not(#pg) .terminal-workspace-counts {
+  gap: 6px;
+  color: var(--pg-text-4);
+  font: 400 10.5px var(--pg-mono);
+}
+:root:not(#pg) .terminal-workspace-counts .is-running {
+  color: var(--pg-work);
+}
+:root:not(#pg) .terminal-workspace-tab > button {
+  color: var(--pg-text-3);
+  border-radius: 6px;
+}
+:root:not(#pg) .terminal-workspace-tab > button:hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+:root:not(#pg) .terminal-workspace-tab > .terminal-workspace-close:hover {
+  background: color-mix(in srgb, var(--pg-err) 18%, transparent);
+  color: var(--pg-err);
+}
+/* The × beside the field while a workspace is renamed (21 inlineEdit): the same quiet button as
+   a tab's own ×, so backing out does not depend on knowing that Esc does it. */
+:root:not(#pg) .tnai-rename-cancel {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pg-text-3);
+  cursor: pointer;
+}
+:root:not(#pg) .tnai-rename-cancel:hover {
+  background: color-mix(in srgb, var(--pg-err) 18%, transparent);
+  color: var(--pg-err);
+}
+:root:not(#pg) .tnai-rename-cancel:focus-visible {
+  outline: var(--pg-ring) solid rgba(var(--pg-accent-rgb), 0.75);
+  outline-offset: 2px;
+}
+:root:not(#pg) .terminal-workspace-tab > button:focus-visible,
+:root:not(#pg) .terminal-workspace-tab:focus-visible,
+:root:not(#pg) .terminal-workspace-add:focus-visible {
+  outline: var(--pg-ring) solid rgba(var(--pg-accent-rgb), 0.75);
+  outline-offset: 2px;
+}
+:root:not(#pg) .terminal-workspace-add:hover {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+}
+:root:not(#pg) .terminal-workspace-grid {
+  gap: 12px;
+}
+@keyframes tpgAttention {
+  50% {
+    box-shadow: 0 0 0 4px var(--pg-accent-soft);
+  }
+}
+:root:not(#pg) .terminal-workspace-full {
+  animation: tpgAttention 1.1s ease 2;
+}
+:root:not(#pg) .terminal-workspace-empty {
+  color: var(--pg-text-3);
+  font: 400 12.5px/1.5 var(--pg-sans);
+}
+:root:not(#pg) .terminal-workspace-empty b {
+  color: var(--pg-text);
+  font: 500 15px var(--pg-sans);
+}
+:root:not(#pg) .terminal-workspace-empty button {
+  padding: 4px 10px;
+  border: 1px solid rgba(189, 99, 255, 0.5);
+  border-radius: 8px;
+  background: rgba(189, 99, 255, 0.22);
+  color: var(--pg-text);
+  font: 400 11.5px var(--pg-sans);
+  transition: background 0.2s;
+}
+:root:not(#pg) .terminal-workspace-empty button:hover {
+  background: rgba(var(--pg-accent-rgb), 0.32);
+}
+
+/* ---------------------------------------------------------------- terminal panel: glass card,
+   row-style header */
+:root:not(#pg) .terminal-pane {
+  grid-template-rows: 46px minmax(0, 1fr) 56px;
+  border-radius: var(--pg-r);
+  overflow: hidden;
+}
+:root:not(#pg) .terminal-pane.tnai-live {
+  grid-template-rows: 46px minmax(0, 1fr) !important;
+}
+:root:not(#pg) .terminal-workspace-grid[data-density] .terminal-pane {
+  border-radius: var(--pg-r);
+}
+:root:not(#pg) .terminal-workspace-grid[data-density] .terminal-pane:not(.tnai-live) {
+  grid-template-rows: 40px minmax(0, 1fr) 44px !important;
+}
+:root:not(#pg) .terminal-workspace-grid[data-density] .terminal-pane.tnai-live {
+  grid-template-rows: 40px minmax(0, 1fr) !important;
+}
+:root:not(#pg) .terminal-pane:hover {
+  border-color: var(--pg-line-2);
+}
+:root:not(#pg) .terminal-pane-head {
+  gap: 10px;
+  padding: 0 12px;
+  background: transparent;
+  border-bottom: 1px solid var(--pg-line);
+}
+:root:not(#pg) .terminal-pane-head > .terminal-pane-title {
+  flex: 0 1 auto;
+  font: 500 13.5px var(--pg-sans);
+  color: var(--pg-text);
+}
+:root:not(#pg) .terminal-pane-title:empty:before {
+  color: var(--pg-text-4);
+  font-weight: 400;
+}
+:root:not(#pg) .terminal-pane-av {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  background: linear-gradient(140deg, rgba(var(--pg-acc2), 0.9), rgba(var(--pg-acc), 0.75));
+  color: #160f2a;
+  font: 600 12px var(--pg-sans);
+}
+:root:not(#pg) .terminal-pane-av svg {
+  width: 60%;
+  height: 60%;
+}
+:root:not(#pg) .terminal-workspace-grid[data-density] .terminal-pane-av {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+}
+/* model / connection: quiet sub text next to the name (the select stays a real control) */
+:root:not(#pg) .terminal-provider-select,
+:root:not(#pg) .terminal-agent-bind {
+  max-width: 150px;
+  height: 24px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--pg-text-3);
+  font: 400 11.5px var(--pg-sans);
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+:root:not(#pg) .terminal-provider-select:hover {
+  border-color: var(--pg-line-2);
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+:root:not(#pg) .terminal-provider-select option {
+  background: var(--pg-panel-solid);
+  color: var(--pg-text);
+}
+:root:not(#pg) .terminal-pane .terminal-context-state {
+  color: var(--pg-text-4);
+  font: 400 11px var(--pg-sans);
+}
+:root:not(#pg) .terminal-pane .terminal-context-state.has-summary {
+  color: var(--pg-accent-2);
+}
+/* status: dot colors and breathing come from 05-status-colors.css (working / waiting / error only)
+   */
+:root:not(#pg) .terminal-pane-state {
+  gap: 7px;
+  margin-left: auto;
+  color: var(--pg-text-2);
+  font: 400 12px var(--pg-sans);
+}
+:root:not(#pg) .terminal-pane-state i {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+/* actions appear on hover / focus like the Agent Tree rows */
+:root:not(#pg) .terminal-pane-tools {
+  gap: 4px;
+  opacity: 0;
+  transform: translateX(6px);
+  transition:
+    opacity 0.2s,
+    transform 0.3s var(--pg-ease);
+}
+:root:not(#pg) .terminal-pane:hover .terminal-pane-tools,
+:root:not(#pg) .terminal-pane:focus-within .terminal-pane-tools,
+:root:not(#pg) .terminal-workspace-grid.tnai-maxed .terminal-pane-tools {
+  opacity: 1;
+  transform: none;
+}
+:root:not(#pg) .terminal-pane-tools button {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--pg-text-2);
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+:root:not(#pg) .terminal-pane-tools button > svg {
+  display: block;
+  margin: auto;
+}
+:root:not(#pg) .terminal-pane-tools button:hover {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+  color: var(--pg-text);
+}
+:root:not(#pg) .terminal-pane-tools button[title='Close terminal']:hover {
+  border-color: var(--pg-err);
+  background: color-mix(in srgb, var(--pg-err) 16%, transparent);
+}
+/* ---------------------------------------------------------------- header fit (everything
+   fits, scaled down as needed) The head is its own container (21:
+   container-type:inline-size). Nothing in it shrinks into its neighbour or is cut mid-word: the
+   name, the connection and the status keep their natural width, and as the panel narrows the head
+   steps down instead: type a little smaller (≤560) → context label only in the status tooltip
+   (≤470; 10/05 set the tooltip) → connection as a chevron beside the CLI avatar (≤390) → status as
+   its dot only (≤280) → smaller avatar (≤250). The hover actions float over the right end (they no
+   longer reserve their width while invisible); a maximized panel keeps them in the row. */
+:root:not(#pg) .terminal-pane-head {
+  position: relative;
+  overflow: hidden;
+  white-space: nowrap;
+}
+:root:not(#pg) .terminal-pane-head > .terminal-pane-title {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 48%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+:root:not(#pg) .terminal-pane-head > .terminal-provider-select {
+  flex: none;
+  min-width: 0;
+  max-width: 150px;
+  field-sizing: content;
+}
+:root:not(#pg) .terminal-pane-head > .terminal-context-state {
+  flex: none;
+  white-space: nowrap;
+}
+:root:not(#pg) .terminal-pane-head > .terminal-pane-state {
+  flex: 0 1 auto;
+  min-width: 8px;
+  white-space: nowrap;
+}
+:root:not(#pg) .terminal-pane-head > .terminal-pane-state > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+:root:not(#pg) .terminal-pane-head > .terminal-pane-tools {
+  display: flex;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  align-items: center;
+  margin: 0;
+  padding: 0 12px 0 26px;
+  background: linear-gradient(90deg, transparent, var(--pg-panel-solid) 22px);
+  pointer-events: none;
+}
+:root:not(#pg) .terminal-pane:hover .terminal-pane-head > .terminal-pane-tools,
+:root:not(#pg) .terminal-pane:focus-within .terminal-pane-head > .terminal-pane-tools {
+  pointer-events: auto;
+}
+:root:not(#pg) .terminal-workspace-grid.tnai-maxed .terminal-pane-head > .terminal-pane-tools {
+  position: static;
+  padding: 0 0 0 6px;
+  background: none;
+  pointer-events: auto;
+}
+:root:not(#pg) .terminal-workspace-grid[data-density] .terminal-pane-head > .terminal-pane-tools {
+  padding: 0 12px 0 22px;
+}
+@container (max-width:560px) {
+  :root:not(#pg) .terminal-pane-head {
+    gap: 8px;
+  }
+  :root:not(#pg) .terminal-pane-head > .terminal-pane-title {
+    font-size: 12.5px;
+  }
+  :root:not(#pg) .terminal-pane-head > .terminal-provider-select {
+    font-size: 11px;
+  }
+  :root:not(#pg) .terminal-pane-head > .terminal-context-state {
+    font-size: 10.5px;
+  }
+  :root:not(#pg) .terminal-pane-head > .terminal-pane-state {
+    gap: 6px;
+    font-size: 11px;
+  }
+}
+@container (max-width:470px) {
+  :root:not(#pg) .terminal-pane-head > .terminal-context-state {
+    display: none;
+  }
+}
+@container (max-width:390px) {
+  :root:not(#pg) .terminal-pane-head {
+    gap: 6px;
+  }
+  :root:not(#pg) .terminal-pane-head > .terminal-provider-select {
+    field-sizing: fixed;
+    width: 20px;
+    padding: 0;
+    appearance: none;
+    color: transparent;
+    background:
+      linear-gradient(45deg, transparent 50%, var(--pg-text-3) 50%) 6px 55%/4px 4px no-repeat,
+      linear-gradient(135deg, var(--pg-text-3) 50%, transparent 50%) 10px 55%/4px 4px no-repeat;
+  }
+  :root:not(#pg) .terminal-pane-head > .terminal-provider-select:hover {
+    color: transparent;
+    background-color: var(--pg-panel-hover);
+  }
+}
+@container (max-width:280px) {
+  :root:not(#pg) .terminal-pane-head > .terminal-pane-state > span {
+    display: none;
+  }
+}
+@container (max-width:250px) {
+  :root:not(#pg) .terminal-pane-head > .terminal-pane-av {
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+  }
+  :root:not(#pg) .terminal-pane-head > .terminal-pane-title {
+    font-size: 12px;
+  }
+}
+:root:not(#pg) .terminal-pane-drop {
+  outline: 2px solid var(--pg-accent);
+  outline-offset: -3px;
+}
+:root:not(#pg) .terminal-pane-count {
+  color: var(--pg-text-3);
+  font: 400 11.5px var(--pg-sans);
+}
+:root:not(#pg) .terminal-route,
+:root:not(#pg) .terminal-route-note {
+  border-color: var(--pg-line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--pg-text-3);
+  font: 400 11.5px var(--pg-sans);
+}
+
+/* ---------------------------------------------------------------- output */
+:root:not(#pg) .terminal-pane > .terminal-output {
+  padding: 14px 16px;
+  font-family: var(--pg-mono);
+  font-size: var(--terminal-font, 13px);
+  line-height: 1.65;
+  color: var(--pg-text-2);
+}
+:root:not(#pg) .terminal-pane .terminal-output {
+  font-family: var(--pg-mono);
+}
+:root:not(#pg) .terminal-pane .output-meta {
+  color: var(--pg-text-4);
+  font: 400 11px var(--pg-mono);
+  font-variant-numeric: tabular-nums;
+}
+:root:not(#pg) .terminal-pane .terminal-message-user {
+  color: var(--pg-text);
+}
+:root:not(#pg) .terminal-pane .terminal-message-system {
+  color: var(--pg-accent-2);
+}
+:root:not(#pg) .terminal-context-summary {
+  border-radius: var(--pg-r-sm);
+  font: 400 12px/1.55 var(--pg-sans);
+}
+:root:not(#pg) .terminal-context-summary b {
+  font-size: 11px;
+}
+
+/* ---------------------------------------------------------------- input row: concept composer */
+/* A panel with no connection has no message box (picker-in-panel concept): its
+   body, with ＋ Add connection or the connection choices, takes the room. The box is back the moment
+   a connection is picked (06 removes the start state). */
+:root:not(#pg) .terminal-pane:has(> .terminal-output > .tnai-launcher) > .terminal-input {
+  display: none;
+}
+:root:not(#pg) .terminal-pane:not(.tnai-live):has(> .terminal-output > .tnai-launcher) {
+  grid-template-rows: 46px minmax(0, 1fr) !important;
+}
+:root:not(#pg)
+  .terminal-workspace-grid[data-density]
+  .terminal-pane:not(.tnai-live):has(> .terminal-output > .tnai-launcher) {
+  grid-template-rows: 40px minmax(0, 1fr) !important;
+}
+:root:not(#pg) .terminal-pane .terminal-input {
+  height: 44px;
+  margin: 0 12px 12px;
+  padding: 0 4px 0 14px;
+  gap: 8px;
+  border: 1px solid var(--pg-line);
+  border-radius: 11px;
+  background: var(--pg-panel);
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+:root:not(#pg) .terminal-pane .terminal-input:focus-within {
+  border-color: rgba(var(--pg-accent-rgb), 0.45);
+  box-shadow:
+    0 0 0 2px var(--pg-bg),
+    0 0 0 4px rgba(var(--pg-accent-rgb), 0.55);
+}
+:root:not(#pg) .terminal-pane .terminal-input .input-prompt {
+  color: var(--pg-accent-2);
+  font: 500 13px var(--pg-mono);
+}
+:root:not(#pg) .terminal-pane .terminal-input .input-prompt.is-ai {
+  font: 400 13px var(--pg-sans);
+}
+:root:not(#pg) .terminal-pane .terminal-input input {
+  font: 400 14.5px var(--pg-sans);
+}
+:root:not(#pg) .terminal-pane .terminal-input.is-shell input {
+  font: 400 13px var(--pg-mono);
+}
+:root:not(#pg) .terminal-pane .terminal-input button {
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #c57dff, #9935ac);
+  color: #fff;
+  font: 500 13px var(--pg-sans);
+  transition:
+    transform 0.2s var(--pg-ease),
+    box-shadow 0.2s;
+}
+:root:not(#pg) .terminal-pane .terminal-input button:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(153, 53, 172, 0.35);
+}
+:root:not(#pg) .terminal-workspace-grid[data-density] .terminal-pane .terminal-input {
+  height: 32px;
+  margin: 0 8px 8px;
+  border-radius: 11px;
+}
+:root:not(#pg) .terminal-workspace-grid[data-density] .terminal-pane .terminal-input button {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 8px;
+}
+
+/* ---------------------------------------------------------------- xterm text: no inherited body
+   letter-spacing (07), or the drawn cells drift from xterm's measured cell width and fitting breaks
+   */
+:root:not(#pg) .xterm {
+  letter-spacing: normal;
+}
+/* Hovered or focused: the actions join the row instead of floating over it, so the status moves
+   left (ending in "…" when short of room) and stays readable (it was hard to see the
+   terminal status when close, minimize and the others popped up). */
+:root:not(#pg) .terminal-pane:is(:hover, :focus-within) .terminal-pane-head > .terminal-pane-tools {
+  position: static;
+  flex: none;
+  padding: 0 0 0 6px;
+  background: none;
+}
+
+/* ---------------------------------------------------------------- digest rows (104; mock:
+   design-concepts/terminal-digest-task-view.html) In a workspace with 5+ panels a connected panel
+   the user is not using shows a digest in place of its terminal (the terminal box is display:none,
+   so it never resizes its pty). An opened panel takes the left half; the others stay digests on the
+   right, same order. */
+:root:not(#pg) .terminal-pane.tnai-dg-on .tnai-xterm {
+  display: none !important;
+}
+:root:not(#pg) .terminal-pane:not(.tnai-dg-on) > .tnai-dg {
+  display: none;
+}
+:root:not(#pg) .terminal-pane:not(.tnai-dg-open) .terminal-pane-tools > [data-tnai-dg-back] {
+  display: none;
+}
+:root:not(#pg) .terminal-workspace-grid.tnai-dg-focus:not(.tnai-maxed) {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  grid-template-rows: repeat(var(--dg-rows, 2), minmax(0, 1fr)) !important;
+  overflow: hidden;
+}
+:root:not(#pg) .terminal-workspace-grid.tnai-dg-focus:not(.tnai-maxed) > .tnai-dg-open {
+  grid-column: 1/3;
+  grid-row: 1/-1;
+  border-color: rgba(var(--pg-accent-rgb), 0.55);
+}
+:root:not(#pg) .tnai-dg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  min-height: 0;
+  padding: 10px 12px;
+  overflow: hidden;
+  cursor: pointer;
+  color: var(--pg-text-2);
+  font: 400 12.5px/1.4 var(--pg-sans);
+  text-align: left;
+  transition: background 0.2s;
+  container: tnai-dg/size;
+}
+:root:not(#pg) .tnai-dg:hover {
+  background: var(--pg-panel);
+}
+:root:not(#pg) .tnai-dg:focus-visible {
+  outline: var(--pg-ring) solid rgba(var(--pg-accent-rgb), 0.75);
+  outline-offset: -3px;
+}
+:root:not(#pg) .tnai-dg p {
+  flex: none;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:root:not(#pg) .tnai-dg-k {
+  display: inline-block;
+  width: 38px;
+  color: var(--pg-text-4);
+  font: 400 11px var(--pg-sans);
+}
+:root:not(#pg) .tnai-dg-now {
+  color: var(--pg-text-3);
+  font: 400 11.5px/1.4 var(--pg-mono);
+}
+:root:not(#pg) .tnai-dg-inf {
+  color: var(--pg-text-4);
+  font: 400 11px var(--pg-sans);
+}
+/* Task and result wrap to whole lines and take more of them as the card gets taller;
+   the card is a size container, so the row it sits in must have a height of its own
+   (never auto). */
+:root:not(#pg) .tnai-dg p:is(.tnai-dg-task, .tnai-dg-last) {
+  display: -webkit-box;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+:root:not(#pg) .tnai-dg p.tnai-dg-task {
+  padding-left: 38px;
+  text-indent: -38px;
+}
+:root:not(#pg) .tnai-dg-task > .tnai-dg-k {
+  text-indent: 0;
+}
+@container tnai-dg (height<110px) {
+  :root:not(#pg) .tnai-dg p.tnai-dg-task {
+    -webkit-line-clamp: 1;
+  }
+}
+@container tnai-dg (height>=220px) {
+  :root:not(#pg) .tnai-dg p.tnai-dg-last {
+    -webkit-line-clamp: 4;
+  }
+}
+@container tnai-dg (height>=340px) {
+  :root:not(#pg) .tnai-dg p.tnai-dg-last {
+    -webkit-line-clamp: 8;
+  }
+}
+:root:not(#pg) .tnai-dg p.tnai-dg-last[hidden] {
+  display: none;
+}
+:root:not(#pg) .tnai-dg-last[data-tone='ask'] {
+  color: var(--pg-wait);
+}
+:root:not(#pg) .tnai-dg-last[data-tone='bad'] {
+  color: var(--pg-err);
+}
+/* The newest screen lines: one tone above the labels, starting right under
+   the summary and filling downward. The box takes the room that is left; the lines inside take a
+   whole number of 17 px rows of it, newest at the bottom (older ones are cut whole at the top), and
+   each line wraps inside the card instead of being cut at its right edge. */
+:root:not(#pg) .tnai-dg-tailbox {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  container: tnai-dg-tail/size;
+}
+:root:not(#pg) .tnai-dg-tail {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  box-sizing: content-box;
+  max-height: round(down, calc(100cqh - 13px), 17px);
+  overflow: clip;
+  overflow-clip-margin: content-box;
+  margin: 6px 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--pg-line);
+  color: var(--pg-text-3);
+  font: 400 11px/17px var(--pg-mono);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+@container tnai-dg (height<110px) {
+  :root:not(#pg) .tnai-dg-tail {
+    max-height: round(down, calc(100cqh - 5px), 17px);
+    margin-top: 0;
+    padding-top: 4px;
+  }
+} /* a small card: less room around the line, so two screen lines fit */
+@container tnai-dg-tail (height<22px) {
+  :root:not(#pg) .tnai-dg-tail {
+    display: none;
+  }
+}
+@container tnai-dg (height>=110px) {
+  @container tnai-dg-tail (height<30px) {
+    :root:not(#pg) .tnai-dg-tail {
+      display: none;
+    }
+  }
+}
+:root:not(#pg) .tnai-dg-tail:empty {
+  display: none;
+}
+:root:not(#pg) .terminal-workspace-grid.tnai-dg-focus .tnai-dg {
+  gap: 2px;
+  padding: 6px 12px;
+}
+:root:not(#pg) .terminal-workspace-grid.tnai-dg-focus .tnai-dg-tail {
+  display: none;
+}
+:root:not(#pg) .terminal-workspace-grid.tnai-dg-focus .tnai-dg p:is(.tnai-dg-task, .tnai-dg-last) {
+  -webkit-line-clamp: 1;
+}
+:root:not(#pg) #digestToggle[aria-pressed='true'] {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+}
+/* Terminal page layout (105-terminal-preview.js): the agents as a list down the
+   left, the picked agent's terminal, a divider to drag, the Live preview. Under 860 px the preview
+   sits under the terminal; under 800 px none of this applies and the page is the plain terminal
+   grid. */
+:root:not(#pg) #terminalView.tp-on {
+  grid-template-columns: 216px 10px minmax(0, var(--tp-a, 43fr)) 10px minmax(0, var(--tp-b, 57fr));
+  grid-template-rows: auto minmax(0, 1fr);
+}
+:root:not(#pg) #terminalView.tp-on > .terminal-toolbar {
+  grid-column: 1/-1;
+  grid-row: 1;
+}
+/* The boxes never touch the line under the toolbar: the same 10 px
+   that separates them from each other. On the boxes, not as a margin under the toolbar: its row has
+   a fixed height (04, !important), so a margin there is not room at all. */
+:root:not(#pg) #terminalView.tp-on > :is(.terminal-content, .tp-preview) {
+  margin-top: 10px;
+}
+:root:not(#pg) #terminalView.tp-stack > .tp-preview {
+  margin-top: 0;
+}
+:root:not(#pg) #terminalView.tp-on > .terminal-content {
+  grid-column: 3;
+  grid-row: 2;
+  min-width: 0;
+}
+/* 21 gives the grid 10 px of room under the toolbar (!important); here the list and the preview
+   start right under the toolbar's row, so the terminal does too */
+:root:not(#pg) .layout.terminal-mode #terminalView.tp-on > .terminal-content.terminal-grid {
+  padding-top: 0 !important;
+}
+:root:not(#pg) #terminalView.tp-on > .tp-divider {
+  grid-column: 4;
+  grid-row: 2;
+  position: relative;
+  cursor: col-resize;
+  outline: 0;
+}
+:root:not(#pg) .tp-divider::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: calc(50% - 22px);
+  width: 2px;
+  height: 44px;
+  border-radius: 2px;
+  background: var(--pg-line-2);
+  transition: background 0.15s;
+}
+:root:not(#pg) .tp-divider:is(:hover, :focus-visible)::after,
+:root:not(#pg) .tp-dragging .tp-divider::after {
+  background: var(--pg-accent);
+}
+:root:not(#pg) #terminalView.tp-on > .tp-preview {
+  grid-column: 5;
+  grid-row: 2;
+  contain: size;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r);
+  background: var(--pg-panel);
+}
+:root:not(#pg) .tp-dragging .tp-preview {
+  pointer-events: none;
+}
+:root:not(#pg) .tp-dragging {
+  user-select: none;
+}
+:root:not(#pg) .tp-preview > .lp {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  height: 100%;
+}
+:root:not(#pg) .tp-preview .lp-browser .lp-bar {
+  flex-wrap: wrap;
+}
+/* Two rows at every width: back, forward, reload and the address (130 px = the three buttons, their
+   gaps and room for the state dot), then the device and size controls. Left to wrap freely, the
+   device control sat beside a cut-off address in a wide column. */
+:root:not(#pg) .tp-preview .lp-bar .lp-url {
+  flex: 1 1 calc(100% - 130px);
+  min-width: 120px;
+}
+/* A state with nothing to say takes no place, so the address ends on the toolbar's edge instead of
+   one gap short of it */
+:root:not(#pg)
+  .tp-preview
+  .lp-state:has(> span:empty):has(> .bw-dot:not([data-s]), > .bw-dot[data-s='']) {
+  display: none;
+}
+/* ＋ (new tab) as on the Live preview page (14, .lpp-tabrow): the shared button rule's padding
+   pushed its icon 5 px off center */
+:root:not(#pg) .tp-preview .lp-browser .lp-tab-add:not(#lp) {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-color: transparent;
+  border-radius: 8px;
+  color: var(--pg-text-3);
+}
+/* The list does the Digest switch's job (who is doing what), so the switch is not shown beside it
+   */
+:root:not(#pg) #terminalView.tp-on #digestToggle {
+  display: none;
+}
+/* Narrow page: the list keeps its column, the preview goes under the terminal */
+:root:not(#pg) #terminalView.tp-stack {
+  grid-template-columns: 216px 10px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) 10px minmax(0, 1fr);
+}
+:root:not(#pg) #terminalView.tp-stack > .tp-divider {
+  grid-column: 3;
+  grid-row: 3;
+  cursor: default;
+}
+:root:not(#pg) #terminalView.tp-stack > .tp-divider::after {
+  display: none;
+}
+:root:not(#pg) #terminalView.tp-stack > .tp-preview {
+  grid-column: 3;
+  grid-row: 4;
+}
+/* The agent list: one soft surface, plain rows (name and state, task, what it is doing now); the
+   picked row has the accent line and a soft fill. With too many rows for three lines each, the task
+   line goes (.tp-tight, set by 105). ＋ Terminal stays at the bottom. */
+/* A lead's sub-agents under it (105), set in like the Agents page's sub-agent rows
+   (09 .ap-subrow, .ap-kid: 16 px): a sub-agent with no panel of its own is a lighter two-line row;
+   one in its own panel keeps its full row and is only set in. */
+/* A team the user made (105, 88), as on the Agents page list (09 .ap-team): its
+   members together on one soft surface. Drawn piece by piece so the rows stay children of the list:
+   the head (rounded top), a layer behind each member row that also covers the list's 2px gap under
+   it, the folded line of status dots, the closing piece (rounded bottom; it names teammates in
+   another workspace). The head and the folded line pull the next piece up over the gap. No outline,
+   no line. */
+/* A team row's 2px left border becomes padding, and its picked line an inset shadow of the same
+   width: a border's width is rounded to whole screen pixels at the app's 95% zoom, so a layer set
+   out from it by -2px stood 1px past the head's edge (measured in test agent-teams). */
+/* Panels with no connection yet sit behind one quiet row; opened, they follow it as Empty 1, Empty
+   2… */
+/* An empty device screen in this preview is dark like the page around it;
+   a real page keeps its own colors. */
+:root:not(#pg) .tp-preview .lp-empty-screen {
+  background: var(--pg-bg);
+}
+:root:not(#pg) .tp-preview .lp-frame-shell:not(.lp-bezel):has(> .lp-empty-screen) {
+  background: var(--pg-bg);
+}
+/* One terminal: the picked panel fills the column, the others are not shown */
+/* The panel of the agent whose page is shown */
+:root:not(#pg) #terminalView.tp-on .terminal-pane.tp-owner {
+  box-shadow: 0 0 0 1px rgba(var(--pg-accent-rgb), 0.6);
+}
+:root:not(#pg) #terminalView.tp-on .terminal-pane.tp-owner .terminal-pane-title::after {
+  content: 'in preview';
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(var(--pg-accent-rgb), 0.22);
+  color: var(--pg-text-2);
+  font: 500 10px var(--pg-sans);
+  letter-spacing: 0.02em;
+}
+/* Header items that do not fit leave whole (109-fit-rows.js); the mark that says so is plain text
+   in the header's own muted color, no box */
+:root:not(#pg) .terminal-pane-head > .tnai-fit-out {
+  display: none !important;
+}
+:root:not(#pg)
+  #terminalView.tp-on
+  .terminal-pane.tp-owner
+  .terminal-pane-head.tnai-fit-nomark
+  .terminal-pane-title::after {
+  display: none;
+}
+:root:not(#pg) .terminal-pane-head.tnai-fit-dot > .terminal-pane-state > span {
+  display: none;
+}
+:root:not(#pg) .terminal-pane-head > .tnai-fit-more {
+  flex: none;
+  margin-left: auto;
+  color: var(--pg-text-3);
+  font: 500 12px/1 var(--pg-sans);
+  letter-spacing: 0.04em;
+  cursor: default;
+}
+:root:not(#pg) .terminal-pane-head > .tnai-fit-more + .terminal-pane-state {
+  margin-left: 0;
+} /* the mark sits with the status at the right, where the items it stands for were */
+/* The hover buttons are fitted too (109): a button with no room folds into the "⋯"
+   button's menu; in a row that is still short (a panel near its 200 px minimum) the name gives way,
+   the gap is 6 px and the buttons take a small 20 px size. In every state the buttons are 4 px
+   apart and end 12 px from the header's edge (its own padding), floating or in the row. */
+:root:not(#pg) .terminal-pane-tools > .tnai-fit-out {
+  display: none !important;
+}
+/* Only the status text (and, in a tight row, the name) gives way in a full row: an avatar or chip
+   squeezed by a few pixels hid from the fit that the hovered row was too full (header-fit at 440
+   px: avatar 8 px narrower on hover). */
+:root:not(#pg)
+  .terminal-pane-head
+  > :not(
+    .terminal-pane-tools,
+    .terminal-pane-state,
+    .terminal-pane-title,
+    .tn-skl,
+    .tnai-rename-input
+  ) {
+  flex-shrink: 0;
+}
+:root:not(#pg) .terminal-pane-tools > .tnai-fit-menu[aria-expanded='true'] {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+  color: var(--pg-text);
+}
+:root:not(#pg) .terminal-pane-head.tnai-fit-tight {
+  gap: 6px;
+} /* the gap the ≤390 px step above means to set: a container query cannot restyle its own container, so the header's gap is 10 px at every width */
+:root:not(#pg) .terminal-pane-head.tnai-fit-tight > .terminal-pane-title {
+  flex: 0 1 auto;
+  min-width: 24px;
+}
+:root:not(#pg) .terminal-pane-head.tnai-fit-tight > .terminal-pane-tools button {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+}
+:root:not(#pg) .terminal-pane-head.tnai-fit-tight > .terminal-pane-tools button > svg {
+  width: 12px;
+  height: 12px;
+} /* an icon is at most 60% of its button (tnai-modern-ui 4d): 14 px in 20 was 70%, caught by terminal-preview */
+:root:not(#pg) .tnai-fit-list {
+  z-index: 1000;
+  display: grid;
+  gap: 1px;
+  min-width: 150px;
+  max-width: 290px;
+  padding: 5px;
+  overflow: auto;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--pg-panel-solid) 92%, transparent);
+  box-shadow: var(--pg-shadow);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  color: var(--pg-text);
+}
+:root:not(#pg) .tnai-fit-list button {
+  padding: 8px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--pg-text);
+  font: 400 12px var(--pg-sans);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+:root:not(#pg) .tnai-fit-list button:is(:hover, :focus-visible):not(:disabled) {
+  background: var(--pg-panel-hover);
+}
+:root:not(#pg) .tnai-fit-list button:disabled {
+  color: var(--pg-text-4);
+  cursor: default;
+}
+:root:not(#pg) .tnai-fit-list > p {
+  max-width: 260px;
+  margin: 0;
+  padding: 6px 9px;
+  color: var(--pg-text-3);
+  font: 400 11px/1.4 var(--pg-sans);
+  white-space: normal;
+}
+:root:not(#pg) .tnai-fit-list > p:first-of-type {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--pg-line);
+  color: var(--pg-text-4);
+}
+/* One "⋯" in a header: where the buttons show (hovered, focused,
+   maximized) the menu button stands in for the mark and its menu lists what the mark's tip lists.
+   */
+:root:not(#pg)
+  :is(.terminal-pane:is(:hover, :focus-within), .terminal-workspace-grid.tnai-maxed)
+  .terminal-pane-head.tnai-fit-swap
+  > .tnai-fit-more {
+  display: none;
+}
+:root:not(#pg)
+  :is(.terminal-pane:is(:hover, :focus-within), .terminal-workspace-grid.tnai-maxed)
+  .terminal-pane-head.tnai-fit-swap
+  > .tnai-fit-more
+  + .terminal-pane-state {
+  margin-left: auto;
+}
+
+/* Background shells (106-background-shells.js): the count chip in a panel header and its list */
+:root:not(#pg) :is(.tnai-bg-chip, .tnai-rv-chip) {
+  flex: none;
+  margin-right: 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 7px;
+  background: none;
+  color: var(--pg-text-2);
+  font: 500 10.5px var(--pg-mono);
+  white-space: nowrap;
+  cursor: pointer;
+}
+:root:not(#pg) .tnai-rv-chip > .s {
+  display: none;
+}
+:root:not(#pg) .terminal-pane-head:is(.tnai-fit-dot, .tnai-fit-tight) > .tnai-rv-chip > .l {
+  display: none;
+}
+:root:not(#pg) .terminal-pane-head:is(.tnai-fit-dot, .tnai-fit-tight) > .tnai-rv-chip > .s {
+  display: inline;
+} /* the watching mark never leaves the header (115); in a tight one it reads "Watched" */
+:root:not(#pg) :is(.tnai-bg-chip, .tnai-rv-chip):hover,
+:root:not(#pg) .tnai-bg-chip[aria-expanded='true'] {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+  color: var(--pg-text);
+}
+:root:not(#pg) .tnai-bg-pop {
+  position: fixed;
+  z-index: 60;
+  box-sizing: border-box;
+  width: min(420px, calc(100vw - 16px));
+  max-height: min(60vh, 420px);
+  overflow: auto;
+  scrollbar-width: thin;
+  padding: 12px 14px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 14px;
+  background: var(--pg-panel-solid);
+  box-shadow: var(--pg-shadow);
+  color: var(--pg-text-2);
+  font: 12px/1.45 var(--pg-sans);
+}
+:root:not(#pg) .tnai-bg-pop h4 {
+  margin: 0 0 8px;
+  color: var(--pg-text-3);
+  font: 500 10px var(--pg-sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+:root:not(#pg) .tnai-bg-row {
+  display: grid;
+  gap: 3px;
+  padding: 8px 0;
+}
+:root:not(#pg) .tnai-bg-row + .tnai-bg-row {
+  box-shadow: 0 -1px 0 var(--pg-line);
+}
+:root:not(#pg) .tnai-bg-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+:root:not(#pg) .tnai-bg-head b {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--pg-text);
+  font-weight: 500;
+}
+:root:not(#pg) .tnai-bg-time {
+  flex: none;
+  color: var(--pg-text-3);
+  font: 10.5px var(--pg-mono);
+}
+:root:not(#pg) .tnai-bg-cmd {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--pg-text-3);
+  font: 10.5px var(--pg-mono);
+}
+:root:not(#pg) .tnai-bg-out {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--pg-text-2);
+  font: 11px var(--pg-mono);
+}
+
+/* The pages view (126-terminal-pages.js; its own rules are in 32-terminal-pages.css): 105 puts
+   the page in the layout .tp-pages, the terminals beside the preview, no agent list. */
+:root:not(#pg) #terminalView.tp-on.tp-pages {
+  grid-template-columns: minmax(0, var(--tp-a, 43fr)) 10px minmax(0, var(--tp-b, 57fr));
+}
+:root:not(#pg) #terminalView.tp-on.tp-pages > .terminal-content {
+  grid-column: 1;
+}
+:root:not(#pg) #terminalView.tp-on.tp-pages > .tp-divider {
+  grid-column: 2;
+}
+:root:not(#pg) #terminalView.tp-on.tp-pages > .tp-preview {
+  grid-column: 3;
+}
+/* Toolbar: the two view buttons (105), one terminal or pages of tall terminals. One outlined
+   group, the buttons inside plain; the chosen one has the accent. */

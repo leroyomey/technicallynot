@@ -1,0 +1,1527 @@
+/* Technically Not · 13-skills-purple.css — Skills page (18-skills-page.js): header with search + import, filter chips,
+   agent drop strip, gallery of skill cards grouped by source, overlap stacks, right-side detail panel, and the shared Apply menu.
+   --pg-* tokens only. data-pg: the remap engine skips it. */
+
+.layout.skills-mode {
+  grid-template-columns: var(--nav-width, 205px) minmax(0, 1fr) !important;
+  background: transparent;
+}
+.layout.skills-mode > .sidebar {
+  grid-column: 1;
+  grid-row: 1;
+}
+.layout.skills-mode > .skills-page {
+  display: flex;
+  flex-direction: column;
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.layout.skills-mode > .overview-view,
+.layout.skills-mode > .workspace,
+.layout.skills-mode > .preview,
+.layout.skills-mode > .tnai-resizer {
+  display: none !important;
+}
+body:has(.layout.skills-mode) .composer {
+  display: none !important;
+}
+.skills-page {
+  display: none;
+  box-sizing: border-box;
+  padding: var(--page-pad, 20px);
+  padding-bottom: 14px;
+  background: transparent;
+  font-family: var(--pg-sans);
+  color: var(--pg-text);
+}
+.skills-inner {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 2000px;
+  margin: 0 auto;
+}
+.skills-page button {
+  font-family: var(--pg-sans);
+}
+.skills-page button:focus-visible,
+.skill-row:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 2px;
+}
+.sk-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---- header: title + summary · search · import ---- */
+.skills-page .sk-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.sk-title {
+  min-width: 0;
+  flex: 0 1 auto;
+  margin-right: auto;
+}
+.skills-page .sk-head h1 {
+  margin: 0;
+  color: var(--pg-text);
+  font: 500 22px/1.1 var(--pg-sans);
+  letter-spacing: 0.01em;
+}
+#skillsPage .sk-head h1::before {
+  display: none;
+}
+#skillsPage .sk-title > .sk-sum {
+  display: block;
+  margin: 5px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pg-text-3);
+  font: 400 12.5px var(--pg-sans);
+}
+.sk-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 1 380px;
+  min-width: 220px;
+  height: 34px;
+  box-sizing: border-box;
+  padding: 0 8px 0 11px;
+  gap: 8px;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text-3);
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+.sk-search:focus-within {
+  border-color: var(--pg-accent);
+  background: var(--pg-panel-2);
+}
+.skills-filter {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--pg-text);
+  font: 13px var(--pg-sans);
+  outline: none;
+}
+.skills-filter::placeholder {
+  color: var(--pg-text-4);
+}
+.sk-search kbd {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 5px;
+  color: var(--pg-text-4);
+  font: 11px var(--pg-mono);
+}
+.sk-search:focus-within kbd {
+  display: none;
+}
+.skills-page .agent-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.skills-page .agent-page-actions .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  box-sizing: border-box;
+  height: 34px;
+  padding: 0 13px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  color: var(--pg-text);
+  font: 500 12.5px var(--pg-sans);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+.skills-page .agent-page-actions .button:hover {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+}
+.skills-page .agent-page-actions .button.dark {
+  border-color: rgba(var(--pg-accent-rgb), 0.55);
+  background: rgba(var(--pg-accent-rgb), 0.22);
+}
+.skills-page .agent-page-actions .button.dark:hover {
+  background: rgba(var(--pg-accent-rgb), 0.32);
+}
+.skills-page .tn-ico {
+  flex: none;
+}
+
+/* ---- filter chips ---- */
+.sk-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.sk-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sk-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 11px;
+  border: 1px solid var(--pg-line);
+  border-radius: 999px;
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+  font: 12.5px var(--pg-sans);
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s,
+    color 0.2s;
+}
+.sk-chip em {
+  min-width: 14px;
+  color: var(--pg-text-4);
+  font: 500 11px var(--pg-mono);
+  font-style: normal;
+  text-align: center;
+}
+.sk-chip:hover {
+  border-color: var(--pg-line-2);
+  color: var(--pg-text);
+}
+.sk-chip[aria-checked='true'] {
+  border-color: rgba(var(--pg-accent-rgb), 0.55);
+  background: var(--pg-accent-soft);
+  color: var(--pg-text);
+}
+.sk-chip[aria-checked='true'] em {
+  color: var(--pg-accent-2);
+}
+.sk-chip[data-empty='1']:not([aria-checked='true']) {
+  opacity: 0.5;
+}
+.sk-chip .tn-ico {
+  color: var(--pg-accent-2);
+}
+.sk-chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pg-work);
+}
+
+/* ---- agent drop strip ---- */
+.sk-agents {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 7px 8px 7px 12px;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r);
+  background: var(--pg-panel);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+}
+.sk-agents-label {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--pg-text-3);
+  font: 12px var(--pg-sans);
+}
+.skills-agent-list {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.skills-agent-list > .skills-empty {
+  padding: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.skills-target {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 260px;
+  height: 38px;
+  box-sizing: border-box;
+  padding: 0 12px 0 5px;
+  border: 1px dashed transparent;
+  border-radius: 999px;
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+div.skills-target {
+  cursor: default;
+}
+.skills-target:hover {
+  background: rgba(var(--pg-accent-rgb), 0.1);
+}
+.sk-t-txt {
+  display: grid;
+  min-width: 0;
+  line-height: 1.2;
+}
+.skills-target b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 500 12.5px var(--pg-sans);
+}
+.skills-target small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pg-text-3);
+  font: 11px var(--pg-sans);
+}
+.skills-target > i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pg-idle);
+}
+.skills-target[data-running='1'] > i {
+  background: var(--pg-work);
+}
+.skills-target[data-accept='0'] {
+  opacity: 0.6;
+}
+.skills-page.skill-drag .skills-target[data-accept='1'] {
+  border-color: rgba(var(--pg-accent-rgb), 0.55);
+}
+.skills-target.drop-ok {
+  border-style: solid;
+  border-color: var(--pg-ready);
+  background: color-mix(in srgb, var(--pg-ready) 14%, transparent);
+}
+.skills-target.drop-no {
+  border-style: solid;
+  border-color: var(--pg-err);
+  background: color-mix(in srgb, var(--pg-err) 12%, transparent);
+}
+
+/* avatars: agent letter tiles in the agent's own color */
+.sk-av {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--av) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--av) 45%, transparent);
+  color: var(--av);
+  font: 600 11.5px var(--pg-sans);
+}
+.sk-av.every {
+  --av: var(--pg-accent-2);
+}
+
+/* ---- body: gallery | detail ---- */
+.sk-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+.sk-body.has-detail {
+  grid-template-columns: minmax(0, 1fr) clamp(360px, 30%, 480px);
+}
+.skills-library {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+.skills-group {
+  margin-bottom: 20px;
+}
+.skills-group > header {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0 2px 10px;
+}
+.skills-group > header b {
+  color: var(--pg-text);
+  font: 500 14px var(--pg-sans);
+  white-space: nowrap;
+}
+.skills-group > header span {
+  color: var(--pg-text-4);
+  font: 500 12px var(--pg-mono);
+}
+.skills-group > header small {
+  flex: 1 1 260px;
+  min-width: 0;
+  color: var(--pg-text-4);
+  font: 12px/1.4 var(--pg-sans);
+}
+.skills-empty {
+  margin: 0;
+  padding: 6px 2px;
+  color: var(--pg-text-3);
+  font: 12.5px/1.5 var(--pg-sans);
+}
+.sk-none {
+  padding: 40px 8px;
+  text-align: center;
+}
+.skills-more {
+  margin: 10px 2px 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--pg-accent-2);
+  font: 12px var(--pg-sans);
+  cursor: pointer;
+}
+.skills-more:hover {
+  text-decoration: underline;
+}
+
+/* ---- skill card ---- */
+.sk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 10px;
+}
+.skill-row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 13px 14px 11px;
+  border: 1px solid var(--pg-line);
+  border-radius: 14px;
+  background: var(--pg-panel);
+  cursor: pointer;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 150px;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+.skill-row:hover {
+  border-color: var(--pg-line-2);
+  background: var(--pg-panel-hover);
+}
+.skill-row[aria-selected='true'] {
+  border-color: rgba(var(--pg-accent-rgb), 0.6);
+  background: var(--pg-accent-soft);
+}
+.skill-row[draggable='true']:active {
+  cursor: grabbing;
+}
+.skill-row.dragging {
+  opacity: 0.45;
+}
+.skill-row.in-use {
+  border-color: color-mix(in srgb, var(--pg-work) 45%, transparent);
+}
+.skill-row.in-use.lit-new {
+  animation: tnaiSkillLight 1.6s ease-out;
+}
+@keyframes tnaiSkillLight {
+  0% {
+    background: color-mix(in srgb, var(--pg-work) 22%, transparent);
+  }
+  100% {
+    background: var(--pg-panel);
+  }
+}
+.skill-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.skill-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pg-idle);
+}
+.skill-row.in-use .skill-dot,
+.skill-dot.on {
+  background: var(--pg-work);
+} /* pulse: shared, 05-status-colors.css */
+.skill-title b {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pg-text);
+  font: 500 14px var(--pg-sans);
+}
+.skill-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--pg-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--pg-text-3);
+  font: 11px var(--pg-sans);
+  white-space: nowrap;
+}
+.skill-badge.scope {
+  color: var(--pg-text-2);
+}
+.skill-row[data-source='project'] .skill-badge.scope,
+.sk-detail[data-source='project'] .skill-badge.scope {
+  border-color: rgba(var(--pg-accent-rgb), 0.4);
+  color: var(--pg-accent-2);
+}
+.skill-row[data-source='seen'] .skill-badge.scope {
+  border-style: dashed;
+}
+.skill-badge.on {
+  border-color: transparent;
+  background: var(--pg-accent-soft);
+  color: var(--pg-accent-2);
+}
+.skill-badge.live {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-color: transparent;
+  background: color-mix(in srgb, var(--pg-work) 16%, transparent);
+  color: var(--pg-work);
+}
+.skill-badge.used {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 0;
+  padding: 0;
+  color: var(--pg-text-4);
+}
+.sk-flag {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--pg-accent-2);
+}
+.sk-flag em {
+  font: 500 11px var(--pg-mono);
+  font-style: normal;
+}
+.sk-flag.warn {
+  color: var(--pg-wait);
+}
+.sk-desc {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 2.9em;
+  color: var(--pg-text-3);
+  font: 12.5px/1.45 var(--pg-sans);
+}
+.sk-kw {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-height: 20px;
+}
+.skill-row .sk-kw {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.sk-kw span {
+  flex: none;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 8px;
+  border-radius: 6px;
+  background: var(--pg-panel-2);
+  color: var(--pg-text-3);
+  font: 11px/18px var(--pg-sans);
+}
+.sk-kw span.more {
+  color: var(--pg-text-4);
+}
+.sk-kw.mono span {
+  max-width: 100%;
+  font-family: var(--pg-mono);
+  font-size: 10.5px;
+}
+.sk-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 26px;
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--pg-line);
+}
+.skill-agents {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+.skill-agents:empty {
+  display: none;
+}
+.skill-agents > * + * {
+  margin-left: -6px;
+}
+.sk-who .sk-av {
+  width: 22px;
+  height: 22px;
+  font-size: 10.5px;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--av) 45%, transparent),
+    0 0 0 2px var(--pg-panel-solid);
+}
+.sk-every {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--pg-accent-soft);
+  color: var(--pg-accent-2);
+  font: 11px var(--pg-sans);
+  box-shadow: 0 0 0 2px var(--pg-panel-solid);
+}
+.sk-every > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.sk-foot > .skill-badge {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.skill-actions {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.skill-row:hover .skill-actions,
+.skill-row:focus-within .skill-actions,
+.skill-row[aria-selected='true'] .skill-actions {
+  opacity: 1;
+}
+.skill-actions button,
+.sk-x {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--pg-text-3);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.skill-actions button:hover,
+.sk-x:hover {
+  background: var(--pg-accent-soft);
+  color: var(--pg-text);
+}
+.skill-actions button[data-act='remove']:hover {
+  background: color-mix(in srgb, var(--pg-err) 14%, transparent);
+  color: var(--pg-err);
+}
+.sk-x.sm {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+}
+
+/* ---- overlaps: linked stacks ---- */
+.sk-stacks-note {
+  margin: 0 2px 12px;
+  color: var(--pg-text-3);
+  font: 12.5px/1.5 var(--pg-sans);
+}
+.sk-stacks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.sk-stack {
+  padding: 12px 12px 10px;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r);
+  background: var(--pg-panel);
+}
+.sk-stack > header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 2px 8px;
+  color: var(--pg-accent-2);
+}
+.sk-stack > header b {
+  color: var(--pg-text-2);
+  font: 500 12.5px var(--pg-sans);
+}
+.sk-link {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  color: var(--pg-text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.sk-link:hover {
+  background: var(--pg-panel-hover);
+}
+.sk-link[aria-pressed='true'] {
+  border-color: rgba(var(--pg-accent-rgb), 0.55);
+  background: var(--pg-accent-soft);
+}
+.sk-link:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.sk-link-dot {
+  position: relative;
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin-top: 4px;
+  border: 2px solid var(--pg-accent);
+  border-radius: 50%;
+  box-sizing: border-box;
+  background: var(--pg-panel-solid);
+}
+/* the link line joining a stack's members */
+.sk-stack .sk-link:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 14.25px;
+  top: 23px;
+  bottom: -12px;
+  width: 1.5px;
+  background: rgba(var(--pg-accent-rgb), 0.45);
+  pointer-events: none;
+}
+.sk-link-txt {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.sk-link-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.sk-link b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 500 13px var(--pg-sans);
+}
+.sk-link small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pg-text-3);
+  font: 12px var(--pg-sans);
+}
+.sk-link em {
+  color: var(--pg-accent-2);
+  font: 11.5px/1.4 var(--pg-sans);
+  font-style: normal;
+}
+
+/* ---- detail panel ---- */
+.sk-detail {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r);
+  background: var(--pg-panel);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  overflow: hidden;
+}
+.sk-detail[hidden] {
+  display: none;
+}
+.sk-d-head {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px 12px 12px 18px;
+  border-bottom: 1px solid var(--pg-line);
+}
+.sk-d-head > .skill-dot {
+  margin-top: 8px;
+}
+.sk-d-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.sk-d-name h2 {
+  flex: 1 0 100%;
+  min-width: 0;
+  margin: 0 0 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pg-text);
+  font: 500 18px/1.3 var(--pg-sans);
+}
+.sk-d-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 18px 18px;
+  scrollbar-width: thin;
+}
+.sk-d-desc {
+  margin: 0 0 14px;
+  color: var(--pg-text-2);
+  font: 13px/1.55 var(--pg-sans);
+}
+.sk-d-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.sk-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 11px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  color: var(--pg-text);
+  font: 12.5px var(--pg-sans);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s,
+    color 0.2s;
+}
+.sk-btn:hover {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+}
+.sk-btn.primary {
+  border-color: rgba(var(--pg-accent-rgb), 0.55);
+  background: rgba(var(--pg-accent-rgb), 0.22);
+}
+.sk-btn.primary:hover {
+  background: rgba(var(--pg-accent-rgb), 0.32);
+}
+.sk-btn.danger {
+  color: var(--pg-err);
+}
+.sk-btn.danger:hover {
+  border-color: var(--pg-err);
+  background: color-mix(in srgb, var(--pg-err) 12%, transparent);
+}
+.sk-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 11px 0 8px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  color: var(--pg-text);
+  font: 12.5px var(--pg-sans);
+  cursor: pointer;
+}
+.sk-switch:hover {
+  border-color: var(--pg-accent);
+}
+.sk-switch i {
+  position: relative;
+  width: 26px;
+  height: 15px;
+  border-radius: 999px;
+  background: var(--pg-line-2);
+  transition: background 0.2s;
+}
+.sk-switch i::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--pg-text-2);
+  transition:
+    transform 0.2s var(--pg-ease),
+    background 0.2s;
+}
+.sk-switch[aria-checked='true'] i {
+  background: var(--pg-accent);
+}
+.sk-switch[aria-checked='true'] i::after {
+  transform: translateX(11px);
+  background: var(--pg-on-accent);
+}
+.sk-confirm {
+  margin: -6px 0 16px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--pg-err) 40%, transparent);
+  border-radius: var(--pg-r-sm);
+  background: color-mix(in srgb, var(--pg-err) 8%, transparent);
+}
+.sk-confirm p {
+  margin: 0 0 10px;
+  color: var(--pg-text);
+  font: 12.5px/1.5 var(--pg-sans);
+}
+.sk-confirm div {
+  display: flex;
+  gap: 6px;
+}
+.sk-d-sec {
+  margin-top: 18px;
+}
+.sk-d-sec h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  color: var(--pg-text-4);
+  font: 500 11px var(--pg-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.sk-d-users {
+  display: grid;
+  gap: 2px;
+}
+.sk-d-user {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 34px;
+  padding: 3px 6px;
+  border-radius: var(--pg-r-sm);
+}
+.sk-d-user:hover {
+  background: var(--pg-panel-hover);
+}
+.sk-d-user b {
+  flex: 0 0 auto;
+  max-width: 62%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 500 13px var(--pg-sans);
+}
+.sk-d-user small {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pg-text-4);
+  font: 11.5px var(--pg-sans);
+}
+.sk-d-user.live small {
+  color: var(--pg-work);
+}
+.sk-d-user .sk-x {
+  margin-left: auto;
+}
+.sk-d-facts {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+.sk-d-facts > div {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+}
+.sk-d-facts dt {
+  color: var(--pg-text-4);
+  font: 12px var(--pg-sans);
+}
+.sk-d-facts dd {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  color: var(--pg-text-2);
+  font: 12.5px/1.45 var(--pg-sans);
+}
+.sk-d-facts code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pg-text-3);
+  font: 11.5px var(--pg-mono);
+  direction: rtl;
+  text-align: left;
+}
+.sk-d-warn {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 6px;
+  color: var(--pg-wait);
+  font: 12.5px/1.5 var(--pg-sans);
+}
+.sk-d-warn .tn-ico {
+  margin-top: 2px;
+}
+.sk-d-links {
+  display: grid;
+  gap: 2px;
+}
+.sk-d-note {
+  margin: 6px 0 0;
+  color: var(--pg-text-4);
+  font: 12px/1.5 var(--pg-sans);
+}
+/* rendered SKILL.md (44's escaped light markdown) */
+.sk-md {
+  padding: 4px 14px 6px;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r-sm);
+  background: rgba(0, 0, 0, 0.14);
+  color: var(--pg-text-2);
+  font: 13px/1.6 var(--pg-sans);
+  overflow-wrap: anywhere;
+}
+.sk-md h1,
+.sk-md h2,
+.sk-md h3,
+.sk-md h4 {
+  margin: 14px 0 6px;
+  color: var(--pg-text);
+  font: 500 14px/1.35 var(--pg-sans);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.sk-md h1 {
+  font-size: 16px;
+}
+.sk-md p,
+.sk-md ul,
+.sk-md ol,
+.sk-md blockquote {
+  margin: 8px 0;
+}
+.sk-md ul,
+.sk-md ol {
+  padding-left: 20px;
+}
+.sk-md li {
+  margin: 3px 0;
+}
+.sk-md code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--pg-panel-2);
+  color: var(--pg-accent-2);
+  font: 12px var(--pg-mono);
+}
+.sk-md pre {
+  margin: 8px 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  font: 12px/1.5 var(--pg-mono);
+}
+.sk-md pre code {
+  padding: 0;
+  background: none;
+  color: var(--pg-text-2);
+}
+.sk-md blockquote {
+  padding-left: 10px;
+  border-left: 2px solid var(--pg-line-2);
+  color: var(--pg-text-3);
+}
+.sk-md hr {
+  border: 0;
+  border-top: 1px solid var(--pg-line);
+}
+.sk-md b {
+  color: var(--pg-text);
+  font-weight: 600;
+}
+
+/* detail open/close: a short slide + fade (TnaiMotion.swap(…, 'skill'); plain swap under reduced motion, see 100) */
+html.vt-skill .sk-detail {
+  view-transition-name: sk-detail;
+}
+html.vt-skill::view-transition-old(root),
+html.vt-skill::view-transition-new(root) {
+  animation: none;
+}
+html.vt-skill::view-transition-new(sk-detail):only-child {
+  animation: sk-in 200ms var(--pg-ease) both;
+}
+html.vt-skill::view-transition-old(sk-detail):only-child {
+  animation: sk-out 140ms var(--pg-ease) both;
+}
+html.vt-skill::view-transition-group(sk-detail) {
+  animation-duration: 200ms;
+  animation-timing-function: var(--pg-ease);
+}
+@keyframes sk-in {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+}
+@keyframes sk-out {
+  to {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skill-row.in-use.lit-new {
+    animation: none;
+  }
+  .skill-row,
+  .sk-switch i::after {
+    transition: none;
+  }
+}
+
+/* File-import overlay: only while files from Explorer are dragged over the page (sized to the page by the dragover handler). */
+.skills-drop {
+  position: fixed;
+  z-index: 30;
+  display: none;
+  place-items: center;
+  padding: 16px;
+  border: 1.5px dashed var(--pg-accent);
+  border-radius: var(--pg-r);
+  background: var(--pg-accent-soft);
+  backdrop-filter: blur(12px);
+  color: var(--pg-text-2);
+  font: 12px/1.5 var(--pg-sans);
+  text-align: center;
+  pointer-events: none;
+}
+.skills-drop b {
+  display: block;
+  color: var(--pg-text);
+  font: 600 13px var(--pg-sans);
+}
+.skills-page.file-over .skills-drop {
+  display: grid;
+}
+
+/* ---- Apply menu (shared with agent cards, 11) ---- */
+.tnai-skill-menu {
+  position: fixed;
+  z-index: 9000;
+  min-width: 240px;
+  max-width: 320px;
+  max-height: 340px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel-solid);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  font: 12.5px var(--pg-sans);
+}
+.tnai-skill-menu > small {
+  display: block;
+  padding: 6px 8px 7px;
+  color: var(--pg-text-3);
+  font: 11.5px/1.45 var(--pg-sans);
+}
+.tnai-skill-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--pg-text);
+  font: 12.5px var(--pg-sans);
+  text-align: left;
+  cursor: pointer;
+}
+.tnai-skill-menu button:hover:not(:disabled),
+.tnai-skill-menu button:focus-visible {
+  background: var(--pg-accent-soft);
+  outline: none;
+}
+.tnai-skill-menu button:disabled {
+  color: var(--pg-text-4);
+  cursor: not-allowed;
+}
+.tnai-skill-menu button > span:not(.sk-av) {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tnai-skill-menu button em {
+  flex: none;
+  color: var(--pg-accent-2);
+  font-style: normal;
+  font-size: 11.5px;
+}
+.tnai-skill-menu .sk-av {
+  width: 22px;
+  height: 22px;
+  font-size: 10.5px;
+}
+
+@media (max-width: 1180px) {
+  .sk-body.has-detail {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
+  .sk-search {
+    flex-basis: 260px;
+  }
+  .skills-page .agent-page-actions .button span {
+    display: none;
+  }
+  .skills-page .agent-page-actions .button {
+    padding: 0 9px;
+  }
+}
+
+/* ---- Sections as soft surfaces (improve the Skills page layout, playing off Settings › Accounts) ----
+   Each group (Imported, From this project, Your Claude skills) is one surface like an Accounts tool card: its name, count and what it
+   is sit in a left column; its skills sit beside it as plain entries with no box of their own, set apart by one faint line on the left.
+   Selected and in-use show as a colored left line plus a soft fill. Same nodes, same clicks, same drag and drop. */
+.skills-group {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 6px 18px;
+  align-items: start;
+  margin-bottom: 14px;
+  padding: 18px;
+  border-radius: var(--pg-r);
+  background:
+    radial-gradient(90% 140% at 0 0, var(--pg-accent-soft), transparent 55%), var(--pg-panel);
+}
+.skills-group > header {
+  grid-column: 1;
+  grid-row: 1 / span 3;
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 6px;
+  margin: 0;
+}
+.skills-group > header b {
+  font: 500 15px/1.25 var(--pg-sans);
+  white-space: normal;
+}
+.skills-group > header span {
+  padding: 1px 8px;
+  border-radius: 7px;
+  background: var(--pg-panel-2);
+  color: var(--pg-text-2);
+  font: 500 10.5px var(--pg-mono);
+}
+.skills-group > header span::after {
+  content: ' skills';
+}
+.skills-group > header small {
+  flex: none;
+  font: 12px/1.5 var(--pg-sans);
+  color: var(--pg-text-3);
+}
+.skills-group > :not(header) {
+  grid-column: 2;
+  min-width: 0;
+}
+.skills-group .sk-grid {
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 4px 14px;
+}
+.skills-group .skill-row {
+  padding: 9px 10px 9px 14px;
+  border: 0;
+  border-radius: 0 10px 10px 0;
+  background: none;
+  box-shadow: -1px 0 0 var(--pg-line-2);
+  contain-intrinsic-size: auto 112px;
+}
+.skills-group .skill-row:hover {
+  background: var(--pg-panel);
+}
+.skills-group .skill-row[aria-selected='true'] {
+  background: var(--pg-accent-soft);
+  box-shadow: -2px 0 0 var(--pg-accent);
+}
+.skills-group .skill-row.in-use {
+  box-shadow: -2px 0 0 var(--pg-work);
+}
+.skills-group .skill-row .sk-desc {
+  min-height: 0;
+}
+.skills-group .skills-empty {
+  padding: 2px 0;
+}
+.sk-body.has-detail .skills-group {
+  grid-template-columns: minmax(0, 1fr);
+}
+.sk-body.has-detail .skills-group > header {
+  grid-row: auto;
+  grid-auto-flow: column;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.sk-body.has-detail .skills-group > :not(header) {
+  grid-column: 1;
+}
+@media (max-width: 1180px) {
+  .skills-group {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .skills-group > header {
+    grid-row: auto;
+  }
+  .skills-group > :not(header) {
+    grid-column: 1;
+  }
+}
+.skills-group > header span:empty {
+  display: none;
+}
+.skills-group .skill-row .sk-kw:empty {
+  display: none;
+}
+
+/* ---- No boxes inside the sections (boxes inside boxes read as clutter) ----
+   Inside a group nothing draws a line or a filled shape of its own: no line beside a skill, no rule above its last-used line, keywords
+   and the scope label are plain text, and the agents in the "Drop on an agent" strip are plain entries. Space sets things apart;
+   only the selected or in-use skill, and the thing under the pointer, get a soft fill. */
+.skills-group .sk-grid {
+  gap: 14px 26px;
+}
+.skills-group .skill-row {
+  padding: 8px 10px;
+  border-radius: 10px;
+  box-shadow: none;
+}
+.skills-group .skill-row[aria-selected='true'] {
+  background: var(--pg-accent-soft);
+  box-shadow: none;
+}
+.skills-group .skill-row.in-use {
+  background: color-mix(in srgb, var(--pg-work) 9%, transparent);
+  box-shadow: none;
+}
+.skills-group .sk-foot {
+  min-height: 0;
+  margin-top: 2px;
+  padding-top: 0;
+  border-top: 0;
+}
+.skills-group .skill-row .sk-kw {
+  gap: 0 10px;
+  min-height: 0;
+}
+.skills-group .skill-row .sk-kw span {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--pg-text-4);
+}
+.skills-group .skill-row .sk-kw span.new {
+  color: var(--pg-accent-2);
+} /* "New · agent-written": an agent saved it and its details were not opened yet (18) */
+.skills-group .skill-row .skill-badge.scope {
+  padding: 0;
+  border: 0;
+  color: var(--pg-text-4);
+}
+.skills-group .skill-row[data-source='project'] .skill-badge.scope {
+  color: var(--pg-accent-2);
+}
+.skills-page .sk-agents {
+  padding-left: 4px;
+  background: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.skills-page .skills-target {
+  background: none;
+}
+.skills-page button.skills-target:hover {
+  background: var(--pg-panel-hover);
+}
+
+/* ---- The agents, as a section like the skill groups (redesign the agent list at the top) ----
+   Was one row of pills that scrolled sideways. Now the same shape as a skill group: "Agents" and what you can do with them on the
+   left, every agent beside it as a plain entry in a wrapping grid (no sideways scroll; more than three rows scroll inside the section). */
+.skills-page .sk-agents {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 6px 18px;
+  align-items: start;
+  padding: 18px;
+  border-radius: var(--pg-r);
+  background:
+    radial-gradient(90% 140% at 0 0, var(--pg-accent-soft), transparent 55%), var(--pg-panel);
+}
+.skills-page .sk-agents-label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 7px;
+  color: var(--pg-text);
+  font: 500 15px/1.25 var(--pg-sans);
+}
+.skills-page .sk-agents-label::after {
+  content: 'Click an agent to choose its skills, or drag a skill onto it.';
+  grid-column: 1/-1;
+  color: var(--pg-text-3);
+  font: 12px/1.5 var(--pg-sans);
+}
+.skills-page .skills-agent-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 4px 14px;
+  max-height: 132px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.skills-page .skills-target {
+  max-width: none;
+  width: 100%;
+  height: 40px;
+  padding: 0 10px 0 6px;
+  border-radius: 10px;
+  background: none;
+}
+.skills-page .skills-target .sk-t-txt {
+  flex: 1 1 auto;
+}
+.sk-body.has-detail ~ * .sk-agents,
+.skills-page:has(.sk-body.has-detail) .sk-agents {
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (max-width: 1180px) {
+  .skills-page .sk-agents {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

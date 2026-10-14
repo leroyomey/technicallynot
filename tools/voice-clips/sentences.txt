@@ -1,0 +1,15 @@
+# Sentences for the real-voice test clips (tools/voice-regress.js). One per line; lines starting with # are skipped.
+# Read each one as its own voice prompt in a dev copy started with TNAI_VOICE_KEEP=1: once in a normal voice, once softly,
+# once from further away. `node tools/voice-regress.js label` then gives every kept clip the line it matches.
+Open the settings page and change the voice model to accurate.
+Ask Claude to fix the scroll bug in the terminal panel.
+Run the tests again and show me only the failing ones.
+Create a new file called release notes in the docs folder.
+Send this to a new agent and tell it to review the changes.
+The preview should open on the right side of the window.
+Please summarize what you changed and what is still open.
+Do not commit anything until every agent has finished.
+Make the button a little smaller and move it to the left.
+Check the project folder for files that are no longer used.
+Start the dev server and show the page in live preview.
+What is the fastest way to make this work on a slow laptop?

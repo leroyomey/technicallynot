@@ -1,0 +1,3 @@
+# Text files keep Unix line ends on every machine. Without this, git on Windows hands them out
+# with Windows line ends, and the test that compares a copied-in library with its checksum fails.
+* text=auto eol=lf

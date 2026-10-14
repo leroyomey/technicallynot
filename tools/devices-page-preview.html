@@ -1,0 +1,50 @@
+<!doctype html>
+<!-- Technically Not · the Devices page outside the app, with SAMPLE DATA, to look at src/scripts/111-devices-page.js and
+     src/styles/26-devices-purple.css before they are wired into index.html. Serve the project folder and open
+     /tools/devices-page-preview.html?s=on  (s = off | on | paused | stopping | nostore). The bridge below is a stand-in for
+     window.tnaiNative.remote: same calls and state shape as desktop/remote-service.js, nothing is connected. -->
+<html lang="en" data-theme="dark" data-accent="purple"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Devices page · sample data</title>
+<base href="../">
+<link rel="stylesheet" href="src/styles/07-purple-glass.css"><link rel="stylesheet" href="src/styles/26-devices-purple.css">
+<style>html,body{height:100%}body{margin:0;display:flex;flex-direction:column;background:radial-gradient(1100px 700px at 12% 0%,color-mix(in srgb,var(--pg-accent) 22%,var(--pg-bg)) 0%,var(--pg-bg) 62%)}
+.sample{flex:none;padding:6px 16px;background:#000;color:#fff;font:12px system-ui}#page{flex:1;min-height:0}</style></head>
+<body><div class="sample"><b>SAMPLE DATA · not the app</b> · ?s=off | on | paused | stopping | nostore</div><div id="page"></div>
+<script>
+(() => {
+  const s = new URLSearchParams(location.search).get('s') || 'on', t = Date.now(), listeners = [];
+  const pc = (id, name, extra) => ({ id, name, since: t - 864e5, online: true, session: true, state: 'live', heard: t - 6e4, items: [], detail: true, update: false, asks: [], keepsAsking: 0, ...extra });
+  const st = { available: s !== 'nostore', problem: s === 'nostore' ? 'no_storage' : null, on: !['off', 'nostore'].includes(s), connection: 'online', reason: null, self: { id: 'a1b2c3d4-0000', name: 'Desktop · Windows' },
+    computers: [pc('9f8e7d6c-1111', 'Laptop · Windows', { items: [{ id: 'permission:4', kind: 'permission', agent: 'Moss', since: t - 12e4, inferred: false, detail: 'Bash: npm install in the web project' }, { id: 'menu:6', kind: 'menu', agent: 'Fern', since: t - 6e4, inferred: true }] }),
+      pc('5a4b3c2d-2222', 'Work PC · Windows', { online: false, session: false, state: 'offline', heard: t - 3 * 36e5, detail: false })],
+    others: [{ id: '77aa88bb-3333', name: 'Spare laptop · Windows', lastSeen: t - 36e5, online: false }], pairing: null, ended: null, stopping: false, waiting: [],
+    log: [{ at: t - 12e4, kind: 'saw', name: 'Laptop · Windows', agent: 'Moss' }, { at: t - 864e5, kind: 'paired', name: 'Laptop · Windows' }, { at: t - 3 * 864e5, kind: 'paired', name: 'Work PC · Windows' }] };
+  if (s === 'paused') Object.assign(st.computers[0], { state: 'paused', items: [], asks: [{ id: '5a4b3c2d-2222', name: 'Work PC · Windows', kind: 'forget' }] });
+  if (s === 'stopping') { st.stopping = true; st.waiting = [{ r: 'r1', kind: 'stop', status: 'sent', to: '5a4b3c2d-2222', toName: 'Work PC · Windows', about: null, aboutName: '' }]; }
+  const push = () => listeners.forEach(fn => fn(structuredClone(st))), ok = () => { push(); return { ok: true, value: structuredClone(st) }; };
+  const find = id => st.computers.find(c => c.id === id);
+  window.tnaiNative = { remote: {
+    on: fn => { listeners.push(fn); return () => {}; },
+    state: async () => ok(), refresh: async () => ok(),
+    setOn: async v => { st.on = v; return ok(); }, setName: async v => { st.self.name = v; return ok(); },
+    setDetail: async (id, v) => { find(id).detail = v; return ok(); },
+    pair: async id => { const o = st.others.find(x => x.id === id); st.ended = null; st.pairing = { role: 'a', state: 'show', shows: '482917', peer: id, name: o.name }; return ok(); },
+    pairAny: async () => { st.ended = null; st.pairing = { role: 'b', state: 'wait', shows: null, peer: null, name: '' }; setTimeout(() => { if (st.pairing) { Object.assign(st.pairing, { state: 'enter', peer: '77aa88bb-3333', name: 'Spare laptop · Windows' }); push(); } }, 1500); return ok(); },
+    enterCode: async code => {
+      if (code === '000000') return { ok: true, value: { ok: false, left: 2 } };
+      const p = st.pairing, o = st.others.find(x => x.id === p.peer);
+      if (p.role === 'b' && p.state === 'enter') { Object.assign(p, { state: 'done', shows: '305518' }); push(); return { ok: true, value: { ok: true } }; }
+      st.pairing = null; st.others = st.others.filter(x => x !== o); st.computers.push(pc(o.id, o.name)); st.ended = { reason: 'paired', peer: o.id, name: o.name }; st.log.unshift({ at: Date.now(), kind: 'paired', name: o.name }); push();
+      return { ok: true, value: { ok: true } };
+    },
+    cancelPairing: async () => { st.pairing = null; st.ended = null; return ok(); }, clearEnded: async () => { st.ended = null; return ok(); },
+    forget: async id => { const c = find(id); st.computers = st.computers.filter(x => x !== c); st.log.unshift({ at: Date.now(), kind: 'forgot', name: c.name }); return ok(); },
+    choose: async (id, choice) => { const c = find(id); if (choice === 'forget') st.computers = st.computers.filter(x => x !== c); else Object.assign(c, { state: 'live', asks: [] }); st.log.unshift({ at: Date.now(), kind: choice === 'keep' ? 'kept' : 'forgot', name: c.name }); return ok(); },
+    stopEverywhere: async () => { st.stopping = true; st.waiting = st.computers.map((c, i) => ({ r: 'r' + i, kind: 'stop', status: 'sent', to: c.id, toName: c.name, about: null, aboutName: '' })); return ok(); },
+    finishAnyway: async () => { Object.assign(st, { stopping: false, waiting: [], computers: [], on: false }); return ok(); }, dismiss: async r => { st.waiting = st.waiting.filter(w => w.r !== r); return ok(); },
+  } };
+})();
+</script>
+<script src="src/scripts/111-devices-page.js"></script>
+<script>TnaiDevices.mount(document.getElementById('page'));</script>
+</body></html>

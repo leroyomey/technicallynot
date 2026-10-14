@@ -1,0 +1,44 @@
+/* Technically Not · 09-agents-purple.css — the Agents page in the purple glass design.
+   Owns everything on the page (list, detail header, live terminal, side sections, queue); 25-agents-page.js only builds the markup. Tokens: --pg-* from 07. Loaded with data-pg (32 leaves it alone).
+   Rules carry the #agentsPage prefix so they win over the older sheets (04/05) without !important. */
+
+/* ---------------------------------------------------------------- page frame (moved here from 25) */
+.layout.agents-mode {
+  grid-template-columns: var(--nav-width, 205px) minmax(0, 1fr);
+}
+.layout.agents-mode > .sidebar {
+  grid-column: 1;
+  grid-row: 1;
+}
+.layout.agents-mode > .agents-page {
+  display: flex;
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.layout.agents-mode > .overview-view,
+.layout.agents-mode > .workspace,
+.layout.agents-mode > .preview,
+.layout.agents-mode > .tnai-resizer {
+  display: none;
+}
+.agents-page {
+  display: none;
+  flex-direction: column;
+  padding: var(--page-pad);
+  background: transparent;
+  overflow: hidden;
+}
+
+.ap-term-parked {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  contain: strict;
+  pointer-events: none;
+}

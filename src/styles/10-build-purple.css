@@ -1,0 +1,136 @@
+/* Technically Not · 10-build-purple.css — The extra terminal view (33, used by the Live preview page's terminal drawer and pop-out) in the purple glass design: status avatar dot, badge, terminal body and its start/resume bar, the pop-out's "Show window / Bring back" buttons. What is left of the Build workspace page's sheet (page removed 2026-10-01). Tokens only (--pg-*); sheet carries data-pg so the remap engine skips it. Loaded after 07. */
+/* header avatar + status dot (33) */
+:root:not(#pg) .bw-av {
+  position: relative;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font: 600 10.5px var(--pg-sans);
+  color: #160f2a;
+  background: linear-gradient(135deg, rgb(var(--pg-acc2)), rgb(var(--pg-au1)));
+}
+:root:not(#pg) .bw-av[hidden] {
+  display: none;
+}
+:root:not(#pg) .bw-sdot {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pg-ready);
+  box-shadow: 0 0 0 2px var(--pg-panel-solid);
+}
+:root:not(#pg) .bw-sdot::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    circle,
+    transparent calc(var(--pg-ring) - 2px),
+    currentColor calc(var(--pg-ring) - 1.5px),
+    currentColor calc(var(--pg-ring) - 0.5px),
+    transparent var(--pg-ring)
+  );
+}
+:root:not(#pg) .bw-sdot[data-s='work'] {
+  color: var(--pg-work);
+}
+:root:not(#pg) .bw-sdot[data-s='wait'] {
+  color: var(--pg-wait);
+}
+:root:not(#pg) .bw-sdot[data-s='err'] {
+  color: var(--pg-err);
+}
+:root:not(#pg) .bw-sdot[data-s='work']::after,
+:root:not(#pg) .bw-sdot[data-s='wait']::after,
+:root:not(#pg) .bw-sdot[data-s='err']::after {
+  animation: pgRing 2.2s ease-out infinite;
+}
+:root:not(#pg) .bw-sdot[data-s='work'] {
+  background: var(--pg-work);
+}
+:root:not(#pg) .bw-sdot[data-s='wait'] {
+  background: var(--pg-wait);
+}
+:root:not(#pg) .bw-sdot[data-s='err'] {
+  background: var(--pg-err);
+}
+:root:not(#pg) .bw-sdot[data-s='idle'] {
+  background: var(--pg-idle);
+}
+@media (prefers-reduced-motion: reduce) {
+  :root:not(#pg) .bw-sdot::after {
+    animation: none !important;
+  }
+}
+:root:not(#pg) .bw-badge {
+  padding: 2px 8px;
+  border-radius: 7px;
+  background: var(--pg-panel-2);
+  color: var(--pg-text-3);
+  font: 400 11px var(--pg-sans);
+}
+:root:not(#pg) .bw-badge[data-tone='live'] {
+  background: var(--pg-accent-soft);
+  color: var(--pg-accent-2);
+}
+/* terminal body and bar */
+:root:not(#pg) .bw-term {
+  background: transparent;
+}
+:root:not(#pg) .bw-term-bar {
+  border-top: 1px solid var(--pg-line);
+  background: var(--pg-panel-2);
+  color: var(--pg-text-3);
+  font: 11.5px var(--pg-sans);
+}
+:root:not(#pg) .bw-term-bar b {
+  color: var(--pg-text);
+}
+:root:not(#pg) .bw-term-bar[data-tone='error'] b {
+  color: var(--pg-err);
+}
+:root:not(#pg) .bw-term-bar small {
+  color: var(--pg-text-4);
+}
+:root:not(#pg) .bw-term-bar button,
+:root:not(#pg) .bw-term-new button {
+  height: auto;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--pg-line-2);
+  background: transparent;
+  color: var(--pg-text);
+  font: 400 11.5px var(--pg-sans);
+}
+:root:not(#pg) .bw-term-bar button:hover,
+:root:not(#pg) .bw-term-new button:hover {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+}
+:root:not(#pg) .bw-term-bar button.primary {
+  background: rgba(189, 99, 255, 0.22);
+  border-color: rgba(189, 99, 255, 0.5);
+  color: var(--pg-text);
+}
+:root:not(#pg) .bw-away button {
+  height: auto;
+  padding: 4px 10px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 8px;
+  background: var(--pg-panel-2);
+  color: var(--pg-text-2);
+  font: 11.5px var(--pg-sans);
+}
+:root:not(#pg) .bw-away button:hover {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+}

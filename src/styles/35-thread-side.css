@@ -1,0 +1,602 @@
+/* Technically Not · the Threads page's side column with its tabs
+   (src/scripts/131-thread-side.js): Files, the project's file rail moved in as it is, Terminal,
+   the user's own plain terminal (136), and Helpers, the panel of 123. The column is the frame's third island (27 gives it its surface), so nothing
+   here draws a box, a line or a second background: the parts are set apart by space. */
+
+/* ---------------------------------------------------------------- the column and its top row */
+.tnt-sidebox {
+  --inset: 16px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.tnt-sidebox > [hidden],
+.tnt-sidebox-head > [hidden] {
+  display: none !important;
+}
+
+/* The same row as the helpers' own head had: one height with a title or with the tabs. */
+.tnt-sidebox-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 14px var(--inset) 8px;
+}
+
+/* The tabs: the switch of the thread's top row (30, Readable and Terminal). Files and Terminal are
+   always there; Helpers only while the open thread has helpers. */
+.tnt-sidebox-tabs > [hidden] {
+  display: none !important;
+}
+.tnt-sidebox-tabs {
+  flex: none;
+  display: inline-flex;
+  box-sizing: border-box;
+  margin-right: auto;
+  padding: 3px;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-sidebox-tabs button:not(#lp) {
+  box-sizing: border-box;
+  width: auto;
+  min-width: 0;
+  height: 24px;
+  margin: 0;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--pg-text-3);
+  font: 500 12.5px/1 var(--pg-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-sidebox-tabs button:not(#lp):hover {
+  color: var(--pg-text);
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-sidebox-tabs button:not(#lp)[aria-selected='true'] {
+  background: var(--pg-panel-2);
+  box-shadow: inset 0 0 0 1px var(--pg-line-2);
+  color: var(--pg-text);
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-sidebox-tabs button:not(#lp):focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+
+/* Close: the icon button of the thread's top row. */
+html.tnt-on:not(#tnt):not(#pg) .tnt-sidebox-close:not(#lp) {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  box-sizing: border-box;
+  width: 30px;
+  height: 30px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  box-shadow: none;
+  color: var(--pg-text-3);
+  cursor: pointer;
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-sidebox-close:not(#lp):hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-sidebox-close:not(#lp):focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+.tnt-sidebox-close svg {
+  display: block;
+}
+
+.tnt-sidebox-part {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The helpers' panel brings a head of its own (its name and a close button). The column's top row
+   says and does both, so that head is not shown twice. */
+.tnt-sidebox .tnt-side-panel > .tnt-side-head {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- Files: the file rail, moved in */
+/* The rail keeps its own parts and their look (07, 12, 14). Here it only gets the island's inset
+   in place of the edge line and the padding it had beside the old page, and it scrolls as one. */
+html.tnt-on:not(#tnt):not(#pg) .tnt-sidefiles > .repository-rail {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0 var(--inset) 14px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  overflow: hidden auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+
+/* The column is named Files in its top row, so the rail's own title is not said again; the line
+   under it (the project and its folder) stays. */
+html.tnt-on:not(#tnt):not(#pg) .tnt-sidefiles .repository-rail-head strong {
+  display: none;
+}
+
+/* A row is a name: the kind and the path beside it have no room in a column (the path is the
+   row's tip). No rule between rows and none above the note: space sets them apart. */
+html.tnt-on:not(#tnt):not(#pg) .tnt-sidefiles .repo-row {
+  grid-template-columns: 16px 18px minmax(0, 1fr) !important;
+  border-bottom: 0 !important;
+  border-radius: 8px !important;
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-sidefiles .repo-row > :is(.repo-file-kind, .repo-file-path) {
+  display: none !important;
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-sidefiles .repository-rail-note {
+  flex: none;
+  border-top: 0;
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-sidefiles .repo-rail-search {
+  box-sizing: border-box;
+  width: 100%;
+
+  /* 6 px of air over it: the folder line's "..." button touched its top edge */
+  margin-top: 6px;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+/* ---------------------------------------------------------------- Files: one file, read here */
+/* A file takes the tree's place in the column; the tree stays as it was underneath and comes back
+   with the button at the left of the file's name. No box, line or fill of its own. */
+.tnt-sidefiles.tnt-file-open > .repository-rail {
+  display: none !important;
+}
+.tnt-fileview {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 var(--inset) 14px;
+}
+.tnt-fileview[hidden] {
+  display: none;
+}
+.tnt-fileview-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding-bottom: 8px;
+}
+.tnt-fileview-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pg-text);
+  font: 500 13px/30px var(--pg-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Back, and the view-only window: the icon button of the column's top row. */
+html.tnt-on:not(#tnt):not(#pg) .tnt-fileview-head button:not(#lp) {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  box-sizing: border-box;
+  width: 30px;
+  height: 30px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  box-shadow: none;
+  color: var(--pg-text-3);
+  cursor: pointer;
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-fileview-head button:not(#lp):hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-fileview-head button:not(#lp):focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+.tnt-fileview-head svg {
+  display: block;
+}
+.tnt-fileview-note {
+  flex: none;
+  margin: 0 0 8px;
+  color: var(--pg-text-3);
+  font: 400 12.5px/1.5 var(--pg-sans);
+}
+.tnt-fileview-text {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+  color: var(--pg-text-2);
+  font: 400 12px/1.6 var(--pg-mono);
+
+  /* long lines go on to the next row, so all of a file's text can be read in the column without
+     scrolling sideways (it was cut off at the right edge) */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 2;
+  user-select: text;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+.tnt-fileview-text[hidden] {
+  display: none;
+}
+.tnt-fileview-text:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+
+/* ---------------------------------------------------------------- Details: the open thread's agent */
+/* The part is 139's and brings its own look (41). Only the line for "no thread open" is here. */
+.tnt-sidedetails-none {
+  flex: none;
+  margin: 0;
+  padding: 0 var(--inset);
+  color: var(--pg-text-3);
+  font: 400 12.5px/1.5 var(--pg-sans);
+}
+.tnt-sidedetails-none[hidden] {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- Terminal: the user's own */
+/* The one plain terminal (136), drawn on the island itself like the thread's Terminal view (29): no
+   box, no line, no fill of its own. */
+.tnt-sideterm {
+  box-sizing: border-box;
+  padding: 0 var(--inset) 14px;
+}
+.tnt-ownterm {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.tnt-ownterm-box {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.tnt-ownterm-host {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.tnt-ownterm-box .xterm {
+  height: 100%;
+}
+.tnt-ownterm-box .xterm-viewport {
+  background: transparent !important;
+}
+
+/* A command mark (136): one small dot at the right end of the row a command was typed on. Quiet
+   when the command worked, the error color when it failed. */
+.tnt-ownterm-mark::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pg-text-4);
+}
+.tnt-ownterm-mark-failed::after {
+  background: var(--pg-err);
+}
+
+/* The row of controls over the terminal (147): the look of a file's head row in this column, the
+   shell's name where the file's name stands, the folder beside it, then the icon buttons. */
+.tnt-ownterm-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding-bottom: 4px;
+}
+.tnt-ownterm-shell {
+  flex: none;
+  color: var(--pg-text);
+  font: 500 13px/30px var(--pg-sans);
+  white-space: nowrap;
+}
+/* The shell's name is its picker where there is more than one shell: the same words, a small
+   arrow, and the list itself laid unseen over both so a press or the keyboard opens it. */
+.tnt-ownterm-shellbox {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: var(--pg-r-sm);
+  color: var(--pg-text-3);
+}
+.tnt-ownterm-shellbox select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  font: 400 13px var(--pg-sans);
+  cursor: pointer;
+  appearance: none;
+}
+.tnt-ownterm-shellbox option {
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+}
+.tnt-ownterm-shellbox:focus-within {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 2px;
+}
+.tnt-ownterm-oneshell select,
+.tnt-ownterm-oneshell svg {
+  display: none;
+}
+.tnt-ownterm-folder {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pg-text-3);
+  font: 400 12px/30px var(--pg-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html.tnt-on:not(#tnt):not(#pg)
+  .tnt-ownterm
+  :is(.tnt-ownterm-row, .tnt-ownterm-port)
+  button:not(#lp) {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  box-sizing: border-box;
+  width: 30px;
+  height: 30px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  box-shadow: none;
+  color: var(--pg-text-3);
+  cursor: pointer;
+}
+html.tnt-on:not(#tnt):not(#pg)
+  .tnt-ownterm
+  :is(.tnt-ownterm-row, .tnt-ownterm-port)
+  button:not(#lp):hover,
+html.tnt-on:not(#tnt):not(#pg) .tnt-ownterm-row button:not(#lp)[aria-pressed='true'] {
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+}
+/* under the pointer only; the pressed or chosen state keeps its own surface */
+html.tnt-on:not(#tnt):not(#pg)
+  .tnt-ownterm
+  :is(.tnt-ownterm-row, .tnt-ownterm-port)
+  button:not(#lp):hover {
+  background: var(--pg-panel-hover);
+}
+html.tnt-on:not(#tnt):not(#pg)
+  .tnt-ownterm
+  :is(.tnt-ownterm-row, .tnt-ownterm-port, .tnt-ownterm-ports)
+  button:not(#lp):focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+.tnt-ownterm-row svg,
+.tnt-ownterm-ports svg {
+  display: block;
+}
+
+/* Ports: one line that unfolds to the addresses Live preview knows. No box and no rule: the line
+   is words, and the rows under it are set in by space. */
+.tnt-ownterm-ports {
+  flex: none;
+  min-width: 0;
+  padding-bottom: 6px;
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-ownterm-ports-head:not(#lp) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  width: auto;
+  min-width: 0;
+  height: 24px;
+  margin: 0;
+  padding: 0 6px 0 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--pg-text-3);
+  font: 500 12.5px/1 var(--pg-sans);
+  cursor: pointer;
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-ownterm-ports-head:not(#lp):hover {
+  color: var(--pg-text);
+}
+.tnt-ownterm-ports-head em {
+  font-style: normal;
+  font-family: var(--pg-mono);
+  font-size: 11.5px;
+}
+.tnt-ownterm-ports-head svg {
+  transition: transform 0.15s;
+}
+.tnt-ownterm-ports-head[aria-expanded='true'] svg {
+  transform: rotate(90deg);
+}
+.tnt-ownterm-ports-list[hidden] {
+  display: none;
+}
+.tnt-ownterm-ports-list {
+  max-height: 132px;
+  overflow: hidden auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+.tnt-ownterm-ports-list .tnt-ownterm-note {
+  margin: 4px 0 0;
+}
+.tnt-ownterm-port {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.tnt-ownterm-port-address {
+  flex: none;
+  color: var(--pg-text-2);
+  font: 400 12px/30px var(--pg-mono);
+  white-space: nowrap;
+}
+.tnt-ownterm-port-words {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pg-text-3);
+  font: 400 12px/30px var(--pg-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Fill (136): the terminal stands in the thread's place, in the middle island; the thread is
+   only not displayed meanwhile. It comes in with a short fade, never in one frame. */
+html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode > .tnt-main.tnt-ownterm-filled > .tnt-view {
+  display: none !important;
+}
+.tnt-ownterm-wide {
+  box-sizing: border-box;
+  padding: 14px 20px 14px;
+  animation: tnt-ownterm-in 0.16s ease-out;
+}
+@keyframes tnt-ownterm-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tnt-ownterm-wide {
+    animation: none;
+  }
+  .tnt-ownterm-ports-head svg {
+    transition: none;
+  }
+}
+
+/* While PowerShell starts, or when it could not: one line of words in the terminal's place. */
+.tnt-ownterm-note {
+  flex: none;
+  margin: 0 0 8px;
+  color: var(--pg-text-3);
+  font: 400 12.5px/1.5 var(--pg-sans);
+}
+.tnt-ownterm-note[hidden] {
+  display: none;
+}
+
+/* The handle that makes the side column wider or narrower (133): a thin strip just inside the column's
+   left edge (the column cuts off what lies outside it). A short line in the accent always marks it, brighter under the
+   pointer. Not in a narrow window, where the column takes the thread's
+   place. */
+html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode > .tnt-side {
+  position: relative;
+}
+.tnt-side-grip {
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 0;
+  width: 9px;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 2;
+}
+.tnt-side-grip::after {
+  content: '';
+  position: absolute;
+  /* The same short line as the divider beside the Live preview on All terminals (11), always
+     shown, so the eye finds what can be dragged (with a line that showed
+     only under the pointer nothing said the column could be made wider). */
+  top: calc(50% - 22px);
+  left: 3px;
+  width: 2px;
+  height: 44px;
+  border-radius: 2px;
+  background: var(--pg-accent);
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.tnt-side-grip:hover::after,
+.tnt-side-grip:focus-visible::after,
+.tnt-side-sizing .tnt-side-grip::after {
+  opacity: 1;
+}
+.tnt-side-grip:focus-visible {
+  outline: none;
+}
+/* while it is dragged nothing under the pointer selects text or takes the pointer */
+.tnt-side-sizing {
+  cursor: col-resize;
+  user-select: none;
+}
+@media (max-width: 1140px) {
+  .tnt-side-grip {
+    display: none;
+  }
+}
+
+/* While a search shows its results the tree steps aside, so a file is not listed twice; clearing
+   the field brings the tree back (24 marks the rail while it shows results). */
+html.tnt-on:not(#tnt):not(#pg) .tnt-sidefiles .repository-rail.repo-searching .repo-rail-tree {
+  display: none !important;
+}

@@ -1,0 +1,227 @@
+/* Technically Not · 02-ui-polish.css — Overview polish: header, dock title, agent list, command menu, terminal output */
+.overview-header:after {
+  display: none !important;
+}
+.top-right .prototype-status {
+  color: #777c72;
+  background: #fbfcf9;
+}
+.top-right #topCommand {
+  font-size: 11px;
+  color: #686d63;
+}
+.activityline strong {
+  color: #58604f;
+}
+.composer .activityline {
+  color: #73786e;
+}
+.agent-grid .agent-entry summary {
+  min-height: 64px;
+  padding: 14px 2px;
+  grid-template-columns: 9px minmax(0, 1fr) auto;
+  gap: 11px;
+}
+.agent-grid .agent-name {
+  font-size: 13px !important;
+  letter-spacing: -0.1px;
+}
+.agent-grid .agent-task-short {
+  font-size: 11px !important;
+  line-height: 1.4;
+}
+.agent-grid .agent-status {
+  font-size: 10px !important;
+}
+.command-content {
+  padding: 24px;
+}
+.command-section-head h2 {
+  font-size: 16px;
+}
+.command-section-head p {
+  font-size: 11px;
+  line-height: 1.45;
+}
+.dock-title {
+  font-size: 12px;
+}
+.terminal-output {
+  --terminal-font: 15px !important;
+  line-height: 1.75 !important;
+}
+.terminal-sample-label {
+  color: #8a7650;
+  background: #f5f1e7;
+  border-radius: 5px;
+  padding: 5px 7px;
+  font-size: 9px;
+}
+.state-key {
+  font-size: 10px;
+}
+@media (max-width: 1100px) {
+  .agent-grid .agent-name {
+    font-size: 12px !important;
+  }
+  .command-content {
+    padding: 16px;
+  }
+}
+/* Composer attachments (27-composer-attachments.js) */
+.composebox .attachment-list {
+  max-width: min(46%, 520px);
+  gap: 5px;
+  align-items: center;
+  scrollbar-width: none;
+  flex: none;
+}
+.composebox .attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 3px 6px 3px 3px;
+  border: 1px solid #e3e8da;
+  background: #f5f7f1;
+  color: #4f5f40;
+  font-size: 10px;
+  border-radius: 6px;
+  flex: none;
+}
+.attachment-chip img {
+  width: 26px;
+  height: 26px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: #fff;
+}
+.attachment-chip i {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  font-style: normal;
+  border-radius: 4px;
+  background: #fff;
+  color: #8e9088;
+}
+.attachment-chip .attachment-name {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.attachment-chip small {
+  color: #8e9088;
+  font-size: 9px;
+}
+.attachment-remove {
+  border: 0;
+  background: transparent;
+  color: #8e9088;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 2px 0 4px;
+}
+.attachment-remove:hover {
+  color: #20211f;
+}
+.composebox.drop-target {
+  border-color: #a7bd81;
+  background: #f7faf2;
+}
+.tnai-attach-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 230px;
+  max-width: 290px;
+  background: #fff;
+  border: 1px solid #e3e5de;
+  border-radius: 9px;
+  box-shadow: 0 10px 35px #20211f14;
+  padding: 5px;
+  display: grid;
+  gap: 1px;
+}
+.tnai-attach-menu button {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 8px 9px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  color: #20211f;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tnai-attach-menu button:hover:not(:disabled) {
+  background: #f4f5f1;
+}
+.tnai-attach-menu button:disabled {
+  color: #b3b5ad;
+  cursor: not-allowed;
+}
+.tnai-attach-menu p {
+  margin: 4px 9px 5px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: #858780;
+  border-top: 1px solid #efefeb;
+  padding-top: 7px;
+}
+
+/* Composer hint row: one line. Each hint keeps its words together; the route hint (11) gives up width first, then the pickers (46). Toast notifications appear on the right. */
+.composer .hints {
+  flex-wrap: nowrap;
+  gap: 12px;
+  min-width: 0;
+  overflow: visible;
+  font-size: 10px;
+  line-height: 24px;
+}
+.composer .hints > * {
+  flex: none;
+  white-space: nowrap;
+}
+.composer .hints > .tnai-pickers {
+  flex: 0 1 auto;
+}
+.composer .hints .tnai-pick {
+  flex: 0 1 auto;
+  min-width: 96px;
+}
+.composer .hints > .tnai-route-hint {
+  flex: 0 100 auto;
+  min-width: 0;
+}
+
+/* Attachment chips: more of each name, and a thin scrollbar so chips past the edge are visibly there. */
+.composebox .attachment-list {
+  scrollbar-width: thin;
+  scrollbar-color: #d6dccd transparent;
+  padding-bottom: 2px;
+}
+.composebox .attachment-chip .attachment-name {
+  max-width: 120px;
+  white-space: nowrap;
+}
+/* Several attachments wrap into a numbered list that uses the box's height instead of one sideways-scrolling row. */
+.composebox .attachment-list {
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-self: stretch;
+  max-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.attachment-chip .attachment-num {
+  flex: none;
+  min-width: 14px;
+  color: #8e9088;
+  font: 600 9px Arial;
+  text-align: center;
+}

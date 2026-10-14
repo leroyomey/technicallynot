@@ -1,0 +1,114 @@
+<!doctype html>
+<!-- Technically Not desktop · snapshot-recorder.html — Hidden clip recorder (snapshot-clip.js): takes one display's capture frame by frame, draws the chosen area of each frame onto a canvas at the job's size and hands exactly that picture to the WebM recorder (one recorded frame per captured frame, up to the job's frame rate; no timer decides when a picture is taken), keeps one PNG a second, and answers with the video and up to maxFrames frames spread evenly over the clip. Ends when told (clip:finish) or at maxMs. Where the browser cannot hand frames over one by one, the older way runs: the capture plays in a video element and the canvas is redrawn on a timer. -->
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src mediastream:; script-src 'unsafe-inline'">
+</head>
+<body>
+<video id="screen" muted></video>
+<canvas id="area"></canvas>
+<script>
+  const api = window.tnaiClip, video = document.getElementById('screen'), canvas = document.getElementById('area');
+  let end = () => {}, wanted = false; // end: set once recording runs; wanted: asked to end before that
+  api.onFinish(() => { wanted = true; end(); });
+  api.onRecord(async job => {
+    let stream = null, timer = null, limit = null, reader = null, made = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: job.sourceId, maxFrameRate: job.fps } } });
+      canvas.width = job.width; canvas.height = job.height;
+      const ctx = canvas.getContext('2d'), r = job.region, track = stream.getVideoTracks()[0];
+      // Stills are kept as plain copies of the canvas while recording and turned into PNG files only at the end: making a PNG takes long
+      // enough to hold up the frames around it. When more are kept than can ever be handed over, every second one is dropped and the
+      // step between stills doubles, so memory stays small for a 30 second clip.
+      let stills = [], stillStep = 1000000;
+      const still = async () => { try { stills.push(await createImageBitmap(canvas)); } catch (e) {} if (stills.length > 2 * job.maxFrames) { stills.filter((_b, i) => i % 2).forEach(b => b.close()); stills = stills.filter((_b, i) => i % 2 === 0); stillStep *= 2; } };
+      const png = bitmap => new Promise(done => { const c = document.createElement('canvas'); c.width = bitmap.width; c.height = bitmap.height; c.getContext('2d').drawImage(bitmap, 0, 0); c.toBlob(done, 'image/png'); });
+      const stat = { captured: 0, longestMs: 0, lateMs: 1000 / job.fps * 2.5, late: 0, last: null };
+      // VP8 first since 60 frames a second: it is the lighter one to make while recording, and every player of WebM reads it.
+      const type = ['video/webm;codecs=vp8', 'video/webm;codecs=vp9', 'video/webm'].find(t => MediaRecorder.isTypeSupported(t));
+      const bits = job.bits || 2500000, chunks = [];
+      // Frame by frame: each picture the screen capture delivers is cropped and recorded once, with its own time. Nothing here runs on a
+      // clock, so a busy moment can delay a picture but never repeats or invents one.
+      const exact = typeof MediaStreamTrackProcessor === 'function' && typeof MediaStreamTrackGenerator === 'function' && typeof VideoFrame === 'function';
+      let recorder, pump = null, running = true, lastStill = -1e9;
+      if (exact) {
+        reader = new MediaStreamTrackProcessor({ track }).readable.getReader();
+        made = new MediaStreamTrackGenerator({ kind: 'video' });
+        const writer = made.writable.getWriter();
+        const paint = frame => {
+          // The capture can come at another size than the display's pixels: the area is mapped onto what arrived.
+          const kx = frame.displayWidth / job.screen.width, ky = frame.displayHeight / job.screen.height;
+          ctx.drawImage(frame, r.x * kx, r.y * ky, r.width * kx, r.height * ky, 0, 0, job.width, job.height);
+        };
+        const first = await reader.read(); if (first.done) throw new Error('the screen capture gave no picture');
+        // The first pictures of a screen capture come unevenly while it starts up (seen: waits of 100 to 300 ms in the first third of a second).
+        // They are read and dropped, so the clip begins once the capture runs evenly; the frame on screen shows "recording" only after this.
+        let lead = first.value; const warmFrom = lead.timestamp;
+        while (lead.timestamp - warmFrom < 400000) { const next = await reader.read(); if (next.done) break; lead.close(); lead = next.value; }
+        paint(lead); const t0 = lead.timestamp; lead.close();
+        recorder = new MediaRecorder(new MediaStream([made]), { mimeType: type, videoBitsPerSecond: bits });
+        pump = async () => {
+          const head = new VideoFrame(canvas, { timestamp: 0 });
+          try { await writer.write(head); } finally { head.close(); }
+          while (running) {
+            const got = await reader.read(); if (got.done) break;
+            const frame = got.value, at = frame.timestamp - t0;
+            if (!running) { frame.close(); break; }
+            if (stat.last !== null) { const gap = (frame.timestamp - stat.last) / 1000; if (gap > stat.longestMs) stat.longestMs = gap; if (gap > stat.lateMs) stat.late++; }
+            stat.last = frame.timestamp; stat.captured++;
+            paint(frame); frame.close();
+            const out = new VideoFrame(canvas, { timestamp: at });
+            try { await writer.write(out); } finally { out.close(); }
+            if (at - lastStill >= stillStep) { lastStill = at; still(); }   // one still a second at first, by the capture's own clock
+          }
+        };
+      } else {
+        video.srcObject = stream; await video.play();
+        const kx = video.videoWidth / job.screen.width, ky = video.videoHeight / job.screen.height;
+        const draw = () => ctx.drawImage(video, r.x * kx, r.y * ky, r.width * kx, r.height * ky, 0, 0, job.width, job.height);
+        draw();
+        recorder = new MediaRecorder(canvas.captureStream(job.fps), { mimeType: type, videoBitsPerSecond: bits });
+        let ticks = 0;
+        timer = setInterval(() => { draw(); if (++ticks % job.fps === 0) still(); }, 1000 / job.fps);
+      }
+      recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+      // The recorder can stop by itself (its track ended): the stop is waited for from the start, never only after asking for it.
+      const stopped = new Promise(done => { recorder.onstop = done; });
+      const began = performance.now();
+      let ended = false, pumping = null;
+      end = async () => {
+        if (ended) return; ended = true;
+        clearInterval(timer); clearTimeout(limit);
+        const ms = Math.round(performance.now() - began);
+        running = false;
+        if (reader) { try { await reader.cancel(); } catch (e) {} }
+        if (pumping) { try { await pumping; } catch (e) {} }
+        await still(); // the last moment is always among the frames
+        if (recorder.state !== 'inactive') recorder.stop();
+        await stopped;
+        {
+          stream.getTracks().forEach(t => t.stop()); if (made) made.stop();
+          // Up to maxFrames stills, first and last included, spread evenly.
+          const count = Math.min(job.maxFrames, stills.length), picked = [];
+          for (let i = 0; i < count; i++) picked.push(stills[count === 1 ? stills.length - 1 : Math.round(i * (stills.length - 1) / (count - 1))]);
+          const frames = []; for (const bitmap of picked) { const blob = await png(bitmap); if (blob) frames.push(new Uint8Array(await blob.arrayBuffer())); }
+          stills.forEach(b => b.close());
+          api.done({ webm: new Uint8Array(await new Blob(chunks, { type }).arrayBuffer()), frames, ms, width: job.width, height: job.height, exact, stats: { captured: stat.captured, longestMs: Math.round(stat.longestMs), late: stat.late, codec: type } });
+        }
+      };
+      recorder.start(1000);
+      await still();
+      pumping = pump ? pump().catch(() => {}) : null;
+      limit = setTimeout(() => end(), job.maxMs);
+      api.started();
+      if (wanted) end();
+    } catch (error) {
+      clearInterval(timer); clearTimeout(limit);
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      api.done({ error: String(error && error.message || error) });
+    }
+  });
+</script>
+</body>
+</html>

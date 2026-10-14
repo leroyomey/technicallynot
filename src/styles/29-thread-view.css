@@ -1,0 +1,384 @@
+/* Technically Not · the thread layout's middle island: the open thread's top row and its terminal.
+   Markup comes from
+   src/scripts/120-thread-view.js; the tokens are the frame's (27-thread-frame.css). Every rule is
+   under .tnt-view, which exists only inside the frame's main slot, so nothing here applies while
+   the thread layout is off.
+
+   One inset: the top row, the terminal and the prompt box under the island all start 20px from the
+   island's edge. No rule under the top row: the terminal is set apart by space. */
+.tnt-view {
+  --inset: 20px;
+  container: tnt-main / inline-size;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.tnt-view * {
+  box-sizing: border-box;
+}
+.tnt-view [hidden] {
+  display: none !important;
+}
+
+/* ---------------------------------------------------------------- the top row */
+.tnt-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px var(--inset) 10px;
+}
+.tnt-head-text {
+  flex: 1;
+  min-width: 0;
+
+  /* in a very narrow thread its text ends at its own edge, never under the buttons beside it */
+  overflow: hidden;
+}
+.tnt-head h1 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--pg-text);
+  font: 600 18px/1.25 var(--pg-sans);
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tnt-head p {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin: 2px 0 0;
+  color: var(--pg-text-3);
+  font-size: 12.5px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+/* What follows the tool (model, project) shortens with "…" first; the tool's own name only when
+   that is gone whole and the row is still too narrow. Its mark stays. */
+.tnt-head-tool {
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--pg-text-2);
+}
+.tnt-head-tool span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tnt-head-tool svg {
+  flex: none;
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+.tnt-head-more {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+
+/* The thread's state in the app's words, in its status color. Hidden whole when the row is tight. */
+.tnt-head-state {
+  --tone: var(--pg-idle);
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 11px;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.tnt-head-state i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tone);
+}
+.tnt-head-state[data-tone='work'] {
+  --tone: var(--pg-work);
+}
+.tnt-head-state[data-tone='needs'] {
+  --tone: var(--pg-wait);
+}
+.tnt-head-state[data-tone='ready'] {
+  --tone: var(--pg-ready);
+}
+.tnt-head-state[data-tone='err'] {
+  --tone: var(--pg-err);
+}
+.tnt-head-acts {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Icon buttons: 30px, a centered grid with no padding. The doubled class lifts the rule over the
+   app's shared button rule. */
+.tnt-view .tnt-icon-btn.tnt-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  color: var(--pg-text-3);
+  font: 500 12px/1 var(--pg-sans);
+  cursor: pointer;
+}
+.tnt-view .tnt-icon-btn.tnt-icon-btn:hover:not(:disabled),
+.tnt-view .tnt-icon-btn.tnt-icon-btn[aria-expanded='true'] {
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+}
+/* under the pointer only; the pressed or chosen state keeps its own surface */
+.tnt-view .tnt-icon-btn.tnt-icon-btn:hover:not(:disabled) {
+  background: var(--pg-panel-hover);
+}
+.tnt-view .tnt-icon-btn.tnt-icon-btn:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+.tnt-view .tnt-icon-btn.tnt-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.tnt-view .tnt-icon-btn svg {
+  display: block;
+}
+
+/* The thread's name while it is renamed (137, the field of 21's inlineEdit): a field where the
+   name stood, as high as the name's own line, so nothing in the row moves. Its edge lights up
+   in the accent; a ring would be cut by the row's own edge. */
+.tnt-view .tnt-head-line .tnai-rename-input {
+  flex: 0 1 260px;
+  min-width: 70px;
+  height: 23px;
+  margin: 0;
+  padding: 0 7px;
+  border: 1px solid rgba(var(--pg-accent-rgb), 0.6);
+  border-radius: 7px;
+  outline: none;
+  background: var(--pg-panel);
+  box-shadow: none;
+  color: var(--pg-text);
+  font: 600 15px/1 var(--pg-sans);
+  letter-spacing: 0;
+}
+
+/* The thread's own "..." menu (137) is the app's three-dots menu in small (.tnt-menu, 27): the
+   same panel and rows, narrower, and it comes in with the same short fade. */
+.tnt-menu.tnt-menu-thread {
+  width: 232px;
+}
+.tnt-menu.tnt-menu-thread:not([hidden]) {
+  animation: tnt-rise 0.16s var(--pg-ease);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tnt-menu.tnt-menu-thread:not([hidden]) {
+    animation: none;
+  }
+}
+
+/* In a narrow island the state word leaves whole before anything is cut. It left at 520px, which
+   was after the thread's name: beside the buttons the name was down to one letter by then. */
+@container tnt-main (max-width: 680px) {
+  .tnt-head-state {
+    display: none;
+  }
+}
+
+/* Narrower still, the buttons alone fill the row and the thread's name had no room at all. They
+   go to a row of their own under the name, at the same side as before. */
+@container tnt-main (max-width: 520px) {
+  .tnt-head {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .tnt-head-text {
+    flex-basis: 100%;
+  }
+  .tnt-head-acts {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    row-gap: 4px;
+    max-width: 100%;
+    margin-left: auto;
+  }
+}
+
+/* ---------------------------------------------------------------- the terminal */
+/* Drawn on the island itself: no box, no line. Its text starts on the top row's inset. */
+.tnt-term {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 4px var(--inset) 0;
+}
+/* Under a stopped session's saved screen (120 showSaved): one line that says what it is. */
+.tnt-term-note {
+  flex: none;
+  padding: 6px 0 2px;
+  color: var(--pg-text-3);
+  font-size: 11.5px;
+  text-align: center;
+}
+.tnt-term-box {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.tnt-term-host {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.tnt-term-box .xterm {
+  height: 100%;
+}
+.tnt-term-box .xterm-viewport {
+  background: transparent !important;
+}
+
+/* The report jump button (75) stands 8 px lower here than in a panel, at the terminal's own bottom
+   edge, so it covers less of the last rows. */
+.tnt-term-box .tnai-term-latest.tnai-report-nav {
+  bottom: 2px;
+}
+
+/* ---------------------------------------------------------------- nothing open */
+.tnt-none {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: var(--inset);
+  color: var(--pg-text-3);
+  font-size: 13.5px;
+  line-height: 1.45;
+  text-align: center;
+}
+.tnt-none b {
+  color: var(--pg-text);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------- questions for you */
+/* A row between the terminal and the prompt box (filled by 121). The app's own permission and
+   held-prompt cards float over the lower right corner of the other pages; here they stand in this
+   row, so nothing lies over the thread. A question is the one amber surface on the page. */
+.tnt-asks {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 var(--inset);
+}
+.tnt-asks:has(> :not([hidden])) {
+  padding-top: 10px;
+}
+html.tnt-open:not(#tnt):not(#pg) .tnt-asks > .tnai-perm,
+.tnt-asks > .tnt-ask {
+  position: static;
+  width: auto;
+  max-width: none;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--pg-wait) 35%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--pg-wait) 9%, transparent);
+  box-shadow: none;
+  color: var(--pg-text);
+}
+html.tnt-open:not(#tnt):not(#pg) .tnt-asks > .tnai-perm[hidden] {
+  display: none;
+}
+
+/* "Trust this folder?": the question on the left, its two answers on the right; they go under
+   the question when the island is narrow. */
+.tnt-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+.tnt-ask-text {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.tnt-ask-text b {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.tnt-ask-text p {
+  margin: 2px 0 0;
+  color: var(--pg-text-3);
+  font-size: 12.5px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.tnt-ask-acts {
+  flex: none;
+  display: flex;
+  gap: 6px;
+}
+.tnt-view .tnt-ask-acts button {
+  height: 30px;
+  margin: 0;
+  padding: 0 12px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+  font: 500 12.5px/1 var(--pg-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tnt-view .tnt-ask-acts button:hover {
+  border-color: var(--pg-accent);
+  color: var(--pg-text);
+}
+.tnt-view .tnt-ask-acts .tnt-ask-yes {
+  border-color: rgba(var(--pg-accent-rgb), 0.5);
+  background: rgba(var(--pg-accent-rgb), 0.22);
+  color: var(--pg-text);
+}
+.tnt-view .tnt-ask-acts button:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+
+/* beside a conversation the cards stand in its reading column, not across the whole island */
+html.tnt-open:not(#tnt):not(#pg) .tnt-talk:not([hidden]) ~ .tnt-asks > * {
+  align-self: center;
+  width: min(100%, 780px);
+}

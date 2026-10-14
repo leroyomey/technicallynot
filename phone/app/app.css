@@ -1,0 +1,470 @@
+/* Technically Not phone app: the approved phone look. Token names and values are the
+   app's purple glass ones (src/styles/07-purple-glass.css, dark, purple accent). Phone sizes: 44px controls, 16px sides, 12px gaps.
+   The app's own fonts and device characters are not bundled with the phone app yet: system fonts stand in. */
+:root {
+  --pg-bg: #0f0a1f;
+  --pg-tint: 214, 196, 255;
+  --pg-acc: 189, 99, 255;
+  --pg-accent: rgb(var(--pg-acc));
+  --pg-accent-2: rgb(213, 175, 244);
+  --pg-accent-soft: rgba(var(--pg-acc), 0.14);
+  --pg-line: rgba(var(--pg-tint), 0.09);
+  --pg-line-2: rgba(var(--pg-tint), 0.16);
+  --pg-panel: rgba(255, 255, 255, 0.04);
+  --pg-panel-2: rgba(255, 255, 255, 0.07);
+  --pg-text: #eee9ff;
+  --pg-text-2: #c0b7da;
+  --pg-text-3: #8e85ab;
+  --pg-text-4: #655d81;
+  --pg-work: #5fe0a5;
+  --pg-wait: #ffbf5e;
+  --pg-err: #ff7d8e;
+  --pg-r: 18px;
+  --pg-r-sm: 10px;
+  --pg-sans: 'Outfit', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --pg-mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  --pad: 16px;
+  --gap: 12px;
+  --tap: 44px;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: radial-gradient(520px 380px at 10% 0%, #2b1650 0%, var(--pg-bg) 70%) fixed
+    var(--pg-bg);
+  color: var(--pg-text);
+  font: 15px/1.45 var(--pg-sans);
+}
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+button {
+  cursor: pointer;
+}
+h1,
+p,
+ol,
+dl,
+dd {
+  margin: 0;
+  padding: 0;
+}
+:focus-visible {
+  outline: 2px solid var(--pg-accent);
+  outline-offset: 2px;
+}
+[hidden] {
+  display: none !important;
+}
+
+.screen {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  max-width: 520px;
+  margin: 0 auto;
+  padding-top: env(safe-area-inset-top);
+}
+.top {
+  padding: 22px var(--pad) 14px;
+  flex: none;
+  display: grid;
+  gap: 4px;
+}
+.top.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.eyebrow {
+  color: var(--pg-text-4);
+  font: 11px var(--pg-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+h1 {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.15;
+}
+.bd {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 var(--pad) var(--pad);
+  display: grid;
+  gap: var(--gap);
+  align-content: start;
+  scrollbar-width: none;
+}
+.bd::-webkit-scrollbar {
+  display: none;
+}
+#list {
+  display: grid;
+  gap: var(--gap);
+}
+#list:empty {
+  display: none;
+}
+.foot {
+  flex: none;
+  padding: 10px var(--pad) calc(var(--pad) + env(safe-area-inset-bottom));
+  display: grid;
+  gap: 10px;
+}
+
+.surf {
+  border-radius: var(--pg-r);
+  background: var(--pg-panel);
+  padding: var(--pad);
+  display: grid;
+  gap: 12px;
+}
+.surf.me {
+  background: var(--pg-accent-soft);
+  box-shadow: inset 3px 0 var(--pg-accent);
+}
+.surf.slotd {
+  background: none;
+  outline: 1px dashed var(--pg-line-2);
+  outline-offset: -1px;
+}
+.surf b {
+  display: block;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.lbl {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--pg-text-3);
+}
+.meta {
+  display: block;
+  color: var(--pg-text-3);
+  font-size: 12px;
+}
+.meta.on {
+  color: var(--pg-work);
+}
+.note {
+  color: var(--pg-text-3);
+  font-size: 13px;
+}
+.note.bad {
+  color: var(--pg-err);
+}
+
+.btn {
+  height: var(--tap);
+  padding: 0 14px;
+  border-radius: var(--pg-r-sm);
+  border: 1px solid var(--pg-line-2);
+  background: var(--pg-panel);
+  font-weight: 500;
+  text-align: center;
+  white-space: nowrap;
+}
+.btn.pri {
+  background: var(--pg-accent);
+  border-color: transparent;
+  color: #fff;
+}
+.btn.small {
+  flex: none;
+}
+.btn.danger {
+  color: var(--pg-err);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--tap);
+  padding: 0 6px 0 14px;
+  border-radius: var(--pg-r-sm);
+  border: 1px solid var(--pg-line-2);
+  background: var(--pg-panel);
+}
+.field button {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: none;
+  color: var(--pg-text-2);
+  font-size: 18px;
+  flex: none;
+}
+.field button.go {
+  background: var(--pg-accent);
+  color: #fff;
+}
+.field button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.field.off {
+  opacity: 0.45;
+}
+.field input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  outline: 0;
+}
+.field input::placeholder {
+  color: var(--pg-text-4);
+}
+.pcrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+/* the camera view: the picture fills the square, a dashed frame marks where the code goes */
+.view {
+  aspect-ratio: 1;
+  width: 100%;
+  border-radius: var(--pg-r);
+  background: var(--pg-panel);
+  position: relative;
+  display: grid;
+  place-items: center;
+  color: var(--pg-text-2);
+  text-align: center;
+  padding: 56px;
+  overflow: hidden;
+}
+.view video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.view i {
+  position: absolute;
+  inset: 28px;
+  border-radius: 14px;
+  outline: 2px dashed var(--pg-accent-2);
+  opacity: 0.7;
+}
+.view span {
+  position: relative;
+  font-size: 14px;
+}
+.view.live span {
+  display: none;
+}
+
+.steps {
+  padding: 0;
+  list-style: none;
+  counter-reset: s;
+  display: grid;
+  gap: 10px;
+  font-size: 14px;
+}
+.steps li {
+  counter-increment: s;
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 10px;
+}
+.steps li::before {
+  content: counter(s);
+  font: 500 13px/1.6 var(--pg-mono);
+  color: var(--pg-accent-2);
+}
+.digits {
+  justify-items: center;
+  text-align: center;
+  padding: 24px var(--pad);
+}
+.digits b {
+  font: 500 44px/1.1 var(--pg-mono);
+  letter-spacing: 0.06em;
+}
+.see {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  font-size: 13px;
+}
+.see dt {
+  color: var(--pg-text-3);
+}
+.see dd {
+  color: var(--pg-text-2);
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}
+
+/* Needs you and the tab bar: the mock's rules (screens 1 and "nothing open"). */
+svg.i {
+  width: 1em;
+  height: 1em;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--gap);
+  margin-top: 10px;
+}
+.kpis div {
+  display: grid;
+  gap: 2px;
+}
+.kpis b {
+  font: 500 22px/1.1 var(--pg-mono);
+}
+.kpis span {
+  color: var(--pg-text-3);
+  font-size: 12px;
+}
+.c-wait {
+  color: var(--pg-wait);
+}
+.surf.wait {
+  box-shadow: inset 3px 0 var(--pg-wait);
+}
+.surf.asleep > :not(.note) {
+  opacity: 0.5;
+}
+.who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.tile {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel-2);
+  display: grid;
+  place-items: center;
+  font-weight: 600;
+  font-size: 14px;
+  flex: none;
+}
+.who div {
+  min-width: 0;
+  flex: 1;
+}
+.who b,
+.who .meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ago {
+  font: 12px var(--pg-mono);
+  color: var(--pg-text-3);
+  flex: none;
+}
+.q {
+  font-size: 16px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.acts {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 10px;
+}
+.clear {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 14px;
+  text-align: center;
+  padding: var(--pad);
+}
+.clear p {
+  color: var(--pg-text-2);
+  max-width: 260px;
+}
+.tabs {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  height: 64px;
+  padding: 0 8px calc(env(safe-area-inset-bottom));
+  box-sizing: content-box;
+  border-top: 1px solid var(--pg-line);
+  background: rgba(15, 10, 31, 0.6);
+}
+.tab {
+  border: 0;
+  background: none;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 3px;
+  color: var(--pg-text-3);
+  font-size: 11px;
+  padding: 0;
+}
+.tab em {
+  position: relative;
+  font-size: 20px;
+  display: grid;
+  font-style: normal;
+}
+.tab.on {
+  color: var(--pg-accent-2);
+}
+.tab:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.tab em u {
+  position: absolute;
+  top: -5px;
+  left: 13px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--pg-wait);
+  color: #1a1433;
+  font: 500 11px/16px var(--pg-mono);
+  text-decoration: none;
+  text-align: center;
+}

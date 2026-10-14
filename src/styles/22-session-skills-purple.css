@@ -1,0 +1,404 @@
+/* Technically Not · 22-session-skills-purple.css — skills given to a running agent session (101-session-skills.js): the Skills button and
+   attached-skill chips in terminal panel headers, Agent Tree rows and the focus view bar, the Skills popup, and the drop highlight. */
+
+/* ---- Terminal panel header: button + up to 2 chips + "+N", stepped down with the head's container queries (11) ---- */
+:root:not(#pg) .terminal-pane-head > .tn-skl {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+}
+:root:not(#pg) .terminal-pane-head > .tn-skl ~ .terminal-pane-state {
+  margin-left: 0;
+}
+.tn-skl-btn {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--pg-text-2);
+  font: 500 11.5px var(--pg-sans);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s,
+    color 0.2s;
+}
+.tn-skl-btn:hover {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+  color: var(--pg-text);
+}
+.tn-skl-btn:active {
+  background: rgba(var(--pg-accent-rgb), 0.28);
+}
+.tn-skl-btn:focus-visible,
+.tn-skl-chip button:focus-visible,
+.tn-skl-more:focus-visible,
+.tn-skp-item:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 1px;
+}
+.tn-skl-btn[aria-disabled='true'] {
+  color: var(--pg-text-4);
+  border-color: var(--pg-line);
+}
+.tn-skl-btn[aria-disabled='true']:hover {
+  background: transparent;
+  border-color: var(--pg-line-2);
+}
+.tn-skl-btn svg {
+  flex: none;
+}
+.tn-skl-btn > i {
+  flex: none;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  border-radius: 7px;
+  background: var(--pg-accent);
+  color: #fff;
+  font: 600 9.5px/14px var(--pg-sans);
+  font-style: normal;
+  text-align: center;
+}
+.tn-skl-chip {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
+  max-width: 112px;
+  height: 20px;
+  box-sizing: border-box;
+  padding: 0 1px 0 7px;
+  border: 1px solid rgba(var(--pg-accent-rgb), 0.38);
+  border-radius: 999px;
+  background: var(--pg-accent-soft);
+  color: var(--pg-text);
+  font: 500 10.5px var(--pg-sans);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.tn-skl-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tn-skl-chip > button {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--pg-text-3);
+  cursor: pointer;
+}
+.tn-skl-chip > button:hover {
+  background: color-mix(in srgb, var(--pg-err) 22%, transparent);
+  color: var(--pg-text);
+}
+.tn-skl-more {
+  flex: none;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--pg-text-2);
+  font: 500 10.5px var(--pg-sans);
+  cursor: pointer;
+}
+.tn-skl-more:hover {
+  border-color: var(--pg-accent);
+  color: var(--pg-text);
+}
+@container (max-width:560px) {
+  :root:not(#pg) .terminal-pane-head > .tn-skl .tn-skl-chip {
+    max-width: 84px;
+  }
+}
+@container (max-width:470px) {
+  :root:not(#pg) .terminal-pane-head > .tn-skl .tn-skl-btn {
+    width: 24px;
+    padding: 0;
+    justify-content: center;
+  }
+  :root:not(#pg) .terminal-pane-head > .tn-skl .tn-skl-btn > span {
+    display: none;
+  }
+  :root:not(#pg) .terminal-pane-head > .tn-skl .tn-skl-btn > i {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+  }
+}
+@container (max-width:390px) {
+  :root:not(#pg) .terminal-pane-head > .tn-skl .tn-skl-chip,
+  :root:not(#pg) .terminal-pane-head > .tn-skl .tn-skl-more {
+    display: none;
+  }
+}
+
+/* ---- Popup ---- */
+.tn-skp {
+  position: fixed;
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  max-height: 420px;
+  box-sizing: border-box;
+  padding: 10px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 14px;
+  background: var(--pg-panel-solid);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.4);
+  color: var(--pg-text);
+  font: 12.5px var(--pg-sans);
+}
+.tn-skp[hidden] {
+  display: none;
+}
+.tn-skp.dragging {
+  opacity: 0.35;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.tn-skp-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 4px 8px;
+}
+.tn-skp-head b {
+  font: 600 13.5px var(--pg-sans);
+}
+.tn-skp-head small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pg-text-3);
+  font-size: 11.5px;
+}
+.tn-skp-search {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text-3);
+}
+.tn-skp-search:focus-within {
+  border-color: var(--pg-accent);
+}
+:root:not(#pg) .tn-skp-search input {
+  flex: 1;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  box-shadow: none;
+  background: transparent;
+  color: var(--pg-text);
+  font: 12.5px var(--pg-sans);
+}
+:root:not(#pg) .tn-skp-search input:focus-visible {
+  outline: 0;
+}
+.tn-skp-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.tn-skp-have {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 9px 2px 8px;
+  border-bottom: 1px solid var(--pg-line);
+}
+.tn-skp-have::before {
+  content: 'Attached';
+  flex-basis: 100%;
+  color: var(--pg-text-3);
+  font-size: 11px;
+}
+.tn-skp-have > small {
+  color: var(--pg-text-4);
+  font-size: 11.5px;
+}
+.tn-skp-have > .tn-skp-clear {
+  margin-left: auto;
+}
+.tn-skp-scope {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 2px 0;
+  color: var(--pg-text-3);
+  font-size: 11px;
+}
+.tn-skp-scope > span {
+  margin-right: 2px;
+}
+.tn-skp-scope .tn-skl-more[aria-pressed='true'] {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+  color: var(--pg-text);
+}
+.tn-skl-more:active {
+  background: rgba(var(--pg-accent-rgb), 0.28);
+}
+.tn-skp-why {
+  margin: 8px 2px 0;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--pg-wait) 12%, transparent);
+  color: var(--pg-text-2);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.tn-skp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  margin-top: 6px;
+  overflow: auto;
+}
+.tn-skp-item {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: none;
+  color: var(--pg-text);
+  text-align: left;
+  cursor: grab;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.tn-skp-item:hover {
+  border-color: var(--pg-line-2);
+  background: var(--pg-accent-soft);
+}
+.tn-skp-item:active {
+  cursor: grabbing;
+}
+.tn-skp-item b {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 500 12.5px var(--pg-sans);
+}
+.tn-skp-item b svg {
+  color: var(--pg-ready);
+}
+.tn-skp-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pg-text-3);
+  font-size: 11px;
+}
+.tn-skp-item.on {
+  border-color: rgba(var(--pg-accent-rgb), 0.3);
+}
+.tn-skp.off .tn-skp-item {
+  cursor: grab;
+}
+.tn-skp.off .tn-skp-item:hover {
+  background: var(--pg-panel-hover);
+}
+.tn-skp-none {
+  margin: 8px 4px;
+  color: var(--pg-text-3);
+  font-size: 11.5px;
+}
+.tn-skp-foot {
+  flex: none;
+  margin: 8px 2px 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--pg-line);
+  color: var(--pg-text-4);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* ---- Drop highlight: agents that can take the skill are outlined while a skill is dragged; the one under the pointer says what a drop does ---- */
+body.tn-skl-dragging [data-skl-can]:not([data-skl-drop]) {
+  outline: 1px dashed rgba(var(--pg-accent-rgb), 0.65);
+  outline-offset: -2px;
+}
+[data-skl-drop] {
+  position: relative;
+  outline: 2px solid var(--pg-accent);
+  outline-offset: -2px;
+}
+[data-skl-drop]::after {
+  content: attr(data-skl-why);
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 0 12px;
+  border-radius: inherit;
+  background:
+    linear-gradient(rgba(var(--pg-accent-rgb), 0.2), rgba(var(--pg-accent-rgb), 0.2)),
+    color-mix(in srgb, var(--pg-panel-solid) 82%, transparent);
+  color: var(--pg-text);
+  font: 500 12.5px var(--pg-sans);
+  text-align: center;
+  pointer-events: none;
+}
+[data-skl-drop='no'] {
+  outline: 2px dashed var(--pg-err);
+}
+[data-skl-drop='no']::after {
+  background:
+    linear-gradient(
+      color-mix(in srgb, var(--pg-err) 14%, transparent),
+      color-mix(in srgb, var(--pg-err) 14%, transparent)
+    ),
+    color-mix(in srgb, var(--pg-panel-solid) 82%, transparent);
+  color: var(--pg-text-2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tn-skl-btn,
+  .tn-skp-item,
+  .tn-skp.dragging {
+    transition: none;
+  }
+}

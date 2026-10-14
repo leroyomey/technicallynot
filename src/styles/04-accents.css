@@ -1,0 +1,193 @@
+/* Technically Not · 04-accents.css — soft accent palette (`--ac-*`) that gives the UI a little color on the calm base: tinted left-nav icon
+   tiles, per-CLI agent avatars (data-cli set by 11 and 25), empty states. Colors only, no geometry changes (nav tiles keep the 16px
+   footprint via negative margin). Light hex only: 32-theme-and-shortcuts.js mirrors these tokens and rules for dark mode.
+   Status colors stay in 05-status-colors.css. */
+:root {
+  --ac-sage-fg: #4f7a45;
+  --ac-sage-bg: #e8f1e2;
+  --ac-sky-fg: #4a7196;
+  --ac-sky-bg: #e6eef6;
+  --ac-plum-fg: #7a5a8c;
+  --ac-plum-bg: #f0e9f4;
+  --ac-amber-fg: #8f6a2a;
+  --ac-amber-bg: #f6eedd;
+  --ac-clay-fg: #9c5b41;
+  --ac-clay-bg: #f7e9e2;
+  --ac-teal-fg: #3b7571;
+  --ac-teal-bg: #e2f0ee;
+  --ac-slate-fg: #4d5d70;
+  --ac-slate-bg: #e3e9f1;
+  --ac-rose-fg: #9a5268;
+  --ac-rose-bg: #f6e6eb;
+  --ac-stone-fg: #6c675b;
+  --ac-stone-bg: #efece5;
+  /* Voice (70): orange while the mic listens — fill, soft tint, edge, ring, text on the tint, icon on the fill. */
+  --ac-coral-fg: #e8604c;
+  --ac-coral-bg: #fdf3f0;
+  --ac-coral-line: #e8836f;
+  --ac-coral-ring: #f6d3cc;
+  --ac-coral-text: #9c4a3b;
+  --ac-coral-on: #fff;
+}
+
+/* ---- Left nav: each item's icon in its own soft tile; the active item's tile fills with its color ---- */
+.sidebar .side-item {
+  --ac-fg: var(--ac-stone-fg);
+  --ac-bg: var(--ac-stone-bg);
+}
+.sidebar .side-item[data-view='overview'] {
+  --ac-fg: var(--ac-sage-fg);
+  --ac-bg: var(--ac-sage-bg);
+}
+.sidebar .side-item[data-view='agents'] {
+  --ac-fg: var(--ac-plum-fg);
+  --ac-bg: var(--ac-plum-bg);
+}
+.sidebar .side-item[data-view='projects'] {
+  --ac-fg: var(--ac-amber-fg);
+  --ac-bg: var(--ac-amber-bg);
+}
+.sidebar .side-item[data-panel='Preview'] {
+  --ac-fg: var(--ac-sky-fg);
+  --ac-bg: var(--ac-sky-bg);
+}
+.sidebar .side-item[data-panel='Files'] {
+  --ac-fg: var(--ac-clay-fg);
+  --ac-bg: var(--ac-clay-bg);
+}
+.sidebar .side-item[data-view='live-preview'] {
+  --ac-fg: var(--ac-sky-fg);
+  --ac-bg: var(--ac-sky-bg);
+}
+.sidebar .side-item[data-view='changes'] {
+  --ac-fg: var(--ac-teal-fg);
+  --ac-bg: var(--ac-teal-bg);
+}
+.sidebar .side-item[data-view='terminal'] {
+  --ac-fg: var(--ac-slate-fg);
+  --ac-bg: var(--ac-slate-bg);
+}
+.sidebar .side-item[data-ai-tool='skills'] {
+  --ac-fg: var(--ac-rose-fg);
+  --ac-bg: var(--ac-rose-bg);
+}
+.sidebar .side-item .ico {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin: 0 -2px;
+  border-radius: 6px;
+  background-color: var(--ac-bg);
+  color: var(--ac-fg);
+  font-size: 12px;
+  line-height: 1;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+/* Glyphs whose ink sits off-center in their font (measured in the rendered page): padding moves the ink to the tile's middle. */
+.sidebar .side-item[data-panel='Files'] .ico {
+  box-sizing: border-box;
+  padding-top: 2px;
+  padding-right: 1px;
+}
+.sidebar .side-item[data-view='terminal'] .ico {
+  box-sizing: border-box;
+  padding-bottom: 5px;
+  padding-right: 2px;
+}
+.sidebar .side-item:hover .ico {
+  box-shadow: inset 0 0 0 1px var(--ac-fg);
+}
+.sidebar .side-item.active .ico {
+  background-color: var(--ac-fg);
+  color: #fff;
+}
+
+/* ---- Agent avatars tinted by CLI (Overview cards, Agents page head) ---- */
+.agent-avatar[data-cli='claude-code'] {
+  background-color: var(--ac-clay-bg);
+  color: var(--ac-clay-fg);
+}
+.agent-avatar[data-cli='codex'] {
+  background-color: var(--ac-sky-bg);
+  color: var(--ac-sky-fg);
+}
+.agent-avatar[data-cli='cursor-agent'] {
+  background-color: var(--ac-plum-bg);
+  color: var(--ac-plum-fg);
+}
+.agent-avatar[data-cli^='gemini'] {
+  background-color: var(--ac-teal-bg);
+  color: var(--ac-teal-fg);
+}
+.agent-avatar[data-cli='terminal'] {
+  background-color: var(--ac-slate-bg);
+  color: var(--ac-slate-fg);
+}
+
+/* ---- Page headers: a small tile with the page's nav icon and tint (08 Overview tree, 25 Agents, 65 Live preview, 18 Skills, 22 Settings) ---- */
+#agentPage .agent-page-header h1,
+#agentsPage .agent-page-header h1,
+#skillsPage .agent-page-header h1,
+#settingsPage .agent-page-header h1 {
+  --ac-fg: var(--ac-sage-fg);
+  --ac-bg: var(--ac-sage-bg);
+  --ac-glyph: '▦';
+}
+#livePreviewPage .agent-page-header h1 {
+  --ac-fg: var(--ac-sky-fg);
+  --ac-bg: var(--ac-sky-bg);
+  --ac-glyph: '▷';
+}
+#skillsPage .agent-page-header h1 {
+  --ac-fg: var(--ac-rose-fg);
+  --ac-bg: var(--ac-rose-bg);
+  --ac-glyph: '✦';
+}
+#settingsPage .agent-page-header h1 {
+  --ac-fg: var(--ac-stone-fg);
+  --ac-bg: var(--ac-stone-bg);
+  --ac-glyph: '⚙';
+}
+#agentPage .agent-page-header h1::before,
+#agentsPage .agent-page-header h1::before,
+#livePreviewPage .agent-page-header h1::before,
+#skillsPage .agent-page-header h1::before,
+#settingsPage .agent-page-header h1::before {
+  content: var(--ac-glyph);
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 8px;
+  border-radius: 6px;
+  vertical-align: -3px;
+  background-color: var(--ac-bg);
+  color: var(--ac-fg);
+  font: 400 12px/1 Arial;
+}
+/* File Repository rail title (Overview) */
+.repository-rail-head strong::before {
+  content: '⌘';
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  border-radius: 5px;
+  vertical-align: -2px;
+  background-color: var(--ac-clay-bg);
+  color: var(--ac-clay-fg);
+  font: 400 10px/1 Arial;
+  box-sizing: border-box;
+  padding: 2px 0 0 1px;
+}
+
+/* ---- Empty states: a soft sage accent instead of flat gray ---- */
+.empty-state {
+  background-color: #f4f7f0;
+  box-shadow: inset 3px 0 0 var(--ac-sage-bg);
+  color: #80877a;
+}

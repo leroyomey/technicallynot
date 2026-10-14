@@ -1,0 +1,2734 @@
+/* Technically Not · 14-settings-preview-purple.css — purple glass look for Settings (all tabs,
+   Usage rings and charts, Accounts), the Live preview page and toolbar, the project switcher menu
+   and the sign-in modal (look: overview-purple-glass.html). Every
+   rule exists once, at spec values (text 10.5-14px, cards 18px glass, controls radius 10, buttons
+   4px 10px radius 8, --pg-* colors only). data-pg: the remap engine skips it. */
+:root:not(#pg) {
+  --pg-glass-blur: blur(30px);
+}
+/* ---- Settings page frame and section list (concept nav item look) ---- */
+:root:not(#pg) .layout.settings-mode,
+:root:not(#pg) .layout.preview-mode,
+:root:not(#pg) .settings-page,
+:root:not(#pg) .lpp-page {
+  background: transparent;
+}
+:root:not(#pg) .settings-page {
+  --sf: var(--pg-sans);
+  color: var(--pg-text);
+}
+:root:not(#pg) .settings-tabs button {
+  height: 38px;
+  padding: 0 15px;
+  border: 0;
+  border-radius: 11px;
+  color: var(--pg-text-3);
+  font: 400 13.5px var(--pg-sans);
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+:root:not(#pg) .settings-tabs button svg {
+  color: currentColor;
+  transition: transform 0.35s var(--pg-ease);
+}
+:root:not(#pg) .settings-tabs button:hover {
+  background: var(--pg-panel);
+  color: var(--pg-text);
+}
+:root:not(#pg) .settings-tabs button:hover svg {
+  transform: scale(1.12);
+}
+:root:not(#pg) .settings-tabs button:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 1px;
+}
+:root:not(#pg) .settings-tabs button[aria-selected='true'] {
+  border: 0;
+  background: linear-gradient(90deg, var(--pg-accent-soft), transparent);
+  color: var(--pg-text);
+  font-weight: 500;
+  box-shadow: none;
+}
+:root:not(#pg) .settings-tabs button[aria-selected='true'] svg {
+  color: var(--pg-accent-2);
+}
+:root:not(#pg) .settings-tabs button[aria-selected='true']::before {
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 2.5px;
+  border-radius: 3px;
+  background: var(--pg-accent);
+}
+@media (max-width: 1100px) {
+  :root:not(#pg) .settings-tabs {
+    border-bottom: 1px solid var(--pg-line);
+  }
+  :root:not(#pg) .settings-tabs button[aria-selected='true'] {
+    background: var(--pg-panel-2);
+  }
+  :root:not(#pg) .settings-tabs button:focus-visible {
+    outline-offset: -2px;
+  } /* the row scrolls sideways (overflow), which cut a ring drawn outside the button */
+  :root:not(#pg) .settings-tabs button[aria-selected='true']::before {
+    left: 14px;
+    right: 14px;
+    top: auto;
+    bottom: -9px;
+    width: auto;
+    height: 2px;
+  }
+}
+/* The smallest window (768 wide): all seven sections fit the row; at 15px side padding the row was
+   84px too wide and Updates was cut off. */
+@media (max-width: 960px) {
+  :root:not(#pg) .settings-tabs button {
+    padding: 0 8px;
+  }
+}
+
+/* ---- section head, glass cards, rows ---- */
+:root:not(#pg) .settings-section-head h2 {
+  color: var(--pg-text);
+  font: 500 15px/1.2 var(--pg-sans);
+  letter-spacing: 0;
+}
+:root:not(#pg) .settings-section-head p {
+  color: var(--pg-text-3);
+  font: 400 13.5px/1.5 var(--pg-sans);
+}
+:root:not(#pg) #tnaiAccountsMount .tnai-acct-grid {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+:root:not(#pg) #settingsPanel-agents .set-card {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  backdrop-filter: none;
+}
+:root:not(#pg) .set-group {
+  gap: 12px;
+}
+:root:not(#pg) #settingsPanel-agents .set-group {
+  position: relative;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r);
+  background: var(--pg-panel);
+  backdrop-filter: var(--pg-glass-blur);
+  -webkit-backdrop-filter: var(--pg-glass-blur);
+}
+:root:not(#pg) .set-group-head h3,
+:root:not(#pg) #settingsPanel-agents .set-group-head h3 {
+  color: var(--pg-text);
+  font: 500 14px/1.3 var(--pg-sans);
+}
+:root:not(#pg) .set-group-head p {
+  color: var(--pg-text-3);
+  font: 400 11.5px/1.55 var(--pg-sans);
+}
+:root:not(#pg) #settingsPanel-agents .set-group-head {
+  background: none;
+  border-bottom: 1px solid var(--pg-line);
+  padding: 12px 16px;
+}
+:root:not(#pg) .set-row {
+  border-top: 1px solid var(--pg-line);
+  padding: 12px 16px;
+}
+:root:not(#pg) .set-card > .set-row:first-child,
+:root:not(#pg) .set-card > .set-sub:first-child > .set-row:first-child {
+  border-top: 0;
+}
+:root:not(#pg) .set-text b {
+  color: var(--pg-text);
+  font: 500 13.5px/1.4 var(--pg-sans);
+}
+:root:not(#pg) .set-text small,
+:root:not(#pg) .set-ctl em,
+:root:not(#pg) .set-foot {
+  color: var(--pg-text-3);
+  font-family: var(--pg-sans);
+  font-size: 11.5px;
+}
+:root:not(#pg) .set-sub {
+  background: rgba(0, 0, 0, 0.14);
+}
+:root:not(#pg) .set-sub > .set-row::before {
+  background: var(--pg-line-2);
+}
+:root:not(#pg) .set-empty {
+  border: 1px dashed var(--pg-line-2);
+  border-radius: var(--pg-r);
+  color: var(--pg-text-3);
+}
+:root:not(#pg) .set-saved {
+  color: var(--pg-ready);
+}
+/* Shortcut keys lit in the accent, like the mic, with room around the text */
+:root:not(#pg) :is(.set-text kbd, .set-row kbd) {
+  display: inline-block;
+  margin: 3px 2px;
+  padding: 3px 9px;
+  border: 1px solid rgba(var(--pg-accent-rgb), 0.55);
+  border-radius: 7px;
+  background: rgba(var(--pg-accent-rgb), 0.16);
+  box-shadow:
+    0 0 10px rgba(var(--pg-accent-rgb), 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  color: var(--pg-text);
+  font: 500 11px/1.3 var(--pg-mono);
+}
+:root:not(#pg) :is(.set-text small, .set-text):has(kbd) {
+  line-height: 1.95;
+}
+
+/* ---- toggles ---- */
+:root:not(#pg) :is(#settingsPage input.set-switch, input.tnai-switch),
+:root:not(#pg) .set-chip input {
+  background: var(--pg-line-2);
+}
+:root:not(#pg) :is(#settingsPage input.set-switch, input.tnai-switch):hover:not(:disabled) {
+  background: var(--pg-text-4);
+}
+:root:not(#pg) :is(#settingsPage input.set-switch, input.tnai-switch):checked,
+:root:not(#pg) .set-chip input:checked {
+  background: var(--pg-accent);
+}
+:root:not(#pg) :is(#settingsPage input.set-switch, input.tnai-switch):checked:hover:not(:disabled) {
+  background: var(--pg-accent-2);
+}
+:root:not(#pg) :is(#settingsPage input.set-switch, input.tnai-switch)::before,
+:root:not(#pg) .set-chip input::before {
+  background: #fff;
+}
+:root:not(#pg) :is(#settingsPage input.set-switch, input.tnai-switch):focus-visible,
+:root:not(#pg) .set-chip:has(input:focus-visible),
+:root:not(#pg) .set-seg label:has(input:focus-visible) {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 2px;
+}
+
+/* ---- inputs, chips, segmented tabs, buttons ---- */
+:root:not(#pg) #settingsPage .set-input {
+  height: 34px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text);
+  font: 400 12.5px var(--pg-sans);
+}
+:root:not(#pg) #settingsPage .set-input:hover:not(:disabled) {
+  border-color: var(--pg-text-4);
+}
+:root:not(#pg) #settingsPage .set-input:focus {
+  border-color: var(--pg-accent);
+  box-shadow: 0 0 0 2px var(--pg-accent-soft);
+}
+:root:not(#pg) #settingsPage select.set-input option,
+:root:not(#pg) select.lp-size option {
+  background: var(--pg-panel-solid);
+  color: var(--pg-text);
+}
+:root:not(#pg) .set-chip {
+  border: 1px solid var(--pg-line);
+  border-radius: 99px;
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+  font-size: 11.5px;
+}
+:root:not(#pg) .set-chip:hover {
+  border-color: var(--pg-line-2);
+}
+:root:not(#pg) .set-chip:has(input:checked) {
+  border-color: color-mix(in srgb, var(--pg-accent) 45%, transparent);
+  background: var(--pg-accent-soft);
+  color: var(--pg-text);
+}
+:root:not(#pg) .set-seg,
+:root:not(#pg) .lp-modes {
+  gap: 0;
+  padding: 2px;
+  border: 1px solid var(--pg-line);
+  border-radius: 9px;
+  background: none;
+}
+:root:not(#pg) .set-seg label {
+  height: auto;
+  padding: 3px 10px;
+  border-radius: 7px;
+  color: var(--pg-text-3);
+  font: 400 11.5px var(--pg-sans);
+  transition:
+    color 0.2s,
+    background 0.2s;
+}
+:root:not(#pg) .set-seg label:hover {
+  color: var(--pg-text);
+}
+:root:not(#pg) .set-seg label:has(input:checked) {
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+  box-shadow: none;
+}
+:root:not(#pg) .set-seg-ico {
+  color: var(--pg-text-3);
+  font-family: var(--pg-sans);
+}
+:root:not(#pg) .set-seg label:has(input:checked) .set-seg-ico {
+  color: var(--pg-accent-2);
+}
+/* buttons: padding 4px 10px, radius 8, 11.5px, line-2 border; primary = accent tint */
+:root:not(#pg)
+  :is(
+    #settingsPage .settings-keys-button,
+    #settingsPage .tnai-updates-actions .button,
+    .tnai-usage-head .button,
+    #tnaiAccountsMount button,
+    .lp-btn,
+    .lp-tab-add,
+    .lp-size,
+    .lp-rotate
+  ) {
+  box-sizing: border-box;
+  height: auto;
+  padding: 4px 10px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 8px;
+  background: none;
+  color: var(--pg-text);
+  font: 400 11.5px var(--pg-sans);
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+:root:not(#pg)
+  :is(
+    #settingsPage .settings-keys-button,
+    #settingsPage .tnai-updates-actions .button,
+    .tnai-usage-head .button,
+    #tnaiAccountsMount button,
+    .lp-btn,
+    .lp-tab-add,
+    .lp-rotate
+  ):hover:not(:disabled) {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+}
+:root:not(#pg) .lp-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+:root:not(#pg) :is(#tnaiAccountsMount .tnai-acct-addline button.primary, .lp-btn.lp-go) {
+  background: rgba(var(--pg-accent-rgb), 0.22);
+  border-color: rgba(var(--pg-accent-rgb), 0.5);
+  color: var(--pg-text);
+}
+:root:not(#pg)
+  :is(#tnaiAccountsMount .tnai-acct-addline button.primary, .lp-btn.lp-go):hover:not(:disabled) {
+  background: rgba(var(--pg-accent-rgb), 0.34);
+  border-color: var(--pg-accent);
+}
+:root:not(#pg) .lp-btn.lp-stop {
+  color: var(--pg-err);
+}
+:root:not(#pg) #tnaiAccountsMount button.link {
+  border-color: transparent;
+  color: var(--pg-text-3);
+}
+:root:not(#pg) #tnaiAccountsMount button.link:hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+:root:not(#pg) #tnaiAccountsMount button.link[data-acct='remove']:hover {
+  background: color-mix(in srgb, var(--pg-err) 14%, transparent);
+  color: var(--pg-err);
+  border-color: transparent;
+}
+:root:not(#pg) #tnaiAccountsMount .tnai-acct-addline input {
+  height: 34px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text);
+  font: 400 12.5px var(--pg-sans);
+}
+:root:not(#pg) #tnaiAccountsMount .tnai-acct-addline input:focus {
+  border-color: var(--pg-accent);
+  box-shadow: 0 0 0 2px var(--pg-accent-soft);
+}
+
+/* ---- Accounts ---- */
+:root:not(#pg) #tnaiAccountsMount .tnai-cli {
+  border-top: 1px solid var(--pg-line);
+}
+:root:not(#pg) #tnaiAccountsMount .tnai-acct-list,
+:root:not(#pg) #tnaiAccountsMount .tnai-acct-addrow {
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r-sm);
+  background: rgba(0, 0, 0, 0.14);
+}
+:root:not(#pg) #tnaiAccountsMount .tnai-acct-row {
+  border-top: 1px solid var(--pg-line);
+}
+:root:not(#pg) #tnaiAccountsMount .tnai-acct-row:first-child {
+  border-top: 0;
+}
+:root:not(#pg) #tnaiAccountsMount :is(.tnai-cli-identity b, .tnai-acct-name b) {
+  color: var(--pg-text);
+  font: 500 13.5px var(--pg-sans);
+}
+:root:not(#pg) #tnaiAccountsMount .tnai-cli-identity small {
+  font: 400 11px var(--pg-mono);
+  color: var(--pg-text-3);
+}
+:root:not(#pg)
+  #tnaiAccountsMount
+  :is(.tnai-acct-name small, .tnai-acct-head small, .tnai-acct-note, .tnai-acct-head-actions) {
+  color: var(--pg-text-3);
+}
+:root:not(#pg) #tnaiAccountsMount .tnai-acct-plan {
+  padding: 1px 7px;
+  border-radius: 7px;
+  background: var(--pg-panel-2);
+  color: var(--pg-text-2);
+  font: 500 10.5px var(--pg-mono);
+}
+:root:not(#pg) #tnaiAccountsMount .tnai-acct-active {
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--pg-ready) 16%, transparent);
+  color: var(--pg-ready);
+}
+:root:not(#pg) #settingsPage .agent-status-pill {
+  border-radius: 99px;
+  font-family: var(--pg-sans);
+}
+:root:not(#pg) #tnaiAccountsMount .tnai-acct-keynote a {
+  color: var(--pg-accent-2);
+}
+
+/* ---- Usage: section head and states (the dashboard itself: 20-usage-accounts-purple.css) ---- */
+:root:not(#pg) #tnaiUsageMount {
+  container-type: inline-size;
+  min-width: 0;
+}
+:root:not(#pg) .tnai-usage-head {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+:root:not(#pg) .tnai-usage-head span {
+  color: var(--pg-text-3);
+  font: 11.5px var(--pg-sans);
+}
+:root:not(#pg) .tnai-usage-state {
+  padding: 22px 16px;
+  border: 1px dashed var(--pg-line-2);
+  border-radius: var(--pg-r);
+  color: var(--pg-text-3);
+  font: 13.5px/1.6 var(--pg-sans);
+  text-align: center;
+}
+:root:not(#pg) .tnai-usage-state small {
+  display: block;
+  margin-top: 6px;
+  color: var(--pg-text-3);
+  font: 11.5px var(--pg-sans);
+}
+:root:not(#pg) .tnai-usage-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--pg-panel-2);
+  overflow: hidden;
+}
+:root:not(#pg) .tnai-usage-track > i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--pg-accent), var(--pg-accent-2));
+}
+/* top-bar limit chip keeps its thin bar */
+:root:not(#pg) .composer .tnai-limit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  margin-right: auto;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pg-text-3);
+  font: 400 11px var(--pg-sans);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+:root:not(#pg) .composer .tnai-limit-chip[hidden] {
+  display: none;
+}
+:root:not(#pg) .composer .tnai-limit-chip:hover {
+  border-color: var(--pg-line-2);
+  color: var(--pg-accent-2);
+}
+:root:not(#pg) .composer .tnai-limit-chip:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent-2);
+  outline-offset: 2px;
+}
+:root:not(#pg) .composer .tnai-limit-chip .tnai-usage-track {
+  width: 34px;
+  height: 4px;
+  border-radius: 2px;
+}
+/* a stale reading keeps the last good numbers, bars dimmed */
+:root:not(#pg) .tnai-limit-chip[data-stale] .tnai-usage-track {
+  opacity: 0.5;
+}
+:root:not(#pg) .composer .tnai-limit-chip[data-level='high'] .tnai-usage-track > i {
+  background: var(--pg-wait);
+}
+:root:not(#pg) .composer .tnai-limit-chip[data-level='full'] .tnai-usage-track > i {
+  background: var(--pg-err);
+}
+@media (max-width: 1179px) {
+  :root:not(#pg) .composer .tnai-limit-chip > span:first-child {
+    display: none;
+  }
+}
+@media (max-width: 959px) {
+  :root:not(#pg) .composer .tnai-limit-chip {
+    display: none;
+  }
+}
+
+/* ---- sign-in menu and modal (solid so text stays readable) ---- */
+:root:not(#pg) .tnai-user {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+/* accounts switched off: the control is hidden and takes no room */
+:root:not(#pg) .tnai-user[hidden] {
+  display: none;
+}
+:root:not(#pg) .tnai-user-signin {
+  box-sizing: border-box;
+  height: auto;
+  padding: 4px 10px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 8px;
+  white-space: nowrap;
+  background: var(--pg-panel);
+  color: var(--pg-text);
+  font: 400 11.5px var(--pg-sans);
+  cursor: pointer;
+}
+:root:not(#pg) .tnai-user-signin:hover {
+  background: color-mix(in srgb, var(--pg-wait) 14%, transparent);
+}
+:root:not(#pg) .tnai-user-signin[aria-busy='true'] {
+  color: var(--pg-text-3);
+}
+:root:not(#pg) .tnai-user-avatar {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--pg-line);
+  overflow: hidden;
+  cursor: pointer;
+  font: 600 11.5px var(--pg-sans);
+}
+:root:not(#pg) .tnai-user-avatar:focus-visible,
+:root:not(#pg) .tnai-user-signin:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 2px;
+}
+:root:not(#pg) .tnai-user-menu,
+:root:not(#pg) .repo-project-menu,
+:root:not(#pg) .tnai-auth-modal {
+  background: var(--pg-panel-solid);
+  border: 1px solid var(--pg-line-2);
+  color: var(--pg-text);
+}
+:root:not(#pg) .tnai-user-menu {
+  z-index: 1200;
+  width: 280px;
+  padding: 8px;
+  border-radius: 14px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+}
+:root:not(#pg) .tnai-user-menu[hidden] {
+  display: none;
+}
+:root:not(#pg) .tnai-user-menu-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 10px;
+  border-bottom: 1px solid var(--pg-line);
+}
+:root:not(#pg) .tnai-user-menu-head .avatar {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  overflow: hidden;
+}
+:root:not(#pg) .tnai-user-menu-head b {
+  display: block;
+  color: var(--pg-text);
+  font: 500 13px var(--pg-sans);
+  overflow-wrap: anywhere;
+}
+:root:not(#pg) .tnai-user-menu-head small {
+  display: block;
+  margin-top: 2px;
+  color: var(--pg-text-3);
+  font: 11px var(--pg-sans);
+  overflow-wrap: anywhere;
+}
+:root:not(#pg) .tnai-user-menu-label {
+  margin: 9px 6px 4px;
+  color: var(--pg-text-4);
+  font: 400 10.5px var(--pg-sans);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+:root:not(#pg) .tnai-user-plan {
+  padding: 2px 6px 6px;
+  color: var(--pg-text);
+  font: 12px/1.45 var(--pg-sans);
+}
+:root:not(#pg) .tnai-user-plan small {
+  display: block;
+  color: var(--pg-text-3);
+  font: 11px/1.45 var(--pg-sans);
+}
+:root:not(#pg) .tnai-user-menu button.tnai-user-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--pg-text);
+  font: 12px var(--pg-sans);
+  text-align: left;
+  cursor: pointer;
+}
+:root:not(#pg) .tnai-user-menu button.tnai-user-item:hover {
+  background: var(--pg-accent-soft);
+}
+:root:not(#pg) .tnai-user-menu button.tnai-user-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: none;
+}
+:root:not(#pg) .tnai-user-menu .tnai-user-signout {
+  margin-top: 6px;
+  border-top: 1px solid var(--pg-line) !important;
+  border-radius: 0 0 8px 8px !important;
+  padding-top: 9px !important;
+  color: var(--pg-err) !important;
+}
+/* overlay, surface, title, text, x and the action row: the shared dialog in src/styles/01-base.css
+   */
+:root:not(#pg) .tnai-auth-overlay {
+  z-index: 1300;
+  background: var(--pg-scrim);
+  backdrop-filter: blur(8px);
+}
+:root:not(#pg) .tnai-auth-overlay.tnai-lock-overlay {
+  z-index: 1290;
+}
+:root:not(#pg) body.tnai-locked .win-ctrls {
+  position: relative;
+  z-index: 1295;
+  background: var(--pg-panel);
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+}
+:root:not(#pg) .tnai-auth-modal {
+  width: min(420px, calc(100vw - 48px));
+  border-radius: var(--pg-r);
+  box-shadow: var(--pg-shadow);
+}
+:root:not(#pg) .tnai-auth-modal .tnai-auth-logo {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-bottom: 14px;
+  border-radius: 9px;
+  background: var(--pg-line-2);
+  color: var(--pg-accent-2);
+  font: 800 17px var(--pg-sans);
+}
+:root:not(#pg) .tnai-auth-x {
+  position: absolute;
+  top: 27px;
+  right: 18px;
+  margin: 0;
+}
+:root:not(#pg) .tnai-auth-buttons {
+  display: grid;
+  gap: 9px;
+  margin-top: 20px;
+}
+:root:not(#pg) .tnai-auth-provider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text);
+  font: 500 13.5px var(--pg-sans);
+  cursor: pointer;
+}
+:root:not(#pg) .tnai-auth-provider svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+:root:not(#pg) .tnai-auth-provider:hover:not(:disabled) {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+}
+:root:not(#pg) .tnai-auth-provider:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 2px;
+}
+:root:not(#pg) .tnai-auth-provider:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(1);
+}
+:root:not(#pg) .tnai-auth-unavailable {
+  margin: -3px 2px 2px;
+  color: var(--pg-wait);
+  font: 11.5px/1.45 var(--pg-sans);
+}
+:root:not(#pg) .tnai-auth-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 4px;
+  color: var(--pg-text-3);
+  font: 11.5px var(--pg-sans);
+}
+:root:not(#pg) .tnai-auth-or::before,
+:root:not(#pg) .tnai-auth-or::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--pg-line);
+}
+:root:not(#pg) .tnai-auth-email {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+:root:not(#pg) .tnai-auth-note {
+  margin-top: 14px !important;
+  color: var(--pg-text-3) !important;
+  font-size: 11.5px !important;
+}
+:root:not(#pg) .tnai-auth-status {
+  margin-top: 14px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  font: 12px/1.5 var(--pg-sans);
+}
+:root:not(#pg) .tnai-auth-status[hidden] {
+  display: none;
+}
+:root:not(#pg) .tnai-auth-status.info {
+  background: var(--pg-accent-soft);
+  color: var(--pg-accent-2);
+}
+:root:not(#pg) .tnai-auth-status.error {
+  background: color-mix(in srgb, var(--pg-err) 14%, transparent);
+  color: var(--pg-err);
+}
+:root:not(#pg) .tnai-auth-wait {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 11px 12px;
+  border: 1px solid var(--pg-line);
+  border-radius: 10px;
+  background: var(--pg-panel);
+  color: var(--pg-text);
+  font: 12px var(--pg-sans);
+}
+:root:not(#pg) .tnai-auth-spin {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--pg-line-2);
+  border-top-color: var(--pg-accent);
+  border-radius: 50%;
+  animation: tnai-auth-spin 0.8s linear infinite;
+}
+@keyframes tnai-auth-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+:root:not(#pg) .tnai-auth-browser {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  color: var(--pg-text-2);
+  font: 500 11.5px var(--pg-sans);
+}
+:root:not(#pg) .tnai-auth-browser select {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 62%;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text);
+  font: 12px var(--pg-sans);
+  cursor: pointer;
+}
+:root:not(#pg) .tnai-auth-browser select:hover {
+  border-color: var(--pg-accent);
+}
+:root:not(#pg) .tnai-auth-browser select:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 2px;
+}
+:root:not(#pg) .tnai-auth-hint {
+  margin-top: 10px !important;
+  color: var(--pg-text-3) !important;
+  font-size: 11.5px !important;
+}
+:root:not(#pg) .tnai-auth-devices {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+:root:not(#pg) .tnai-auth-devices .tnai-auth-wait,
+:root:not(#pg) .tnai-auth-devices .tnai-auth-actions {
+  margin: 0;
+}
+:root:not(#pg) .tnai-auth-device-name {
+  flex: 1;
+  min-width: 0;
+}
+:root:not(#pg) .tnai-auth-device-name b {
+  display: block;
+  color: var(--pg-text);
+  font: 500 13px var(--pg-sans);
+  overflow-wrap: anywhere;
+}
+:root:not(#pg) .tnai-auth-device-name small {
+  display: block;
+  margin-top: 2px;
+  color: var(--pg-text-3);
+  font: 11px var(--pg-sans);
+}
+
+/* ---- project switcher: glass project cards (dot, agents live, folder path in mono) ---- */
+:root:not(#pg) .repository-rail-head {
+  position: relative;
+}
+:root:not(#pg) .repository-rail-head .repo-project-switch {
+  max-width: 100%;
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+:root:not(#pg) .repository-rail-head .repo-project-switch:after {
+  content: ' ▾';
+}
+:root:not(#pg) .repository-rail-head .repo-project-switch:hover {
+  color: var(--pg-accent-2);
+}
+:root:not(#pg) .repo-project-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border-radius: var(--pg-r-sm);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+}
+:root:not(#pg) .repo-project-menu[hidden] {
+  display: none;
+}
+:root:not(#pg) .repo-project-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+:root:not(#pg) .repo-project-item:hover {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+}
+:root:not(#pg) .repo-project-item.active {
+  border-color: color-mix(in srgb, var(--pg-accent) 55%, transparent);
+  background: var(--pg-accent-soft);
+}
+:root:not(#pg) :is(.repository-rail-head, .top) .repo-project-menu button {
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+:root:not(#pg) :is(.repository-rail-head, .top) .repo-project-menu .repo-project-open {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px;
+  text-align: left;
+}
+:root:not(#pg) .repo-project-open b,
+:root:not(#pg) .repo-project-open small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:root:not(#pg) .repo-project-open b {
+  color: var(--pg-text);
+  font: 500 12.5px var(--pg-sans);
+}
+:root:not(#pg) .repo-project-open small {
+  color: var(--pg-text-3);
+  font: 400 10.5px var(--pg-mono);
+}
+:root:not(#pg) .repo-project-item .repo-project-open b:before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--pg-idle);
+  vertical-align: 0;
+  font-size: 0;
+}
+:root:not(#pg) .repo-project-item.active .repo-project-open b:before {
+  background: var(--pg-ready);
+}
+:root:not(#pg) .repo-project-item.missing .repo-project-open small {
+  color: var(--pg-err);
+}
+:root:not(#pg)
+  :is(.repository-rail-head, .top)
+  .repo-project-menu
+  :is(.repo-project-remove, .repo-project-show) {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--pg-text-3);
+} /* a centered grid with no padding: the × sat 2 px right of its box's center (measured 2026-10-09, test project-chip) */
+:root:not(#pg) :is(.repository-rail-head, .top) .repo-project-menu .repo-project-show:hover {
+  background: var(--pg-accent-soft);
+  color: var(--pg-text);
+}
+:root:not(#pg) :is(.repository-rail-head, .top) .repo-project-menu .repo-project-remove:hover {
+  background: color-mix(in srgb, var(--pg-err) 14%, transparent);
+  color: var(--pg-err);
+}
+:root:not(#pg) .repo-project-live [data-k='working'] {
+  color: var(--st-working-fg);
+  font-family: var(--pg-mono);
+}
+:root:not(#pg) .repo-project-live [data-k='needs'] {
+  color: var(--st-waiting-fg);
+  font-family: var(--pg-mono);
+}
+:root:not(#pg) :is(.repository-rail-head, .top) .repo-project-menu .repo-project-add {
+  margin-top: 2px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--pg-line);
+  border-radius: 0 0 6px 6px;
+  color: var(--pg-accent-2);
+  font: 400 11.5px var(--pg-sans);
+  text-align: left;
+}
+:root:not(#pg) :is(.repository-rail-head, .top) .repo-project-menu .repo-project-add:hover {
+  background: var(--pg-accent-soft);
+}
+/* two foot rows ("Add project folder…", "New project…"): one top line above the pair; the second
+   keeps the menu's row gap and is rounded on all corners */
+:root:not(#pg)
+  :is(.repository-rail-head, .top)
+  .repo-project-menu
+  .repo-project-add
+  + .repo-project-add {
+  margin-top: 0;
+  border-top: 0;
+  border-radius: 6px;
+}
+/* The top bar's Workspace chip opens the project menu (09). The menu sits
+   in the top bar's left group, under the chip (its left edge is set by 09). */
+:root:not(#pg) .top .top-left {
+  position: relative;
+}
+:root:not(#pg) .top .project[role='button'] {
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    color 0.2s;
+}
+:root:not(#pg) .top .project[role='button']:is(:hover, [aria-expanded='true']) {
+  border-color: var(--pg-line-2);
+  color: var(--pg-text);
+}
+:root:not(#pg) .top .top-left > .repo-project-menu {
+  right: auto;
+  width: max-content;
+  min-width: 280px;
+  max-width: min(440px, calc(100vw - 32px));
+}
+
+/* ---- Live preview page ---- */
+:root:not(#pg) .layout.preview-mode {
+  grid-template-columns: var(--nav-width, 205px) minmax(0, 1fr) !important;
+}
+:root:not(#pg) .layout.preview-mode > .sidebar {
+  grid-column: 1;
+  grid-row: 1;
+}
+:root:not(#pg) .layout.preview-mode > .lpp-page {
+  display: flex;
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+}
+:root:not(#pg) .layout.preview-mode > .overview-view,
+:root:not(#pg) .layout.preview-mode > .workspace,
+:root:not(#pg) .layout.preview-mode > .preview,
+:root:not(#pg) .layout.preview-mode > .tnai-resizer {
+  display: none !important;
+}
+:root:not(#pg) .lpp-page {
+  display: none;
+  flex-direction: column;
+  padding: 16px 16px 14px;
+  overflow: hidden;
+}
+/* Browser layout: the preview (31 in browser mode: tabs, toolbar, stage) takes the page; the
+   terminal drawer sits under it like devtools. */
+:root:not(#pg) .lpp-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+}
+:root:not(#pg) .lpp-drawer {
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r);
+  background: var(--pg-panel);
+  backdrop-filter: var(--pg-glass-blur);
+  -webkit-backdrop-filter: var(--pg-glass-blur);
+}
+/* The Stage: a dark canvas (dot grid + a soft accent glow from the top) the preview floats on as a
+   device frame */
+:root:not(#pg) .lpp-main {
+  display: flex;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+:root:not(#pg) .lpp-stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r);
+  background:
+    radial-gradient(70% 60% at 50% -10%, rgba(var(--pg-accent-rgb), 0.16), transparent 70%),
+    radial-gradient(circle, rgba(255, 255, 255, 0.07) 1px, transparent 1.4px) 0 0/18px 18px,
+    rgba(6, 4, 16, 0.6);
+  container-type: inline-size;
+  container-name: lpp;
+}
+:root:not(#pg) .lpp-note {
+  margin: 0;
+  color: var(--pg-text-3);
+  font: 400 11.5px/1.55 var(--pg-sans);
+}
+:root:not(#pg) .lpp-note b {
+  color: var(--pg-text-2);
+  font-weight: 600;
+}
+:root:not(#pg) #livePreviewPage .lp {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) 56px;
+}
+:root:not(#pg) #livePreviewPage .lp-stage {
+  grid-row: 2;
+  box-sizing: border-box;
+  padding: 16px;
+  background: none;
+  overflow: hidden;
+}
+:root:not(#pg) #livePreviewPage .lp-stage.lp-framed {
+  align-items: center;
+}
+:root:not(#pg) #livePreviewPage .lp-stage > .lp-add {
+  display: none;
+}
+:root:not(#pg) #livePreviewPage .lp-bar [data-act='run'] {
+  display: none;
+} /* Start / Stop sit in the ▶ Run menu */
+/* Tab strip: browser-style tabs along the top edge. */
+:root:not(#pg) .lp-browser .lp-tabs {
+  width: auto;
+  max-width: none;
+  margin: 0;
+  padding: 8px 10px 0;
+  border: 0;
+  border-radius: 0;
+  gap: 4px;
+}
+:root:not(#pg) .lp-browser .lp-tab {
+  max-width: 220px;
+  padding: 5px 4px 5px 10px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 10px 10px 0 0;
+}
+:root:not(#pg) .lp-browser .lp-tab:hover {
+  color: var(--pg-text-2);
+  background: rgba(255, 255, 255, 0.03);
+}
+:root:not(#pg) .lp-browser .lp-tab.active {
+  border-color: var(--pg-line);
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+}
+:root:not(#pg) .lp-browser .lp-tab-add {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  color: var(--pg-text-3);
+}
+/* Toolbar: back, forward, reload, address, state, device, open, Run, pop out. One row; the address
+   bar gives way first. */
+:root:not(#pg) .lp-browser .lp-bar {
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--pg-panel-2);
+  border-top: 1px solid var(--pg-line);
+}
+:root:not(#pg) .lp-browser .lp-bar[hidden] {
+  display: none;
+}
+:root:not(#pg)
+  .lp-browser:not(#lp)
+  :is(.lp-nav, .lp-bar > [data-act='reload'], .lp-bar [data-act='external']) {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-color: transparent;
+  border-radius: 8px;
+  color: var(--pg-text-2);
+  font-size: 14px;
+}
+:root:not(#pg)
+  .lp-browser:not(#lp)
+  :is(.lp-nav, .lp-bar > [data-act='reload'], .lp-bar [data-act='external']):hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+:root:not(#pg) .lp-browser .lp-bar .lp-btn[data-act]:disabled {
+  opacity: 0.35;
+}
+:root:not(#pg) .lp-browser .lp-state:has(> span:empty) > .bw-dot:not([data-s]),
+:root:not(#pg) .lp-browser .lp-state:has(> span:empty) > .bw-dot[data-s=''] {
+  display: none;
+}
+:root:not(#pg) .lp-browser .lp-url {
+  flex: 1 1 220px;
+  min-width: 140px;
+  height: 30px;
+  border-radius: 15px;
+  padding: 0 14px;
+  background: rgba(0, 0, 0, 0.22);
+}
+:root:not(#pg) .lp-browser .lp-state {
+  flex: 0 1 auto;
+  max-width: 190px;
+}
+:root:not(#pg) .lp-browser .lp-state span:empty {
+  display: none;
+}
+:root:not(#pg) .lp-browser .lp-size {
+  max-width: 130px;
+}
+:root:not(#pg) .lp-browser .lp-size-label:empty {
+  display: none;
+}
+/* Empty tab */
+:root:not(#pg) .lp-blank {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+}
+:root:not(#pg) .lp-blank h2 {
+  margin: 0;
+  color: var(--pg-text);
+  font: 500 15px var(--pg-sans);
+}
+:root:not(#pg) .lp-blank ol {
+  display: grid;
+  gap: 8px;
+  max-width: 440px;
+  margin: 0;
+  padding: 0 0 0 18px;
+  color: var(--pg-text-2);
+  font: 12.5px/1.55 var(--pg-sans);
+  text-align: left;
+}
+:root:not(#pg) .lp-blank li .lp-btn {
+  margin-left: 4px;
+}
+:root:not(#pg) .lp-blank .lpp-note {
+  max-width: 440px;
+}
+/* Run menu (popover values from the spec) */
+:root:not(#pg) .lpp-runwrap {
+  position: relative;
+  flex: none;
+  display: flex;
+}
+:root:not(#pg) .lp-btn.lpp-run {
+  position: relative;
+}
+:root:not(#pg) .lp-btn.lpp-run[data-live='true']::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pg-ready);
+  box-shadow: 0 0 0 2px var(--pg-panel-solid);
+}
+:root:not(#pg) .lpp-menu {
+  z-index: 30;
+  display: grid;
+  gap: 4px;
+  box-sizing: border-box;
+  width: 340px;
+  max-height: min(420px, 60vh);
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 14px;
+  background: rgba(26, 20, 51, 0.96);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+  animation: lpp-pop 0.3s var(--pg-ease);
+}
+:root:not(#pg) .lpp-menu[hidden] {
+  display: none;
+}
+@keyframes lpp-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+:root:not(#pg) .lpp-mhead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px;
+}
+:root:not(#pg) .lpp-mhead b {
+  color: var(--pg-text);
+  font: 500 13px var(--pg-sans);
+}
+:root:not(#pg) .lpp-mhead small {
+  color: var(--pg-text-3);
+  font: 400 10.5px var(--pg-mono);
+}
+:root:not(#pg) .lpp-menu > .lpp-note {
+  padding: 0 4px 4px;
+}
+:root:not(#pg) .lpp-menu > .lp-btn {
+  justify-self: start;
+  margin: 0 4px;
+}
+:root:not(#pg) .lpp-mrow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1px 8px;
+  min-height: 48px;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: var(--pg-r-sm);
+  cursor: pointer;
+}
+:root:not(#pg) .lpp-mrow:hover {
+  background: var(--pg-panel-hover);
+}
+:root:not(#pg) .lpp-mrow:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+:root:not(#pg) .lpp-mrow.active {
+  background: var(--pg-accent-soft);
+}
+:root:not(#pg) .lpp-mrow .bw-dot {
+  grid-row: span 2;
+  width: 8px;
+  height: 8px;
+}
+:root:not(#pg) .lpp-mrow b {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pg-text);
+  font: 500 12px var(--pg-mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+:root:not(#pg) .lpp-mrow .lp-btn {
+  grid-row: span 2;
+}
+:root:not(#pg) .lpp-mrow small {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pg-text-3);
+  font: 400 10.5px var(--pg-mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* Terminal drawer */
+:root:not(#pg) .lpp-drawer {
+  position: relative;
+  flex: none;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: var(--lpp-dh, 200px);
+  min-height: 0;
+  overflow: hidden;
+  transition: height 0.35s var(--pg-ease);
+}
+:root:not(#pg) .lpp-drawer.lpp-dragging {
+  transition: none;
+  user-select: none;
+}
+:root:not(#pg) .lpp-drawer[data-open='false'] {
+  height: 40px;
+}
+:root:not(#pg) .lpp-drawer[data-open='false'] .lpp-dbody {
+  visibility: hidden;
+}
+:root:not(#pg) .lpp-grip {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  left: 18px;
+  right: 18px;
+  height: 7px;
+  cursor: ns-resize;
+}
+:root:not(#pg) .lpp-grip::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  width: 36px;
+  height: 3px;
+  margin-left: -18px;
+  border-radius: 2px;
+  background: var(--pg-line-2);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+:root:not(#pg) :is(.lpp-drawer:hover .lpp-grip, .lpp-grip:focus-visible)::after {
+  opacity: 1;
+}
+:root:not(#pg) .lpp-grip:focus-visible {
+  outline: none;
+}
+:root:not(#pg) .lpp-dhead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 40px;
+  box-sizing: border-box;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--pg-line);
+}
+:root:not(#pg) .lpp-drawer[data-open='false'] .lpp-dhead {
+  border-bottom-color: transparent;
+}
+:root:not(#pg) .lpp-dtitle {
+  flex: none;
+  padding: 0 6px 0 0;
+  border: 0;
+  background: none;
+  color: var(--pg-text-4);
+  font: 500 10.5px var(--pg-sans);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+:root:not(#pg) .lpp-dtitle:hover {
+  color: var(--pg-text-2);
+}
+:root:not(#pg) .lpp-dtabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 2px;
+  border: 1px solid var(--pg-line);
+  border-radius: 9px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+:root:not(#pg) .lpp-dtabs:empty {
+  display: none;
+}
+:root:not(#pg) .lpp-dtab {
+  display: flex;
+  align-items: center;
+  flex: none;
+  max-width: 200px;
+  border-radius: 7px;
+  color: var(--pg-text-3);
+}
+:root:not(#pg) .lpp-dtab.active {
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+}
+:root:not(#pg) .lpp-dtab-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 10px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: 400 11.5px var(--pg-mono);
+  cursor: pointer;
+}
+:root:not(#pg) .lpp-dtab-name span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+:root:not(#pg) .lpp-dtab-name .bw-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+}
+:root:not(#pg) .lpp-dtab-close {
+  width: 18px;
+  height: 18px;
+  margin-right: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--pg-text-3);
+  font: 11.5px var(--pg-sans);
+  cursor: pointer;
+}
+:root:not(#pg) .lpp-dtab-close:hover {
+  background: var(--pg-accent-soft);
+  color: var(--pg-accent-2);
+}
+:root:not(#pg) :is(.lpp-dadd, .lpp-dfold) {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--pg-text-3);
+  font: 14px var(--pg-sans);
+  cursor: pointer;
+}
+:root:not(#pg) :is(.lpp-dadd, .lpp-dfold):hover:not(:disabled) {
+  border-color: var(--pg-line-2);
+  color: var(--pg-text);
+}
+:root:not(#pg) .lpp-dadd:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+:root:not(#pg) .lpp-dgap {
+  flex: 1;
+}
+:root:not(#pg) .lpp-dslot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+} /* gap: the badge and the drawer's A− / A+ (33) */
+:root:not(#pg) .lpp-drawer[data-open='false'] :is(.lpp-dslot, .lpp-dopen) {
+  display: none;
+}
+:root:not(#pg) .lpp-dopen[hidden] {
+  display: none;
+}
+:root:not(#pg) .lpp-dbody {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+:root:not(#pg) .lpp-dbody .bw-term-host .xterm {
+  padding: 6px 4px 4px 12px;
+}
+:root:not(#pg) .lpp-dbody .bw-term-chooser {
+  display: none;
+}
+:root:not(#pg) .lpp-dempty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  padding: 12px;
+  text-align: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root:not(#pg) :is(.lpp-drawer, .lpp-menu, .lpp-mirror, #livePreviewPage .lp-frame-shell) {
+    transition: none;
+    animation: none;
+  }
+}
+/* Browser chrome (65 moves 31's controls into it, also in the popped-out
+   window): a tab row over an address row along the stage's top edge, and the device dock under the
+   frame. Tab row on --pg-bg; the open tab and the address row share --pg-panel-solid. */
+:root:not(#pg) .lp:has(> .lpp-chrome):not(#lp) {
+  grid-template-rows: auto minmax(0, 1fr) 56px;
+} /* :not(#lp): over the page's own row rule above */
+:root:not(#pg) .lp:has(> .lpp-chrome):not(#lp) .lp-stage {
+  padding-bottom: 6px;
+}
+:root:not(#pg) .lpp-chrome {
+  grid-row: 1;
+  grid-column: 1/-1;
+  min-width: 0;
+  border-bottom: 1px solid var(--pg-line);
+  background: var(--pg-bg);
+}
+:root:not(#pg) .lpp-tabrow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  height: 38px;
+  box-sizing: border-box;
+  padding: 6px 8px 0;
+}
+:root:not(#pg) .lpp-tabrow .lp-tabs {
+  flex: 0 1 auto;
+  align-self: stretch;
+  width: auto;
+  max-width: none;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  gap: 2px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+:root:not(#pg) .lpp-tabrow .lp-tab {
+  gap: 6px;
+  max-width: 210px;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 5px 0 10px;
+  border: 0;
+  border-radius: 10px 10px 0 0;
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+:root:not(#pg) .lpp-tabrow .lp-tab:hover {
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+}
+:root:not(#pg) .lpp-tabrow .lp-tab.active {
+  background: var(--pg-panel-solid);
+  color: var(--pg-text);
+}
+:root:not(#pg) .lpp-tabrow .lp-tab-name {
+  flex: 1;
+  font-size: 12px;
+  text-align: left;
+}
+:root:not(#pg) .lpp-tabrow .lp-tab-close {
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+:root:not(#pg) .lpp-tabrow .lp-tab:is(.active, :hover, :focus-within) .lp-tab-close {
+  opacity: 1;
+} /* × only on the open or pointed-at tab */
+/* :not(#lp) lifts these over the shared button rule (an :is() list holding an id) */
+:root:not(#pg) .lpp-tabrow .lp-tab-add:not(#lp) {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-color: transparent;
+  border-radius: 8px;
+  color: var(--pg-text-3);
+}
+:root:not(#pg) .lpp-tabrow .lp-tabs.lp-tabs-over .lp-tab-add:not(#pg) {
+  background: var(--pg-bg);
+  box-shadow: 5px 0 0 var(--pg-bg);
+}
+:root:not(#pg)
+  .lpp-tabrow
+  .lp-tabs.lp-tabs-over
+  .lp-tab-add:not(#pg):is(:hover, [aria-pressed='true']) {
+  background: linear-gradient(var(--pg-accent-soft), var(--pg-accent-soft)), var(--pg-bg);
+}
+:root:not(#pg) .lpp-tabrow .lp-btn:not(#lp) {
+  height: 26px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+}
+/* "On top" in the popped-out window is a label around a tick box, so the button rules above (written
+   for buttons) gave it no box of its own: it stood as bare text beside "Bring back", lower and
+   cut at its edge. It gets the same box as its neighbor, with the switch Settings uses inside (06, `tnai-switch`). */
+:root:not(#pg) .lpp-tabrow .lpp-ontop:not(#lp) {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: 8px;
+  box-sizing: border-box;
+  height: 26px;
+  margin: 0 0 6px;
+  padding: 0 10px;
+  border: 1px solid var(--pg-line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--pg-text-2);
+  font: 500 12px/1 var(--pg-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+:root:not(#pg) .lpp-tabrow .lpp-ontop[hidden] {
+  display: none;
+}
+:root:not(#pg) .lpp-tabrow .lpp-ontop:not(#lp):hover {
+  border-color: var(--pg-line-2);
+  color: var(--pg-text);
+}
+:root:not(#pg) .lpp-tabrow .lpp-ontop:not(#lp):has(input:checked) {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+  color: var(--pg-text);
+}
+:root:not(#pg) .lpp-tabrow .lpp-ontop:not(#lp):has(input:focus-visible) {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+:root:not(#pg) .lpp-tabrow .lpp-pop {
+  margin-left: auto;
+  color: var(--pg-text-2);
+}
+:root:not(#pg) .lpp-tabrow .lpp-pop:not(#lp):not([aria-label^='Bring']):not(:hover) {
+  border-color: transparent;
+}
+:root:not(#pg) .lpp-tabrow .lpp-pop:not([aria-label^='Bring']) .lpp-lbl {
+  display: none;
+} /* an icon at the far right; "Bring back" keeps its words */
+:root:not(#pg) .lpp-chrome .lp-bar {
+  flex-wrap: nowrap;
+  gap: 6px;
+  height: 44px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 0;
+  background: var(--pg-panel-solid);
+}
+:root:not(#pg) .lpp-chrome .lp-bar > .lpp-runwrap .lp-btn:not(#lp) {
+  height: 28px;
+  border-radius: 9px;
+}
+:root:not(#pg) #livePreviewPage .lpp-chrome .lp-bar [data-act='terminal'] {
+  display: none;
+} /* the drawer below has "Terminal page ↗"; the popped-out window keeps this one */
+/* Address box: status dot at its start (hover says the state), the address, the state's note
+   ("Updated · …", "Shown by …"), Open in browser */
+:root:not(#pg) .lpp-omni {
+  position: relative;
+  flex: 1 1 220px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 120px;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 3px 0 30px;
+  border: 1px solid var(--pg-line);
+  border-radius: 15px;
+  background: rgba(0, 0, 0, 0.22);
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+:root:not(#pg)
+  .lpp-omni:has(.lp-state > span:empty):has(
+    .lp-state > .bw-dot:not([data-s]),
+    .lp-state > .bw-dot[data-s='']
+  ) {
+  padding-left: 14px;
+}
+:root:not(#pg) .lpp-omni:focus-within {
+  border-color: var(--pg-accent);
+  box-shadow: 0 0 0 3px var(--pg-accent-soft);
+}
+:root:not(#pg) .lpp-omni:has(.lp-url[aria-invalid='true']) {
+  border-color: color-mix(in srgb, var(--pg-err) 40%, transparent);
+}
+:root:not(#pg) .lpp-omni .lp-url:is(*, :focus, [aria-invalid='true']) {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+:root:not(#pg) .lpp-omni .lp-state {
+  order: 1;
+  flex: 0 1 auto;
+  max-width: 46%;
+}
+:root:not(#pg) .lpp-omni .lp-state > .bw-dot {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  margin-top: -4px;
+}
+:root:not(#pg) .lp-bar .lpp-omni:not(#lp) .lp-btn[data-act='external'] {
+  order: 2;
+  width: 24px;
+  height: 24px;
+}
+:root:not(#pg) .lp-bar .lpp-omni .lp-btn[data-act='external'] svg {
+  width: 14px;
+  height: 14px;
+}
+/* Device dock under the frame: the group of three characters (Side by side), the Desktop / Tablet /
+   Phone characters (.dvc-*, end of this file), size, what is shown (size · zoom), Rotate */
+:root:not(#pg) .lpp-dock {
+  grid-row: 3;
+  grid-column: 1/-1;
+  justify-self: center;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  max-width: calc(100% - 24px);
+  min-width: 0;
+  padding: 3px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 13px;
+  background: var(--pg-panel-solid);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+}
+:root:not(#pg) .lpp-dock .lp-modes {
+  padding: 0;
+  border: 0;
+}
+:root:not(#pg) .lpp-dock .lp-modes button {
+  padding: 4px 10px;
+  border-radius: 9px;
+}
+:root:not(#pg) .lpp-dock :is(.lp-size, .lp-rotate, .lpp-sbs-btn):not(#lp) {
+  height: 26px;
+  border-radius: 9px;
+}
+:root:not(#pg) .lpp-dock .lp-rotate:not(#lp) {
+  width: 30px;
+  padding: 0;
+} /* same box as Side by side beside it; :not(#lp) because the shared button rule's padding pushed the icon 4 px off center */
+:root:not(#pg) .lpp-dock .lp-size {
+  max-width: 150px;
+}
+:root:not(#pg) .lpp-dock .lp-rotate[hidden] {
+  display: none;
+}
+:root:not(#pg) .lpp-dock .lp-size-label {
+  min-width: 0;
+  padding: 0 6px;
+  overflow: hidden;
+  color: var(--pg-text-3);
+  font: 400 10.5px var(--pg-mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+:root:not(#pg) .lp-btn.lpp-sbs-btn:not(#lp) {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  padding: 0;
+  color: var(--pg-text-2);
+} /* :not(#lp): the shared button rule's padding would push the icon off center */
+:root:not(#pg) .lpp-sbs-btn svg {
+  display: block;
+  width: 16px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+}
+:root:not(#pg) .dvc-lbl {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+:root:not(#pg) .lp-btn.lpp-sbs-btn[aria-pressed='true'] {
+  border-color: rgba(var(--pg-accent-rgb), 0.5);
+  background: rgba(var(--pg-accent-rgb), 0.22);
+  color: var(--pg-text);
+}
+:root:not(#pg) .lp-mirror-cap {
+  color: var(--pg-text-3);
+  font: 400 10.5px var(--pg-mono);
+  white-space: nowrap;
+}
+/* The frame floats: line ring, deep shadow, a faint accent glow */
+:root:not(#pg) #livePreviewPage .lp-frame-shell {
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 1px var(--pg-line-2),
+    0 30px 70px -18px rgba(0, 0, 0, 0.75),
+    0 0 70px -20px rgba(var(--pg-accent-rgb), 0.35);
+  transition:
+    width 0.45s var(--pg-ease),
+    height 0.45s var(--pg-ease);
+}
+/* Side by side: Desktop, Tablet, Phone in the three middle columns; the main view takes its
+   device's column, the two mirrors (31) the others. 65 (layoutSides) gives all three one height
+   (--lpp-sbs-h) and sets the column widths to fit, so they share a top line, a bottom line and a
+   caption line with equal gaps, the row centered between the two outer columns. The column rule
+   below only holds until 65 has measured. */
+:root:not(#pg) #livePreviewPage .lp[data-sbs] {
+  grid-template-columns: 0 minmax(0, 1.9fr) minmax(0, 1.15fr) minmax(0, 0.75fr) 0;
+}
+:root:not(#pg) #livePreviewPage .lp[data-sbs] .lp-stage {
+  padding: 16px;
+}
+:root:not(#pg)
+  #livePreviewPage
+  .lp[data-sbs]
+  :is(.lp-stage, .lpp-mirror, .lpp-main-cap)[data-device='desktop'] {
+  grid-column: 2;
+}
+:root:not(#pg)
+  #livePreviewPage
+  .lp[data-sbs]
+  :is(.lp-stage, .lpp-mirror, .lpp-main-cap)[data-device='tablet'] {
+  grid-column: 3;
+}
+:root:not(#pg)
+  #livePreviewPage
+  .lp[data-sbs]
+  :is(.lp-stage, .lpp-mirror, .lpp-main-cap)[data-device='phone'] {
+  grid-column: 4;
+}
+:root:not(#pg) #livePreviewPage .lp[data-sbs='fit']:not([data-sbs-empty]) .lp-stage {
+  align-self: center;
+  height: calc(var(--lpp-sbs-h) + 32px);
+} /* 31 fits the frame into height - 32 */
+:root:not(#pg) #livePreviewPage .lp[data-sbs='fit'] .lpp-mirror {
+  align-self: center;
+  height: calc(var(--lpp-sbs-h) + 40px);
+} /* 31 fits a mirror into height - 40 */
+:root:not(#pg) .lp[data-sbs-empty] .lpp-main-cap {
+  display: none;
+}
+:root:not(#pg) .lpp-main-cap {
+  grid-row: 2;
+  align-self: center;
+  justify-self: center;
+  max-width: 100%;
+  height: 14px;
+  margin-top: calc(var(--lpp-sbs-h, 0px) + 26px);
+  overflow: hidden;
+  color: var(--pg-text);
+  font: 400 10.5px/14px var(--pg-mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+} /* the main view's caption, 6 px under its frame like the mirrors' (a centered item: its text starts half of H + 26 - 14 below the row's middle) */
+:root:not(#pg) .lpp-mirror {
+  position: relative;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  padding: 16px 8px;
+  animation: lpp-fade 0.35s var(--pg-ease);
+}
+@keyframes lpp-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+:root:not(#pg) .lp-mirror-cap {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: calc(50% + var(--lp-frame-h, 0px) / 2 + 6px);
+  line-height: 14px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+} /* 6 px under its own frame, the same for every device (the frame is centered; 31 gives its height and keeps 20 px free under it), never in the dock's row */
+:root:not(#pg) .lpp-mirror[data-empty='true'] :is(.lp-frame-scale, .lp-frame) {
+  visibility: hidden;
+}
+:root:not(#pg) .lpp-mirror[data-empty='true'] .lp-frame-shell:not(.lp-bezel) {
+  background: rgba(255, 255, 255, 0.03);
+}
+/* Narrow stage (a 768 px window): the dock tightens so it stays one row inside the stage */
+@container lpp (max-width:700px) {
+  :root:not(#pg) .lpp-dock .lp-modes button {
+    padding: 4px 6px;
+  }
+  :root:not(#pg) .lpp-dock .lp-size {
+    max-width: 96px;
+  }
+}
+
+/* ---- preview toolbar and stage ---- */
+:root:not(#pg) .lp {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  background: transparent;
+}
+:root:not(#pg) .lp-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  width: max-content;
+  max-width: calc(100% - 20px);
+  margin: 8px 10px;
+  padding: 2px;
+  border: 1px solid var(--pg-line);
+  border-radius: 9px;
+  background: transparent;
+  overflow-x: auto;
+}
+:root:not(#pg) .lp-tab {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  max-width: 210px;
+  height: auto;
+  padding: 3px 4px 3px 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--pg-text-3);
+}
+:root:not(#pg) .lp-tab.active {
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+}
+:root:not(#pg) .lp-tab-name {
+  min-width: 0;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: 400 11.5px var(--pg-sans);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+:root:not(#pg) .lp-tab .bw-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+}
+:root:not(#pg) .lp-tab-close {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--pg-text-3);
+  font: 11.5px var(--pg-sans);
+  cursor: pointer;
+}
+:root:not(#pg) .lp-tab-close:hover {
+  background: var(--pg-accent-soft);
+  color: var(--pg-accent-2);
+}
+:root:not(#pg) .lp-tab-add {
+  flex: none;
+}
+/* Several tabs in a narrow strip (only the first tab was reachable). When
+   the tabs don't fit, the ones that are not open shrink (the open one keeps its full name; a
+   shortened one still shows its full address on hover), and ＋ stays at the strip's right edge. 31
+   scrolls the open tab into view and turns the mouse wheel into sideways scrolling. Tabs that fit
+   look as before. */
+:root:not(#pg) .lp-tab {
+  flex: 0 1 auto;
+  min-width: 96px;
+}
+:root:not(#pg) .lp-tab.active {
+  flex-shrink: 0;
+}
+:root:not(#pg) .lp-tab-add {
+  position: sticky;
+  right: 0;
+  z-index: 3;
+}
+/* Solid behind ＋ only while tabs scroll under it; :not(#pg) lifts these over the shared button rule
+   above (an :is() list holding an id). */
+:root:not(#pg) .lp-tabs.lp-tabs-over .lp-tab-add:not(#pg) {
+  background: var(--pg-panel-solid);
+  box-shadow: 5px 0 0 var(--pg-panel-solid);
+}
+:root:not(#pg) .lp-tabs.lp-tabs-over .lp-tab-add:not(#pg):is(:hover, [aria-pressed='true']) {
+  background: linear-gradient(var(--pg-accent-soft), var(--pg-accent-soft)), var(--pg-panel-solid);
+}
+:root:not(#pg) .lp-tab-add[aria-pressed='true'] {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+}
+:root:not(#pg) .lp-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--pg-line);
+}
+:root:not(#pg) .lp-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  max-width: 44%;
+  min-width: 0;
+  color: var(--pg-text-2);
+  font: 400 11.5px var(--pg-sans);
+}
+:root:not(#pg) .lp-state span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+:root:not(#pg) .lp-url {
+  flex: 1;
+  min-width: 80px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text);
+  font: 400 12px var(--pg-mono);
+  outline: none;
+}
+:root:not(#pg) .lp-url:focus {
+  border-color: var(--pg-accent);
+  box-shadow: 0 0 0 3px var(--pg-accent-soft);
+}
+:root:not(#pg) .lp-url[aria-invalid='true'] {
+  border-color: color-mix(in srgb, var(--pg-err) 40%, transparent);
+  background: color-mix(in srgb, var(--pg-err) 14%, transparent);
+}
+:root:not(#pg) .lp-btn {
+  flex: none;
+  min-width: 24px;
+  white-space: nowrap;
+}
+:root:not(#pg) .lp-modes {
+  display: flex;
+  flex: none;
+}
+:root:not(#pg) .lp-modes button {
+  height: auto;
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--pg-text-3);
+  font: 400 11.5px var(--pg-sans);
+  cursor: pointer;
+  transition:
+    color 0.2s,
+    background 0.2s;
+}
+:root:not(#pg) .lp-modes button:hover {
+  color: var(--pg-text);
+}
+:root:not(#pg) .lp-modes button[aria-pressed='true'] {
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+  box-shadow: none;
+}
+:root:not(#pg) .lp-size {
+  flex: none;
+  max-width: 150px;
+}
+:root:not(#pg) select.lp-size {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 26px;
+  background-color: var(--pg-panel);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none' stroke='%23b9a9d6' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  border-color: var(--pg-line);
+}
+:root:not(#pg) select.lp-size:hover {
+  border-color: var(--pg-line-2);
+}
+:root:not(#pg) select.lp-size:focus {
+  border-color: var(--pg-accent);
+  outline: none;
+}
+:root:not(#pg) .lp-rotate {
+  flex: none;
+  width: 28px;
+  padding: 0;
+}
+:root:not(#pg) .lp-rotate[hidden] {
+  display: none;
+}
+:root:not(#pg) .lp-size-label {
+  flex: none;
+  color: var(--pg-text-3);
+  font: 400 10.5px var(--pg-mono);
+  white-space: nowrap;
+}
+:root:not(#pg) .lp-stage {
+  position: relative;
+  min-height: 0;
+  overflow: auto;
+  background: rgba(0, 0, 0, 0.18);
+}
+:root:not(#pg) .lp-stage.lp-framed {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 16px;
+}
+:root:not(#pg) .lp-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+:root:not(#pg) .lp-frame-shell {
+  flex: none;
+  overflow: hidden;
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 1px var(--pg-line-2),
+    var(--pg-shadow);
+  background: #fff;
+}
+:root:not(#pg) .lp-frame-scale {
+  transform-origin: 0 0;
+  background: #fff;
+}
+:root:not(#pg) .lp-frame-shell.lp-bezel {
+  box-sizing: content-box;
+  background: var(--pg-panel-solid);
+}
+:root:not(#pg) .lp-bezel .lp-frame-scale {
+  overflow: hidden;
+}
+:root:not(#pg) .lp-note,
+:root:not(#pg) .lp-add p {
+  margin: 0;
+  color: var(--pg-text-3);
+  font: 12px/1.55 var(--pg-sans);
+}
+:root:not(#pg) .lp-note {
+  padding: 14px 12px;
+}
+:root:not(#pg) .lp-empty-screen {
+  display: grid;
+  place-content: center;
+  text-align: center;
+}
+:root:not(#pg) .lp-empty-screen .lp-note {
+  padding: 24px;
+  font-size: 14px;
+}
+:root:not(#pg) .lp-note b,
+:root:not(#pg) .lp-add h4 {
+  color: var(--pg-text-2);
+}
+:root:not(#pg) .lp-note b {
+  font-weight: 600;
+}
+:root:not(#pg) .lp-add {
+  display: grid;
+  gap: 10px;
+  max-width: 460px;
+  padding: 14px 12px;
+}
+:root:not(#pg) .lp-add h4 {
+  margin: 0;
+  font: 500 10.5px var(--pg-sans);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pg-text-4);
+}
+:root:not(#pg) .lp-scripts {
+  display: grid;
+  gap: 4px;
+}
+:root:not(#pg) .lp-script {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1px 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  text-align: left;
+  cursor: pointer;
+}
+:root:not(#pg) .lp-script:hover {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+}
+:root:not(#pg) .lp-script b {
+  color: var(--pg-text);
+  font: 500 12px var(--pg-mono);
+}
+:root:not(#pg) .lp-script small {
+  color: var(--pg-text-3);
+  font: 400 10.5px var(--pg-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+:root:not(#pg) .lp-url-form {
+  display: flex;
+  gap: 6px;
+}
+:root:not(#pg) .lp-msg {
+  color: var(--pg-err);
+  font: 11.5px var(--pg-sans);
+  min-height: 13px;
+}
+
+/* A long select (Voice model) made the auto control column eat the row and squeezed the text into a
+   one-word column: cap the control column. */
+:root:not(#pg) .set-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, max-content);
+}
+:root:not(#pg) .set-row > .set-ctl {
+  max-width: min(340px, 48vw);
+  min-width: 0;
+}
+:root:not(#pg) .set-row > .set-ctl > select.set-input {
+  min-width: 0;
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+/* Live preview ＋ and rotate: Lucide icons, centered (they were misaligned; ⟳ had no
+   glyph in the font) */
+:root:not(#pg) :is(.lp-tab-add, .lp-rotate) {
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  line-height: 0;
+}
+:root:not(#pg) :is(.lp-tab-add, .lp-rotate):not([hidden]) {
+  display: inline-grid;
+}
+:root:not(#pg) :is(.lp-tab-add, .lp-rotate) svg {
+  display: block;
+}
+:root:not(#pg) .lp-browser .lp-rotate {
+  width: 28px;
+  height: 28px;
+}
+/* Short stage (a small window with the Terminals drawer open): the empty-state steps start at the
+   top and scroll inside the stage instead of being cut at both ends */
+:root:not(#pg) .lp-blank {
+  place-content: safe center;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+/* Live preview: Click to ask button (address row) and the page-errors strip along the stage's
+   bottom edge (31), shown only while the page has errors */
+:root:not(#pg) .lp-browser:not(#lp) .lp-btn.lp-pick {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-color: transparent;
+  border-radius: 8px;
+  color: var(--pg-text-2);
+}
+:root:not(#pg) .lp-browser:not(#lp) .lp-btn.lp-pick:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+:root:not(#pg) .lp-browser:not(#lp) .lp-btn.lp-pick[aria-pressed='true'] {
+  border-color: rgba(var(--pg-accent-rgb), 0.5);
+  background: rgba(var(--pg-accent-rgb), 0.22);
+  color: var(--pg-text);
+}
+:root:not(#pg) .lp-pick svg {
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+:root:not(#pg) .lp-pick span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+:root:not(#pg) .lp-errs {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 8px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 10px;
+  background: var(--pg-panel-solid);
+  box-shadow: var(--pg-shadow);
+  color: var(--pg-text-2);
+  font: 12px/1.4 var(--pg-sans);
+}
+:root:not(#pg) .lp-errs[hidden] {
+  display: none;
+}
+:root:not(#pg) .lp-errs-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+:root:not(#pg) .lp-errs-row > .bw-dot {
+  flex: none;
+}
+:root:not(#pg) .lp-errs-head {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+:root:not(#pg) .lp-errs-head:hover {
+  color: var(--pg-text);
+}
+:root:not(#pg) .lp-errs-ask {
+  flex: none;
+  white-space: nowrap;
+}
+:root:not(#pg) .lp-errs-x {
+  flex: none;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--pg-text-3);
+  font: 16px/1 var(--pg-sans);
+  cursor: pointer;
+}
+:root:not(#pg) .lp-errs-x:hover {
+  color: var(--pg-text);
+}
+:root:not(#pg) .lp-errs-list {
+  margin: 0;
+  padding: 4px 4px 6px 20px;
+  max-height: 140px;
+  overflow: auto;
+  scrollbar-width: thin;
+  border-bottom: 1px solid var(--pg-line);
+  color: var(--pg-text-2);
+  font: 11px/1.5 var(--pg-mono);
+  overflow-wrap: anywhere;
+}
+
+/* ---- Device picker (107): three device objects over the Live preview stage. Each object is four
+   stacked pictures of one size; the screen picture is a mask filled with the accent, so a lit
+   screen follows the accent picker. Lit = hover, keyboard focus or the view now shown. */
+:root:not(#pg) .dvp {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 24px;
+  background: color-mix(in srgb, var(--pg-bg) 86%, transparent);
+  backdrop-filter: blur(8px);
+}
+:root:not(#pg) .dvp[hidden] {
+  display: none;
+}
+:root:not(#pg) .dvp-title {
+  margin: 0;
+  color: var(--pg-text-2);
+  font: 500 17px var(--pg-sans);
+  text-align: center;
+}
+:root:not(#pg) .dvp-hint {
+  margin: 0;
+  color: var(--pg-text-3);
+  font: 400 12px var(--pg-sans);
+  text-align: center;
+}
+:root:not(#pg) .dvp-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: clamp(12px, 4%, 64px);
+  width: 100%;
+  min-width: 0;
+}
+:root:not(#pg) .dvp-obj:not(#lp) {
+  flex: 0 1 240px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  height: auto;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--pg-r);
+  background: none;
+  color: var(--pg-text-3);
+  font: 400 14px var(--pg-sans);
+  cursor: pointer;
+}
+:root:not(#pg) .dvp-obj:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 2px;
+}
+:root:not(#pg) .dvp-art {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 960/780;
+  transition: transform 0.3s var(--pg-ease);
+}
+:root:not(#pg) .dvp-art > * {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+:root:not(#pg) .dvp-screen {
+  background: linear-gradient(160deg, var(--pg-accent-2), var(--pg-accent) 55%);
+  -webkit-mask: var(--dvp-mask) center/100% 100% no-repeat;
+  mask: var(--dvp-mask) center/100% 100% no-repeat;
+  opacity: 0;
+  transition: opacity 0.25s var(--pg-ease);
+}
+:root:not(#pg) .dvp-eyes {
+  opacity: 0;
+  transition: opacity 0.2s var(--pg-ease);
+}
+:root:not(#pg) .dvp-sleep {
+  transition: opacity 0.15s var(--pg-ease);
+}
+:root:not(#pg)
+  .dvp-obj:is(:hover, :focus-visible, [aria-pressed='true'])
+  :is(.dvp-screen, .dvp-eyes) {
+  opacity: 1;
+}
+:root:not(#pg) .dvp-obj:is(:hover, :focus-visible, [aria-pressed='true']) .dvp-sleep {
+  opacity: 0;
+}
+:root:not(#pg) .dvp-obj:is(:hover, :focus-visible) .dvp-art {
+  transform: translateY(-4px);
+}
+:root:not(#pg) .dvp-obj:is(:hover, :focus-visible) .dvp-eyes {
+  animation: dvp-blink 4.2s infinite;
+}
+:root:not(#pg) .dvp-obj:is(:hover, :focus-visible, [aria-pressed='true']) .dvp-name {
+  color: var(--pg-text);
+}
+:root:not(#pg) .dvp-name {
+  transition: color 0.2s var(--pg-ease);
+}
+@keyframes dvp-blink {
+  0%,
+  93%,
+  100% {
+    opacity: 1;
+  }
+  95.5% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root:not(#pg) .dvp-art {
+    transition: none;
+  }
+  :root:not(#pg) .dvp-obj .dvp-art {
+    transform: none !important;
+  }
+  :root:not(#pg) .dvp-obj .dvp-eyes {
+    animation: none !important;
+  }
+}
+/* Device characters in the Live preview dock (built by 107 into 31's own Desktop /
+   Tablet / Phone buttons and 65's Side by side button). The same stacked renders as the chooser
+   above, cropped to each device's own box (--cx --cy --cw --ch, in the 960×780 picture) so all
+   three stand one height. Lit = accent screen and open eyes: on hover, on keyboard focus and for
+   the view shown. With all three shown the group is lit and a short accent line marks the view that
+   size and Rotate act on. */
+:root:not(#pg) .dvc {
+  position: relative;
+  display: block;
+  flex: none;
+  overflow: hidden;
+  height: var(--dvc-h, 32px);
+  aspect-ratio: var(--cw) / var(--ch);
+  transition: transform 0.3s var(--pg-ease);
+}
+:root:not(#pg) .dvc > * {
+  position: absolute;
+  max-width: none;
+  left: calc(var(--cx) / var(--cw) * -100%);
+  top: calc(var(--cy) / var(--ch) * -100%);
+  width: calc(960 / var(--cw) * 100%);
+  height: calc(780 / var(--ch) * 100%);
+  pointer-events: none;
+}
+:root:not(#pg) .dvc-screen {
+  background: linear-gradient(160deg, var(--pg-accent-2), var(--pg-accent) 55%);
+  -webkit-mask: var(--dvp-mask) center/100% 100% no-repeat;
+  mask: var(--dvp-mask) center/100% 100% no-repeat;
+  opacity: 0;
+  transition: opacity 0.25s var(--pg-ease);
+}
+:root:not(#pg) .lpp-dock .dvc-btn.dvc-btn:not(#lp) {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  box-sizing: border-box;
+  width: 44px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: none;
+  cursor: pointer;
+  transition: background 0.2s var(--pg-ease);
+}
+:root:not(#pg) .lpp-dock .dvc-all.dvc-all:not(#lp) {
+  width: 72px;
+}
+:root:not(#pg) .lpp-dock .dvc-btn.dvc-btn:not(#lp):hover:not(:disabled) {
+  background: none;
+}
+:root:not(#pg) .lpp-dock .dvc-btn.dvc-btn:not(#lp)[aria-pressed='true'] {
+  background: var(--pg-panel-2);
+}
+:root:not(#pg) .lpp-dock .dvc-btn.dvc-btn:not(#lp):disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+:root:not(#pg) .lpp-dock .dvc-btn:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+:root:not(#pg) .dvc-group {
+  position: relative;
+  display: block;
+  width: 56px;
+  height: 32px;
+  transition: transform 0.3s var(--pg-ease);
+}
+:root:not(#pg) .dvc-group .dvc {
+  position: absolute;
+  bottom: 0;
+}
+:root:not(#pg) .dvc-group .dvc:nth-child(1) {
+  left: 0;
+}
+:root:not(#pg) .dvc-group .dvc:nth-child(2) {
+  left: 30px;
+  --dvc-h: 25px;
+}
+:root:not(#pg) .dvc-group .dvc:nth-child(3) {
+  left: 45px;
+  --dvc-h: 19px;
+}
+:root:not(#pg) .dvc-sep {
+  flex: none;
+  width: 1px;
+  height: 22px;
+  background: var(--pg-line-2);
+}
+:root:not(#pg)
+  :is(
+    .dvc-btn:is(:hover, :focus-visible):not(:disabled),
+    .dvc-all[aria-pressed='true'],
+    .lp:not([data-sbs]) .lp-modes .dvc-btn[aria-pressed='true']
+  )
+  :is(.dvc-screen, .dvc-eyes) {
+  opacity: 1;
+}
+:root:not(#pg) .lp-modes .dvc-btn:is(:hover, :focus-visible) .dvc,
+:root:not(#pg) .dvc-all:is(:hover, :focus-visible):not(:disabled) .dvc-group {
+  transform: translateY(-2px);
+}
+:root:not(#pg) .lp[data-sbs] .lpp-dock .lp-modes .dvc-btn.dvc-btn:not(#lp)[aria-pressed='true'] {
+  background: none;
+}
+:root:not(#pg) .lp[data-sbs] .lpp-dock .lp-modes .dvc-btn[aria-pressed='true']::after {
+  content: '';
+  position: absolute;
+  bottom: 1px;
+  left: 50%;
+  width: 14px;
+  height: 2px;
+  margin-left: -7px;
+  border-radius: 1px;
+  background: var(--pg-accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  :root:not(#pg) :is(.dvc, .dvc-group) {
+    transition: none;
+    transform: none !important;
+  }
+}

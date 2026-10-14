@@ -1,0 +1,127 @@
+/* Technically Not · small parts that outlived the old Overview. They were written in
+   08-overview-purple.css for the Overview's own popovers and are kept here, as they were, because
+   other features draw with them: the agent worktree box (35-agent-worktrees.js: `.pgo-qpop` with
+   `.pgo-btn` buttons, opened from a panel's worktree badge and from the three-dots menu) and the
+   account gauges' "nothing yet" line (98-account-gauges.js: `.pgo-empty`). The popover sets the
+   few --o-* tokens its buttons read. Loaded with data-pg. */
+.pgo-empty {
+  font-size: 12px;
+  /* outside the Overview its own token was never set: the app's third text tone */
+  color: var(--o-text-3, var(--pg-text-3));
+  padding: 10px 2px;
+  line-height: 1.45;
+}
+
+.pgo-btn {
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--o-line-2) !important;
+  font-size: 11.5px;
+  color: var(--o-text) !important;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pgo-btn:hover {
+  border-color: var(--o-accent) !important;
+  background: var(--o-accent-soft) !important;
+}
+.pgo-btn.pri {
+  background: color-mix(in srgb, var(--o-accent) 22%, transparent) !important;
+  border-color: color-mix(in srgb, var(--o-accent) 50%, transparent) !important;
+}
+
+.pgo-qpop {
+  position: fixed;
+  z-index: 1000;
+  width: min(420px, calc(100vw - 16px));
+  max-height: min(60vh, 420px);
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--pg-panel-solid) 96%, transparent);
+  border: 1px solid var(--pg-line-2);
+  box-shadow: var(--pg-shadow);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  color: var(--pg-text);
+  font: 400 12px var(--pg-sans);
+}
+.pgo-qpop[hidden] {
+  display: none;
+}
+.pgo-qpop h4 {
+  margin: 0 0 6px;
+  font: 500 12.5px var(--pg-sans);
+}
+.pgo-qpop .grp {
+  padding: 6px 0;
+  border-top: 1px solid var(--pg-line);
+}
+.pgo-qpop .who {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--pg-text-3);
+  font-size: 11.5px;
+}
+.pgo-qpop .who b {
+  color: var(--pg-text-2);
+  font-weight: 500;
+}
+.pgo-qpop .qi {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 5px;
+  min-width: 0;
+}
+.pgo-qpop .qi .n {
+  flex: none;
+  color: var(--pg-text-4);
+  font: 400 11px var(--pg-mono);
+}
+.pgo-qpop .qi .tx {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pgo-qpop .pgo-btn {
+  flex: none;
+  padding: 3px 9px;
+  font-size: 11px;
+}
+.pgo-qpop .qa {
+  display: flex;
+  gap: 6px;
+  margin-top: 7px;
+}
+.pgo-qpop .pgo-btn.stop:hover {
+  border-color: var(--pg-err) !important;
+  color: var(--pg-err) !important;
+  background: none !important;
+}
+.pgo-qpop .note {
+  margin: 6px 0 0;
+  color: var(--pg-text-4);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.pgo-qpop {
+  --o-line-2: var(--pg-line-2);
+  --o-text: var(--pg-text);
+  --o-accent: var(--pg-accent);
+  --o-accent-2: var(--pg-accent-2);
+  --o-accent-soft: var(--pg-accent-soft);
+  --o-sans: var(--pg-sans);
+}
+:root:not(#pg) .pgo-qpop .pgo-btn {
+  background: transparent;
+  font-family: var(--pg-sans);
+}

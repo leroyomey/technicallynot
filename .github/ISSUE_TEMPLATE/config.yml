@@ -1,0 +1,11 @@
+# The list a person sees after pressing "New issue". Issues are for things that are broken.
+# An idea goes to Discussions, and a security problem gets its own, private way in, so it is
+# never written into a public issue by mistake.
+blank_issues_enabled: false
+contact_links:
+  - name: An idea
+    url: https://github.com/leroyomey/technicallynot/discussions/categories/ideas
+    about: Something the app could do, or could do better. Start a discussion under Ideas.
+  - name: A security problem
+    url: https://github.com/leroyomey/technicallynot/security/advisories/new
+    about: Please report it privately. SECURITY.md says what is in scope.

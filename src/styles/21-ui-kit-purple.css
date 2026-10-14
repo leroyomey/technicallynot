@@ -1,0 +1,133 @@
+/* Technically Not · 21-ui-kit-purple.css — shared UI-kit rules for the purple design (icons first). */
+.tn-ico {
+  flex: none;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* View Transitions (100 TnaiMotion.swap). Page switch: the top bar and nav keep still, the page cross-fades (120ms).
+   The names apply only while a transition runs (html.vt-*), so nothing is isolated or composited at rest. */
+html.vt-page header.top {
+  view-transition-name: tn-top;
+}
+html.vt-page aside.sidebar {
+  view-transition-name: tn-nav;
+}
+::view-transition-group(tn-top),
+::view-transition-group(tn-nav) {
+  animation: none;
+}
+::view-transition-old(tn-top),
+::view-transition-old(tn-nav) {
+  animation: none;
+  opacity: 0;
+}
+::view-transition-new(tn-top),
+::view-transition-new(tn-nav) {
+  animation: none;
+}
+/* 70 and 120 ms (they were 140 and 220): the longer fade felt like lag when changing pages. Long enough that a page does not jump, short enough that the press feels answered. */
+html.vt-page::view-transition-old(root) {
+  animation: tn-vt-out 70ms var(--pg-ease) both;
+}
+html.vt-page::view-transition-new(root) {
+  animation: tn-vt-in 120ms var(--pg-ease) both;
+}
+@keyframes tn-vt-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes tn-vt-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+/* A plain fade in: the menu and a shown or hidden column use it (31). */
+@keyframes tn-vt-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Rolling whole numbers without JS: set --tn-n on a .tn-count element (and data-unit for a suffix); the registered
+   integer interpolates, so a changed value counts to its new number (81's CPU/GPU chips). */
+@property --tn-n {
+  syntax: '<integer>';
+  inherits: false;
+  initial-value: 0;
+}
+.tn-count {
+  counter-reset: tn-n var(--tn-n);
+  transition: --tn-n 0.35s var(--pg-ease);
+  font-variant-numeric: tabular-nums;
+}
+.tn-count::before {
+  content: counter(tn-n);
+}
+.tn-count::after {
+  content: attr(data-unit);
+}
+.pg-chip .v {
+  transition: color 0.3s var(--pg-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tn-count,
+  .pg-chip .v {
+    transition: none;
+  }
+}
+/* Collapse / expand arrows sit in a small box so they read as buttons.
+   The box is the icon's own border, so each button keeps its size and place; the file tree's row chevrons stay plain. */
+:root:not(#pg)
+  :is(
+    .ap-side-collapse,
+    .ap-side-restore,
+    .tnai-files-collapse,
+    .tnai-files-restore,
+    .tnai-task-more
+  )
+  > svg {
+  box-sizing: content-box;
+  flex: none;
+  padding: 2px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.035);
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+:root:not(#pg)
+  :is(
+    .ap-side-collapse,
+    .ap-side-restore,
+    .tnai-files-collapse,
+    .tnai-files-restore,
+    .tnai-task-more
+  ):is(:hover, :focus-visible)
+  > svg {
+  border-color: rgba(var(--pg-accent-rgb), 0.55);
+  background: rgba(var(--pg-accent-rgb), 0.12);
+} /* room on both sides of its box */
+/* A key hint the user is pressing right now (100 key hints): its text in the mic's listening color with a soft glow, no layout change */
+:root:not(#pg) .tnai-key-lit {
+  color: #ff9a86 !important;
+  text-shadow: 0 0 10px rgba(240, 108, 86, 0.75);
+  transition:
+    color 0.12s,
+    text-shadow 0.12s;
+} /* the text lights up, no box */
+:root:not(#pg) kbd.tnai-key-lit {
+  border-color: rgba(240, 108, 86, 0.85) !important;
+}
+/* Every key hint in the app (the Keyboard shortcuts dialog and every other place a hotkey is shown): each
+   <kbd> wears the microphone's highlight color (70 .tnai-voice-btn listening): its border, a soft ring and a faint fill of the same color.
+   The ring is 1px, not the mic's 2px, because keys in a combo sit 3px apart and two 2px rings would touch. Color only: no key changes size. */
+:root:not(#pg) kbd {
+  border-color: var(--ac-coral-line) !important;
+  background: color-mix(in srgb, var(--ac-coral-line) 14%, transparent) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ac-coral-line) 40%, transparent) !important;
+}

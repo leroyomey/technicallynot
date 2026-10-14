@@ -1,0 +1,9 @@
+# Sent with every file of the phone app by the host (Cloudflare static assets read this file). A page cannot set these itself.
+/*
+  Content-Security-Policy: frame-ancestors 'none'
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+# The code reader's worker (app/qr-worker.js) runs code that is not ours: it may load its one script and reach nothing else.
+/app/qr-worker.js
+  Content-Security-Policy: default-src 'none'; script-src 'self'

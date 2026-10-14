@@ -1,0 +1,1890 @@
+/* Technically Not · 07-purple-glass.css — Purple glass shell.
+   1. The --pg-* token contract every new-design sheet uses (per html[data-theme] and
+   html[data-accent]).
+   2. Bundled fonts (src/assets/fonts, OFL), aurora + grain background, glass surfaces with a cursor
+   spotlight border (95-pg-effects.js sets --mx/--my).
+   3. Shell: top bar + telemetry chips (81), icon rail left nav (29), composer, shared buttons,
+   dialogs, menus, focus rings, scrollbars.
+   Loaded last with data-pg, so the color remap in 32 leaves it alone. Shell overrides use the
+   :root:not(#pg) prefix (ID-level specificity) so they win over the older sheets and their
+   remapped copies without !important. Overview page content is styled by 08-overview-purple.css,
+   not here. */
+
+/* ---------------------------------------------------------------- fonts */
+@font-face {
+  font-family: 'Outfit';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('../assets/fonts/Outfit-Light.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Outfit';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/Outfit-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Outfit';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('../assets/fonts/Outfit-Medium.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Outfit';
+  font-style: normal;
+  font-weight: 600 700;
+  font-display: swap;
+  src: url('../assets/fonts/Outfit-SemiBold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/JetBrainsMono-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500 700;
+  font-display: swap;
+  src: url('../assets/fonts/JetBrainsMono-Medium.woff2') format('woff2');
+}
+
+/* ---------------------------------------------------------------- tokens */
+html {
+  --pg-r: 18px;
+  --pg-r-sm: 10px;
+  /* The width of a focus ring. Not 2px: the app runs at a zoom of 0.95 (0.85 in a small
+     window, desktop/main.js), where 2px is less than two whole screen pixels and is
+     drawn as one. 2.4px is two screen pixels at 0.85, at 0.95 and at 1. */
+  --pg-ring: 2.4px;
+  --pg-sans: 'Outfit', system-ui, 'Segoe UI', sans-serif;
+  --pg-mono: 'JetBrains Mono', Consolas, monospace;
+  --pg-ease: cubic-bezier(0.22, 0.9, 0.24, 1);
+  --pg-nav-open: 216px;
+  --pg-nav-rail: 68px;
+}
+/* Dark (default): neutrals and fixed status colors */
+html[data-theme='dark'] {
+  --pg-panel: rgba(255, 255, 255, 0.04);
+  --pg-panel-2: rgba(255, 255, 255, 0.07);
+  /* what a soft button gets under the pointer: here the value of --pg-panel-2 */
+  --pg-panel-hover: rgba(255, 255, 255, 0.07);
+  --pg-line: rgba(var(--pg-tint), 0.09);
+  --pg-line-2: rgba(var(--pg-tint), 0.16);
+  --pg-text: #eee9ff;
+  --pg-text-2: #c0b7da;
+  --pg-text-3: #8e85ab;
+  --pg-text-4: #655d81;
+  --pg-work: #5fe0a5;
+  --pg-wait: #ffbf5e;
+  --pg-ready: #7fa8ff;
+  --pg-idle: #7d7596;
+  --pg-err: #ff7d8e;
+  --pg-handoff: #5fd0c8;
+  --pg-tel-cpu: #b3a3ff;
+  --pg-tel-ram: #8fd3ff;
+  --pg-tel-gpu: #7fe0c0;
+  --pg-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  --pg-scrim: rgba(8, 5, 18, 0.62);
+  --pg-grain: 0.06;
+  --pg-aura: 1;
+  --pg-on-accent: #fff;
+}
+/* Light: the same design on a pale ground */
+html:not([data-theme='dark']) {
+  --pg-panel: rgba(255, 255, 255, 0.62);
+  --pg-panel-2: rgba(255, 255, 255, 0.86);
+  /* what a soft button gets under the pointer: here the value of --pg-panel-2 */
+  --pg-panel-hover: rgba(255, 255, 255, 0.86);
+  --pg-line: rgba(var(--pg-tint-l), 0.12);
+  --pg-line-2: rgba(var(--pg-tint-l), 0.22);
+  --pg-text: #1d1530;
+  --pg-text-2: #4a4163;
+  --pg-text-3: #756c8f;
+  --pg-text-4: #9d95b5;
+  --pg-work: #16a066;
+  --pg-wait: #c97a08;
+  --pg-ready: #2f6fdc;
+  --pg-idle: #8a83a0;
+  --pg-err: #d9405a;
+  --pg-handoff: #0f8a82;
+  --pg-tel-cpu: #6f5ae8;
+  --pg-tel-ram: #1f8fd0;
+  --pg-tel-gpu: #119a78;
+  --pg-shadow: 0 20px 50px rgba(40, 20, 90, 0.16);
+  --pg-scrim: rgba(40, 28, 70, 0.32);
+  --pg-grain: 0.035;
+  --pg-aura: 0.45;
+  --pg-on-accent: #fff;
+}
+/* Accents: rgb triplets; the named tokens are built from them below. Status tokens never change
+   with the accent. */
+html,
+html[data-accent='purple'] {
+  --pg-acc: 189, 99, 255;
+  --pg-acc2: 213, 175, 244;
+  --pg-acc-l: 139, 52, 210;
+  --pg-acc2-l: 112, 36, 176;
+  --pg-tint: 214, 196, 255;
+  --pg-tint-l: 70, 40, 130;
+  --pg-au1: 153, 53, 172;
+  --pg-au2: 80, 60, 200;
+  --pg-bg-d: #0f0a1f;
+  --pg-solid-d: #1a1433;
+  --pg-bg-l: #f6f3fc;
+}
+html[data-accent='blue'] {
+  --pg-acc: 91, 140, 255;
+  --pg-acc2: 174, 198, 255;
+  --pg-acc-l: 47, 102, 224;
+  --pg-acc2-l: 31, 79, 184;
+  --pg-tint: 196, 210, 255;
+  --pg-tint-l: 35, 60, 130;
+  --pg-au1: 40, 90, 210;
+  --pg-au2: 70, 60, 200;
+  --pg-bg-d: #0a0e1f;
+  --pg-solid-d: #141a33;
+  --pg-bg-l: #f2f5fc;
+}
+html[data-accent='teal'] {
+  --pg-acc: 44, 201, 181;
+  --pg-acc2: 158, 234, 222;
+  --pg-acc-l: 14, 145, 128;
+  --pg-acc2-l: 10, 112, 100;
+  --pg-tint: 190, 240, 232;
+  --pg-tint-l: 20, 80, 80;
+  --pg-au1: 20, 140, 130;
+  --pg-au2: 40, 90, 170;
+  --pg-bg-d: #08141a;
+  --pg-solid-d: #10222a;
+  --pg-bg-l: #f1f8f7;
+}
+html[data-accent='rose'] {
+  --pg-acc: 255, 107, 157;
+  --pg-acc2: 255, 179, 204;
+  --pg-acc-l: 210, 56, 112;
+  --pg-acc2-l: 176, 40, 90;
+  --pg-tint: 255, 200, 220;
+  --pg-tint-l: 120, 30, 70;
+  --pg-au1: 190, 50, 110;
+  --pg-au2: 110, 50, 170;
+  --pg-bg-d: #170a14;
+  --pg-solid-d: #2a1426;
+  --pg-bg-l: #fcf3f6;
+}
+html[data-accent='sunset'] {
+  --pg-acc: 255, 138, 76;
+  --pg-acc2: 255, 197, 158;
+  --pg-acc-l: 214, 98, 38;
+  --pg-acc2-l: 180, 76, 26;
+  --pg-tint: 255, 215, 190;
+  --pg-tint-l: 120, 60, 30;
+  --pg-au1: 210, 90, 40;
+  --pg-au2: 170, 50, 90;
+  --pg-bg-d: #170d0a;
+  --pg-solid-d: #2a1a14;
+  --pg-bg-l: #fcf5f1;
+}
+html[data-accent='neutral'] {
+  --pg-acc: 180, 176, 196;
+  --pg-acc2: 224, 221, 233;
+  --pg-acc-l: 92, 88, 112;
+  --pg-acc2-l: 66, 63, 82;
+  --pg-tint: 220, 220, 232;
+  --pg-tint-l: 50, 50, 70;
+  --pg-au1: 90, 85, 120;
+  --pg-au2: 60, 60, 90;
+  --pg-bg-d: #0e0e13;
+  --pg-solid-d: #1b1b22;
+  --pg-bg-l: #f5f5f7;
+}
+html[data-theme='dark'] {
+  --pg-bg: var(--pg-bg-d);
+  --pg-panel-solid: var(--pg-solid-d);
+  --pg-accent: rgb(var(--pg-acc));
+  --pg-accent-2: rgb(var(--pg-acc2));
+  --pg-accent-soft: rgba(var(--pg-acc), 0.14);
+  --pg-accent-rgb: var(--pg-acc);
+}
+html:not([data-theme='dark']) {
+  --pg-bg: var(--pg-bg-l);
+  --pg-panel-solid: #fff;
+  --pg-accent: rgb(var(--pg-acc-l));
+  --pg-accent-2: rgb(var(--pg-acc2-l));
+  --pg-accent-soft: rgba(var(--pg-acc-l), 0.12);
+  --pg-accent-rgb: var(--pg-acc-l);
+}
+
+/* ---------------------------------------------------------------- ground: background, aurora,
+   grain */
+:root:not(#pg) {
+  background: var(--pg-bg);
+  color-scheme: dark;
+}
+html:not([data-theme='dark']):not(#pg) {
+  color-scheme: light;
+}
+:root:not(#pg) body {
+  background: transparent;
+  color: var(--pg-text);
+  font-family: var(--pg-sans);
+  letter-spacing: 0.01em;
+  -webkit-font-smoothing: antialiased;
+}
+:root:not(#pg) body::before {
+  content: '';
+  position: fixed;
+  inset: -20%;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--pg-aura);
+  background:
+    radial-gradient(40% 35% at 70% 20%, rgba(var(--pg-au1), 0.3), transparent 70%),
+    radial-gradient(35% 40% at 20% 80%, rgba(var(--pg-au2), 0.26), transparent 70%),
+    radial-gradient(30% 30% at 45% 50%, rgba(var(--pg-acc), 0.1), transparent 70%);
+  animation: pg-drift 38s ease-in-out infinite alternate;
+}
+@keyframes pg-drift {
+  to {
+    transform: translate3d(-4%, 3%, 0) rotate(6deg) scale(1.06);
+  }
+}
+:root:not(#pg) body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--pg-grain);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+@media (prefers-reduced-motion: reduce) {
+  :root:not(#pg) body::before {
+    animation: none;
+  }
+}
+:root:not(#pg) :is(button, input, textarea, select) {
+  font-family: var(--pg-sans);
+}
+:root:not(#pg) :is(code, pre, kbd, samp, .num, .pg-mono) {
+  font-family: var(--pg-mono);
+}
+:root:not(#pg) ::selection {
+  background: rgba(var(--pg-accent-rgb), 0.32);
+}
+/* The frame lets the aurora through: page backgrounds become clear, surfaces become glass. */
+:root:not(#pg) :is(.app, .layout, .layout > :not(.sidebar):not(.tnai-resizer):not(.tnai-nav-grip)) {
+  background: transparent;
+}
+
+/* ---------------------------------------------------------------- glass surfaces */
+.pg-glass {
+  position: relative;
+  background: var(--pg-panel);
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+}
+:root:not(#pg)
+  :is(
+    .set-card,
+    .provider-card,
+    .lpp-card,
+    .fd-card,
+    .tnai-card:not(#overviewView .tnai-card),
+    .bw-panel:not(.bw-panel .bw-panel)
+  ) {
+  background: var(--pg-panel);
+  border-color: var(--pg-line);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+}
+/* old drop shadows go; agent cards / grid panels (.tnai-card) keep theirs, which carry the status
+   rings (needs you, working) */
+:root:not(#pg)
+  :is(.set-card, .provider-card, .lpp-card, .fd-card, .bw-panel:not(.bw-panel .bw-panel)) {
+  box-shadow: none;
+}
+:root:not(#pg) :is(.set-card, .provider-card, .lpp-card) {
+  border-radius: var(--pg-r);
+}
+:root:not(#pg) :is(.fd-card, .tnai-card:not(#overviewView .tnai-card), .bw-panel) {
+  border-radius: 14px;
+}
+:root:not(#pg) .terminal-provider-card {
+  background: var(--pg-panel);
+  border-color: var(--pg-line);
+  border-radius: var(--pg-r-sm);
+  color: var(--pg-text-2);
+}
+:root:not(#pg) .terminal-provider-card:hover {
+  background: var(--pg-panel-hover);
+  border-color: var(--pg-line-2);
+}
+/* Spotlight border that follows the cursor (95-pg-effects.js writes --mx/--my on the hovered
+   surface). */
+:root:not(#pg) :is(.pg-glass, .set-card, .provider-card, .lpp-card, .terminal-provider-card) {
+  position: relative;
+}
+:root:not(#pg)
+  :is(.pg-glass, .set-card, .provider-card, .lpp-card, .terminal-provider-card)::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s;
+  z-index: 0;
+  background: radial-gradient(
+    280px circle at var(--mx, 50%) var(--my, 50%),
+    rgba(var(--pg-acc2), 0.7),
+    rgba(var(--pg-acc), 0.25) 40%,
+    transparent 70%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+:root:not(#pg)
+  :is(.pg-glass, .set-card, .provider-card, .lpp-card, .terminal-provider-card):hover::before {
+  opacity: 1;
+}
+
+/* Menus and popovers: solid glass (they sit over busy content). */
+:root:not(#pg)
+  :is(
+    .tnai-user-menu,
+    .repo-project-menu,
+    .repo-connect-menu,
+    .tnai-skill-menu,
+    .tnai-attach-menu,
+    .tnai-pick-menu,
+    .tnai-at-menu
+  ) {
+  background: color-mix(in srgb, var(--pg-panel-solid) 92%, transparent);
+  border: 1px solid var(--pg-line-2);
+  border-radius: 14px;
+  box-shadow: var(--pg-shadow);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  color: var(--pg-text);
+}
+/* Shared dialog (01-base): scrim + solid glass card */
+:root:not(#pg)
+  :is(
+    .tnai-ws-close-overlay,
+    .bw-file-overlay,
+    .bw-confirm-overlay,
+    .tnai-auth-overlay,
+    .tnai-keys-overlay,
+    .tnai-voice-overlay
+  ) {
+  background: var(--pg-scrim);
+  backdrop-filter: blur(6px);
+}
+:root:not(#pg)
+  :is(.tnai-ws-close-modal, .bw-file-modal, .tnai-auth-modal, .tnai-keys, .tnai-voice-modal) {
+  background: color-mix(in srgb, var(--pg-panel-solid) 94%, transparent);
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r);
+  box-shadow: var(--pg-shadow);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  color: var(--pg-text);
+}
+:root:not(#pg)
+  :is(.tnai-ws-close-modal, .bw-file-modal, .tnai-auth-modal, .tnai-keys, .tnai-voice-modal)
+  h2 {
+  color: var(--pg-text);
+  font: 500 15px/1.35 var(--pg-sans);
+}
+:root:not(#pg) :is(.tnai-ws-close-modal, .bw-file-modal, .tnai-auth-modal, .tnai-voice-modal) > p {
+  color: var(--pg-text-2);
+  font: 12px/1.5 var(--pg-sans);
+}
+
+/* ---------------------------------------------------------------- buttons + focus */
+:root:not(#pg) .button {
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text);
+  font-family: var(--pg-sans);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+:root:not(#pg) .button:hover {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+}
+:root:not(#pg) :is(.button.dark, .button.primary) {
+  background: rgba(var(--pg-accent-rgb), 0.22);
+  border-color: rgba(var(--pg-accent-rgb), 0.5);
+  color: var(--pg-text);
+}
+:root:not(#pg) :is(.button.dark, .button.primary):hover {
+  background: rgba(var(--pg-accent-rgb), 0.32);
+}
+:root:not(#pg)
+  :is(
+    .button,
+    .terminal-tool,
+    .side-item,
+    button,
+    [role='button'],
+    a,
+    input,
+    select,
+    textarea,
+    summary
+  ):focus-visible {
+  outline: var(--pg-ring) solid rgba(var(--pg-accent-rgb), 0.75);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- scrollbars (55 keeps the
+   show-while-scrolling behavior) */
+:root:not(#pg) ::-webkit-scrollbar-track:hover {
+  background: transparent;
+}
+:root:not(#pg) .tnai-scrolling::-webkit-scrollbar-thumb,
+:root:not(#pg) ::-webkit-scrollbar-thumb:hover {
+  background-color: var(--pg-line-2);
+}
+:root:not(#pg) ::-webkit-scrollbar-thumb:active {
+  background-color: rgba(var(--pg-accent-rgb), 0.55);
+}
+:root:not(#pg) .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider {
+  background: var(--pg-line-2) !important;
+}
+:root:not(#pg)
+  .xterm
+  .xterm-scrollable-element
+  > .scrollbar.vertical
+  > .slider:is(:hover, .active) {
+  background: rgba(var(--pg-accent-rgb), 0.55) !important;
+}
+
+/* ---------------------------------------------------------------- top bar */
+:root:not(#pg) .top {
+  padding: 0 16px;
+  gap: 14px;
+  background: transparent;
+  border-bottom: 1px solid var(--pg-line);
+}
+:root:not(#pg) .top .brand {
+  gap: 10px;
+  font: 500 14px/1 var(--pg-sans);
+  letter-spacing: 0.02em;
+  color: var(--pg-text);
+}
+:root:not(#pg) .top .project {
+  gap: 7px;
+  height: auto;
+  padding: 4px 9px;
+  margin-left: 14px;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r-sm);
+  font-size: 11.5px;
+  color: var(--pg-text-2);
+  white-space: nowrap;
+}
+:root:not(#pg) .top .project #projectCrumb {
+  color: var(--pg-text);
+  font-weight: 500;
+}
+:root:not(#pg) .top .project .crumb {
+  color: var(--pg-text-4);
+}
+:root:not(#pg) .top-right {
+  /* 81 sets --pg-bar-gap to the 5 px that lands on whole screen pixels at the window's scale */
+  gap: var(--pg-bar-gap, 5px);
+}
+/* Every chip in the bar reads like the concept's .chip */
+:root:not(#pg) .top-right > .status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--pg-line);
+  border-radius: 8px;
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+  font-size: 11px;
+  white-space: nowrap;
+}
+:root:not(#pg) .top-right > #topCommand {
+  height: auto;
+  padding: 3px 7px;
+  border-radius: 7px;
+  border: 1px solid var(--pg-line-2);
+  background: transparent;
+  color: var(--pg-text-2);
+  font: 500 10.5px var(--pg-mono);
+}
+:root:not(#pg) .top-right > #topCommand:hover {
+  color: var(--pg-text);
+  border-color: var(--pg-accent);
+}
+/* Telemetry chips (81-system-stats.js renders them inside .tnai-sys-chip; #pgTokChip is filled by
+   the Overview script) */
+:root:not(#pg) .top-right > .tnai-sys-chip {
+  /* the same room as between any two things in the bar (.top-right), so the chips sit evenly */
+  gap: var(--pg-bar-gap, 5px);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+:root:not(#pg) .top-right > .tnai-sys-chip[hidden],
+:root:not(#pg) .top-right > #pgTokChip[hidden] {
+  display: none;
+}
+.pg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--pg-line);
+  background: var(--pg-panel);
+  white-space: nowrap;
+  transition: border-color 0.2s;
+}
+.pg-chip .k {
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pg-text-3);
+}
+.pg-chip .v {
+  font: 500 11.5px var(--pg-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--pg-text);
+  min-width: 34px;
+}
+/* The words and numbers of a chip stand in the middle of its height by their letters. A line of
+   text is centered by its line box, which has more room over capitals and digits than under them,
+   so "CPU" and "13%" sat a little off the middle beside a graph that was centered. Each text box is cut to the height of its capitals, and that box is centered. */
+@supports (text-box: trim-both cap alphabetic) {
+  .pg-chip .k,
+  .pg-chip .v {
+    line-height: 1;
+    text-box: trim-both cap alphabetic;
+  }
+}
+.pg-chip .v small {
+  font-size: inherit;
+  color: var(--pg-text-3);
+  font-weight: 400;
+}
+.pg-chip svg {
+  width: 44px;
+  height: 14px;
+  overflow: visible;
+  flex: none;
+}
+.pg-chip[data-m='cpu'] svg {
+  color: var(--pg-tel-cpu);
+}
+.pg-chip[data-m='ram'] svg {
+  color: var(--pg-tel-ram);
+}
+.pg-chip[data-m='gpu'] svg {
+  color: var(--pg-tel-gpu);
+}
+.pg-chip.tok .v {
+  color: var(--pg-accent-2);
+}
+.pg-chip.tok svg {
+  color: var(--pg-accent-2);
+}
+.pg-chip[data-level='high'] .v {
+  color: var(--pg-wait);
+}
+.pg-chip[data-level='full'] .v {
+  color: var(--pg-err);
+}
+/* Room in the bar (fit-zoomed CSS px, as measured for 81): sparklines from 1600, numbers from 1340,
+   hidden below. */
+@media (max-width: 1599px) {
+  .pg-chip svg {
+    display: none;
+  }
+  .pg-chip .v {
+    min-width: 0;
+  }
+}
+@media (max-width: 1339px) {
+  :root:not(#pg) .top-right > .tnai-sys-chip {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------- left nav: glass rail that slides
+   to icons (29-nav-collapse.js) */
+:root:not(#pg) .sidebar {
+  padding: 12px 10px;
+  gap: 2px;
+  background: transparent;
+  border-right: 1px solid var(--pg-line);
+  overflow: hidden auto;
+  scrollbar-width: none;
+}
+:root:not(#pg) .sidebar .mini-brand {
+  padding: 0 5px 12px;
+}
+:root:not(#pg) .sidebar .side-label {
+  position: relative;
+  height: 30px;
+  display: flex;
+  align-items: flex-end;
+  margin: 0;
+  padding: 0 14px 7px;
+  font: 500 10px/1 var(--pg-sans);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--pg-text-4);
+  white-space: nowrap;
+  transition: color 0.25s;
+}
+:root:not(#pg) .sidebar .side-label::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 10px;
+  height: 1px;
+  background: var(--pg-line-2);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+:root:not(#pg) .sidebar .side-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  height: 38px;
+  margin: 0;
+  padding: 0 15px;
+  border-radius: 11px;
+  color: var(--pg-text-3);
+  font: 400 13.5px/1 var(--pg-sans);
+  white-space: nowrap;
+  background: transparent;
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+:root:not(#pg) .sidebar .side-item:hover {
+  color: var(--pg-text);
+  background: var(--pg-panel);
+}
+:root:not(#pg) .sidebar .side-item.active {
+  color: var(--pg-text);
+  font-weight: 400;
+  background: linear-gradient(
+    90deg,
+    rgba(var(--pg-accent-rgb), 0.2),
+    rgba(var(--pg-accent-rgb), 0.04)
+  );
+}
+:root:not(#pg) .sidebar .side-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 2.5px;
+  border-radius: 3px;
+  background: var(--pg-accent);
+}
+:root:not(#pg) .sidebar .side-item[aria-disabled='true'] {
+  opacity: 0.45;
+}
+:root:not(#pg) .sidebar .side-item .ico {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  flex: none;
+  display: grid;
+  place-items: center;
+  background: none;
+  box-shadow: none;
+  border-radius: 0;
+  color: inherit;
+  font-size: 14px;
+  transition: transform 0.35s var(--pg-ease);
+}
+:root:not(#pg) .sidebar .side-item .ico svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+:root:not(#pg) .sidebar .side-item:hover .ico {
+  transform: scale(1.12);
+  box-shadow: none;
+}
+:root:not(#pg) .sidebar .side-item > span:not(.ico) {
+  transition:
+    opacity 0.25s,
+    transform 0.45s var(--pg-ease);
+}
+/* counts: a pill when open, a small badge on the icon when slim */
+:root:not(#pg) .sidebar .side-item .agent-nav-count {
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 7px;
+  background: var(--pg-panel-2);
+  color: var(--pg-text-2);
+  font: 500 10.5px var(--pg-mono);
+  transition:
+    opacity 0.25s,
+    transform 0.35s var(--pg-ease);
+}
+:root:not(#pg) .sidebar .side-item .agent-nav-count:empty {
+  display: none;
+}
+:root:not(#pg) .sidebar .side-shortcut {
+  margin-top: auto;
+  padding: 10px 15px 4px;
+  background: transparent;
+  color: var(--pg-text-4);
+  font: 400 11px var(--pg-sans);
+  white-space: nowrap;
+  transition: opacity 0.25s;
+}
+
+/* ---------------------------------------------------------------- composer */
+:root:not(#pg) .composer {
+  background: transparent;
+  border-top: 1px solid var(--pg-line);
+}
+:root:not(#pg) .composebox {
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r);
+  background: var(--pg-panel);
+  box-shadow: none;
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+:root:not(#pg) .composebox:focus-within {
+  border-color: rgba(var(--pg-accent-rgb), 0.5);
+  box-shadow: 0 0 0 3px rgba(var(--pg-accent-rgb), 0.12);
+}
+:root:not(#pg) .composebox .prompt {
+  background: none;
+  color: var(--pg-text);
+  font: 400 14.5px/1.45 var(--pg-sans);
+}
+:root:not(#pg) .composebox .prompt::placeholder {
+  color: var(--pg-text-4);
+}
+:root:not(#pg) .composebox .attach {
+  border: 1px solid var(--pg-line);
+  border-radius: 11px;
+  background: none;
+  color: var(--pg-text-3);
+}
+:root:not(#pg) .composebox .attach:hover {
+  color: var(--pg-text);
+  border-color: var(--pg-line-2);
+}
+:root:not(#pg) .composebox .send {
+  border: 0;
+  border-radius: 11px;
+  background: linear-gradient(135deg, rgb(var(--pg-acc2)), rgb(var(--pg-au1)));
+  color: var(--pg-on-accent);
+  transition:
+    transform 0.2s var(--pg-ease),
+    box-shadow 0.2s;
+}
+:root:not(#pg) .composebox .send:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(var(--pg-au1), 0.35);
+}
+:root:not(#pg) .composer :is(.hints, .hint) {
+  color: var(--pg-text-4);
+}
+:root:not(#pg) .composer .activityline {
+  color: var(--pg-text-3);
+}
+
+/* ---------------------------------------------------------------- review fixes: brand, bar order,
+   off chips, avatar, nav state, badge */
+:root:not(#pg) .top .project .pd {
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  flex: none;
+  background: var(--pg-accent-2);
+}
+/* concept order: telemetry, tokens/min, status chip, then bell, Ctrl K, account (11/80 still read
+   the first .status; only the visual order moves) */
+:root:not(#pg) .top-right > * {
+  order: 2;
+}
+:root:not(#pg) .top-right > :is(.tnai-sys-chip, #pgTokChip) {
+  order: 0;
+}
+:root:not(#pg) .top-right > :is(.prototype-status, .tnai-limit-chip) {
+  order: 1;
+}
+.pg-chip.off .v,
+#pgTokChip:not([data-on]) .v {
+  color: var(--pg-text-4);
+  min-width: 0;
+}
+.pg-chip.off,
+#pgTokChip:not([data-on]) {
+  opacity: 0.7;
+}
+.tnai-sys-chip.off {
+  cursor: default;
+}
+#pgTokChip:not([data-on]) svg {
+  display: none;
+}
+:root:not(#pg) .top-right .tnai-user-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4b2a7a, #2c1f55);
+  color: #e9dcff;
+  border: 1px solid var(--pg-line-2);
+  font: 600 11.5px var(--pg-sans);
+}
+:root:not(#pg) .top-right .tnai-user-signin {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--pg-line-2);
+  background: transparent;
+  color: var(--pg-text-2);
+  font: 500 12px var(--pg-sans);
+  cursor: pointer;
+}
+:root:not(#pg) .top-right .tnai-user-signin:hover {
+  color: var(--pg-text);
+  border-color: var(--pg-accent);
+}
+/* the page on screen always reads as active, even where the browser build greys the item (12) */
+:root:not(#pg) .sidebar .side-item.active[aria-disabled='true'] {
+  opacity: 1;
+}
+/* slim rail: the count is a corner badge (concept .pip) with centred digits */
+:root:not(#pg) .settings-page {
+  --sf: var(--pg-sans);
+}
+
+/* ---------------------------------------------------------------- page chrome shared by Files,
+   Terminal, Build (concept card/seg/btn shapes) */
+:root:not(#pg) :is(.terminal-toolbar, .bw-head, .dock-head) {
+  border-bottom: 1px solid var(--pg-line);
+  background: transparent;
+}
+:root:not(#pg) :is(.bw-head-title b, .dock-title, .terminal-toolbar .terminal-title) {
+  font: 500 14px/1 var(--pg-sans);
+  color: var(--pg-text);
+}
+:root:not(#pg)
+  :is(
+    .terminal-subtitle,
+    .bw-tab-count,
+    .terminal-workspace-counts,
+    .terminal-workspace-counts span
+  ) {
+  font: 400 11.5px var(--pg-sans);
+  color: var(--pg-text-3);
+}
+/* tabs read as the concept .seg */
+:root:not(#pg) :is(.bw-tab, .terminal-workspace-tab, .file-tab) {
+  border-radius: 9px;
+  border: 1px solid transparent;
+  color: var(--pg-text-3);
+  font: 400 12.5px var(--pg-sans);
+  background: transparent;
+  box-shadow: none;
+}
+:root:not(#pg) :is(.bw-tab, .terminal-workspace-tab, .file-tab).active {
+  background: var(--pg-panel-2);
+  border-color: var(--pg-line);
+  color: var(--pg-text);
+}
+:root:not(#pg) :is(.bw-tab-name, .terminal-workspace-tab > span, .file-tab > span) {
+  font: 500 12.5px var(--pg-sans);
+  color: inherit;
+}
+:root:not(#pg) :is(.bw-tab-tool, .terminal-workspace-rename) {
+  color: var(--pg-text-3);
+  font-size: 12px;
+  border-radius: 7px;
+}
+:root:not(#pg) :is(.bw-tab-tool, .terminal-workspace-rename):hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+/* header buttons read as the concept .btn */
+:root:not(#pg)
+  :is(
+    .bw-add,
+    .bw-new,
+    .terminal-workspace-add,
+    .start-agent-btn,
+    .terminal-tool,
+    .tnai-add-connection,
+    .repo-connect-button
+  ) {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--pg-r-sm);
+  border: 1px solid var(--pg-line-2);
+  background: transparent;
+  color: var(--pg-text);
+  font: 500 12px var(--pg-sans);
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+:root:not(#pg)
+  :is(
+    .bw-add,
+    .bw-new,
+    .terminal-workspace-add,
+    .start-agent-btn,
+    .terminal-tool,
+    .tnai-add-connection,
+    .repo-connect-button
+  ):hover {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+}
+:root:not(#pg) .repo-connect-button.primary {
+  background: rgba(var(--pg-accent-rgb), 0.22);
+  border-color: rgba(var(--pg-accent-rgb), 0.5);
+  color: var(--pg-text);
+}
+/* Terminal panels: glass cards, concept header, composer-style input with the accent Send */
+:root:not(#pg) .terminal-pane {
+  background: var(--pg-panel);
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r);
+  box-shadow: none;
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+}
+:root:not(#pg) .terminal-pane-head {
+  background: transparent;
+  border-bottom: 1px solid var(--pg-line);
+  padding: 0 14px;
+}
+:root:not(#pg) .terminal-pane-head .terminal-pane-title {
+  font: 500 13px var(--pg-sans);
+  color: var(--pg-text);
+}
+:root:not(#pg)
+  .terminal-pane-head
+  :is(.terminal-pane-state, .terminal-pane-state span, .terminal-context-state) {
+  font: 400 12px var(--pg-sans);
+  color: var(--pg-text-3);
+}
+:root:not(#pg) .terminal-pane-tools button {
+  color: var(--pg-text-3);
+  border-radius: 8px;
+}
+:root:not(#pg) .terminal-pane-tools button:hover {
+  color: var(--pg-text);
+  background: var(--pg-panel-hover);
+}
+:root:not(#pg) .terminal-pane .terminal-input {
+  height: 40px;
+  margin: 0 10px 10px;
+  padding: 0 6px 0 12px;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+}
+:root:not(#pg) .terminal-pane .terminal-input:focus-within {
+  border-color: rgba(var(--pg-accent-rgb), 0.45);
+}
+:root:not(#pg) .terminal-pane .terminal-input input {
+  font: 400 13px var(--pg-sans);
+  color: var(--pg-text);
+  background: none;
+}
+:root:not(#pg) .terminal-pane .terminal-input.is-shell input,
+:root:not(#pg) .terminal-pane .terminal-input .input-prompt:not(.is-ai) {
+  font-family: var(--pg-mono);
+}
+:root:not(#pg) .terminal-pane .terminal-input input::placeholder {
+  color: var(--pg-text-4);
+  font: 400 13px var(--pg-sans);
+}
+:root:not(#pg) .terminal-pane .terminal-input button {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgb(var(--pg-acc2)), rgb(var(--pg-au1)));
+  color: var(--pg-on-accent);
+  font: 500 12px var(--pg-sans);
+}
+:root:not(#pg) .terminal-pane .terminal-input button:disabled {
+  opacity: 0.45;
+}
+:root:not(#pg) .terminal-workspace-grid[data-density='dense'] .terminal-pane .terminal-input {
+  height: 32px;
+  margin: 0 6px 6px;
+}
+:root:not(#pg)
+  .terminal-workspace-grid[data-density='dense']
+  .terminal-pane
+  .terminal-input
+  button {
+  height: 24px;
+}
+/* Project file tree (03/09): concept list type, 12–13px */
+:root:not(#pg) .layout .repository-rail {
+  background: transparent;
+  border-left: 1px solid var(--pg-line);
+}
+:root:not(#pg) .repository-rail-head strong {
+  font: 500 14px var(--pg-sans);
+  color: var(--pg-text);
+}
+:root:not(#pg) :is(.repository-rail-head small, .repository-rail-note, .repo-connect p) {
+  font: 400 12px/1.5 var(--pg-sans);
+  color: var(--pg-text-3);
+}
+:root:not(#pg) .repository-rail-note {
+  border-top-color: var(--pg-line);
+}
+:root:not(#pg) .repo-rail-search {
+  height: 34px;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text);
+  font: 400 12.5px var(--pg-sans);
+}
+:root:not(#pg) .repo-rail-search::placeholder {
+  color: var(--pg-text-4);
+}
+:root:not(#pg) .repo-rail-tree :is(.repo-row, button) {
+  min-height: 30px;
+  border-radius: 8px;
+  color: var(--pg-text-2);
+  font: 400 13px var(--pg-sans);
+}
+:root:not(#pg) .repo-rail-tree :is(.repo-row, button):hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+:root:not(#pg) .repo-rail-tree :is(.repo-chevron, .repo-folder-icon) {
+  font-size: 12px;
+  color: var(--pg-text-3);
+}
+:root:not(#pg) .repo-file-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: var(--pg-panel-2);
+  color: var(--pg-text-2);
+  font: 600 8.5px var(--pg-mono);
+}
+
+/* ---------------------------------------------------------------- composer to the picture: purple
+   "Send →", target pill, 13px placeholder */
+:root:not(#pg) .composebox .send {
+  width: auto;
+  min-width: 0;
+  height: 36px;
+  padding: 0 16px;
+  font: 500 0/1 var(--pg-sans);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+:root:not(#pg) .composebox .send::after {
+  content: 'Send →';
+  font: 500 13px/1 var(--pg-sans);
+  color: var(--pg-on-accent);
+}
+:root:not(#pg) .composebox .attach,
+:root:not(#pg) .composebox .tnai-voice-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+}
+:root:not(#pg) .tnai-pick[data-pick='agent'] .tnai-pick-btn {
+  height: 36px;
+  padding: 0 10px 0 5px;
+  border-radius: 11px;
+  background: var(--pg-panel-2);
+  border: 1px solid var(--pg-line);
+  color: var(--pg-text);
+  font: 400 13px var(--pg-sans);
+}
+:root:not(#pg) .tnai-pick:not([data-pick='agent']) .tnai-pick-btn {
+  background: var(--pg-panel-2);
+  border: 1px solid var(--pg-line);
+  color: var(--pg-text-2);
+  font-family: var(--pg-sans);
+}
+:root:not(#pg) .tnai-pick[data-pick='agent'] .tnai-pick-av {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  font: 600 10px var(--pg-sans);
+  font-style: normal;
+  color: #160f2a;
+  background: linear-gradient(135deg, rgb(var(--pg-acc2)), rgb(var(--pg-au1)));
+}
+:root:not(#pg) .tnai-pick[data-pick='agent'] {
+  max-width: 300px;
+}
+:root:not(#pg) .tnai-pick[data-pick='agent'] .tnai-pick-btn > span {
+  flex: 0 1 auto;
+}
+:root:not(#pg) .tnai-pick[data-pick='agent'] .tnai-pick-pj {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11.5px;
+  color: var(--pg-text-3);
+}
+:root:not(#pg) .tnai-pick[data-pick='agent'] .tnai-pick-pj:empty {
+  display: none;
+}
+:root:not(#pg) .tnai-pick-btn > svg {
+  color: var(--pg-text-3);
+}
+
+/* ---------------------------------------------------------------- composer in the content column
+   (like the concept): 94 moves footer.composer to the end of .layout on every page except Overview
+   rows, so the nav runs full height and the composer sits under the content column only. */
+:root:not(#pg) .app:not(:has(> footer.composer)) {
+  grid-template-rows: 44px minmax(0, 1fr) !important;
+}
+:root:not(#pg) .layout:has(> footer.composer) {
+  grid-template-rows: minmax(0, 1fr) auto !important;
+}
+:root:not(#pg) .layout:has(> footer.composer) > :is(.sidebar, .tnai-resizer) {
+  grid-row: 1/-1 !important;
+}
+:root:not(#pg) .layout > footer.composer {
+  grid-column: -2/-1;
+  grid-row: 2;
+  min-width: 0;
+  padding: 10px 20px 12px;
+}
+:root:not(#pg) .layout.terminal-mode > footer.composer {
+  display: none;
+}
+:root:not(#pg) .app.tnai-composer-out .layout > footer.composer {
+  min-height: 0 !important;
+  padding-top: 7px !important;
+  padding-bottom: 7px !important;
+}
+/* the picture's order inside the message box: ＋, input, mic, Send (DOM order stays; 70 inserts the
+   mic before the prompt) */
+:root:not(#pg) .composebox > :is(.tnai-voice-btn, .tnai-voice-viz) {
+  order: 1;
+}
+:root:not(#pg) .composebox > .send {
+  order: 2;
+}
+
+/* ---------------------------------------------------------------- frame to the picture (measured
+   against the concept at 1920×1080) */
+/* nav column 216 (the user's own dragged width, inline from 03/29, still wins) */
+.layout {
+  --nav-width: var(--pg-nav-open);
+}
+/* first group label is 18px tall; the concept has no Ctrl K line in the nav (Ctrl K lives in the
+   top bar) */
+:root:not(#pg) .sidebar :is(.mini-brand + .side-label, .side-label:first-child) {
+  height: 18px;
+}
+:root:not(#pg) .sidebar .side-shortcut {
+  display: none;
+}
+/* Send: the concept's #c57dff → #9935ac (other accents: the same step between accent and accent-2)
+   */
+html {
+  --pg-send: color-mix(in srgb, rgb(var(--pg-acc)) 67%, rgb(var(--pg-acc2)));
+}
+html:not([data-accent]),
+html[data-accent='purple'] {
+  --pg-send: #c57dff;
+}
+:root:not(#pg) .composebox .send {
+  background: linear-gradient(135deg, var(--pg-send), rgb(var(--pg-au1)));
+}
+/* Send: "Send" then the concept's 17px arrow icon, 8px apart */
+:root:not(#pg) .composebox .send {
+  gap: 0;
+}
+:root:not(#pg) .composebox .send::after {
+  content: 'Send';
+}
+:root:not(#pg) .composebox .send::before {
+  content: '';
+  order: 2;
+  margin-left: 8px;
+  width: 17px;
+  height: 17px;
+  flex: none;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14M13 6l6 6-6 6'/%3E%3C/svg%3E")
+    center/contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14M13 6l6 6-6 6'/%3E%3C/svg%3E")
+    center/contain no-repeat;
+}
+:root:not(#pg) .top {
+  line-height: 1.5;
+}
+:root:not(#pg) .top-right > #topCommand {
+  letter-spacing: 0.01em;
+}
+:root:not(#pg) .sidebar .side-item {
+  letter-spacing: normal;
+}
+/* Top bar, picture match (item 5): Workspace pill with the open-project count, branch chip on
+   hover, Computers chip, Ctrl K, avatar with the bell as its corner badge. */
+:root:not(#pg) .top .project .pg-projn {
+  color: var(--pg-text-3);
+}
+:root:not(#pg) .top .project .pg-projn:empty {
+  display: none;
+}
+:root:not(#pg) .top-right > .prototype-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  padding: 0;
+  border: 0;
+}
+.pg-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+:root:not(#pg) .top-right > .pg-pcs {
+  order: 1;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+:root:not(#pg) .top-right > .pg-pcs:hover {
+  border-color: var(--pg-line-2);
+}
+.pg-pcs .dot {
+  /* the chip's own gap is the only room beside the dot, as beside every other part of a chip */
+  margin: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pg-idle);
+  flex: none;
+}
+.pg-pcs[data-live='1'] .dot {
+  background: var(--pg-ready);
+  box-shadow: 0 0 8px var(--pg-ready);
+}
+.pg-pcs .v {
+  min-width: 0;
+}
+:root:not(#pg) .top-right > #topCommand {
+  display: none;
+} /* No Ctrl K button in the bar; Ctrl+K still opens the palette (39). Kept in the DOM: 51 and 81 place chips by it. */
+:root:not(#pg) .top-right > .tnai-user {
+  order: 4;
+}
+:root:not(#pg) .top-right > .tnai-bell {
+  order: 5;
+}
+:root:not(#pg) .top-right > .win-ctrls {
+  order: 6;
+}
+:root:not(#pg) .top-right .tnai-user-signin {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--pg-line-2);
+  background: linear-gradient(135deg, #4b2a7a, #2c1f55);
+  color: #e9dcff;
+}
+:root:not(#pg) .top-right .tnai-user-signin svg {
+  width: 13px;
+  height: 13px;
+}
+:root:not(#pg) .top-right > .tnai-bell {
+  align-self: flex-start;
+  margin: 4px 0 0 -14px;
+  width: 15px;
+  height: 15px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--pg-line-2);
+  background: var(--pg-panel-solid);
+  color: var(--pg-text-2);
+  z-index: 1;
+}
+:root:not(#pg) .top-right > .tnai-bell svg {
+  width: 8px;
+  height: 8px;
+}
+/* The bell is drawn as a small badge on the corner of the account circle. With accounts switched
+   off that circle is hidden (34), and the badge's pull to the left would lay it over the chip
+   before it. So without the circle the bell takes the circle's own place and size. */
+:root:not(#pg) .top-right:has(> .tnai-user[hidden]) > .tnai-bell {
+  align-self: center;
+  margin: 0;
+  width: var(--pg-bell-box, 26px);
+  height: var(--pg-bell-box, 26px);
+}
+/* Both sizes are whole screen pixels with an even room between them (81), so the bell stands in
+   the middle of its circle at every window scale. */
+:root:not(#pg) .top-right:has(> .tnai-user[hidden]) > .tnai-bell svg {
+  width: var(--pg-bell-icon, 13px);
+  height: var(--pg-bell-icon, 13px);
+}
+:root:not(#pg) .top-right > .tnai-bell:hover {
+  color: var(--pg-text);
+  border-color: var(--pg-accent);
+}
+:root:not(#pg) .top-right > .tnai-bell .n-count {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+}
+:root:not(#pg) .win-ctrl {
+  width: 26px;
+  height: 22px;
+  color: var(--pg-text-4);
+}
+:root:not(#pg) .win-ctrl:hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+/* Composer, picture match (item 6): the box holds only pill, ＋, prompt, mic, Send. ＋ New agent and
+   pop out / dock live in the agent pill's menu (46 .tnai-pick-tray clicks the hidden originals);
+   Model and Effort read as plain meta text ("— Lead · Claude Code · Opus 5.5") and still open their
+   menus. */
+/* The agent pill is gone (the avatar row picks the agent, 46
+   .tnai-to); its select stays as the source of truth. ⧉ pop out / dock is back beside the mic since
+   the pill's menu held it. */
+:root:not(#pg) .composer .tnai-pick[data-pick='agent'] {
+  display: none !important;
+}
+:root:not(#pg) .composebox > .tnai-composer-pop {
+  width: 30px;
+  height: 30px;
+  color: var(--pg-text-3);
+  border-radius: 8px;
+}
+:root:not(#pg) .composebox > .tnai-composer-pop:hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+/* ＋ New agent is back next to Send; pop out / dock
+   stay in the pill's menu */
+:root:not(#pg) .composebox .tnai-new-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--pg-text-2);
+  font: 500 12.5px var(--pg-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+:root:not(#pg) .composebox .tnai-new-agent:hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+:root:not(#pg) .composebox .tnai-new-agent[aria-pressed='true'] {
+  border-color: var(--pg-work);
+  background: color-mix(in srgb, var(--pg-work) 14%, transparent);
+  color: var(--pg-text);
+}
+.tnai-pick-tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 8px 4px 4px;
+  border-top: 1px solid var(--pg-line);
+}
+.tnai-pick-extra {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--pg-line-2);
+  background: transparent;
+  color: var(--pg-text-2);
+  font: 500 12px var(--pg-sans);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tnai-pick-extra:hover:not(:disabled) {
+  color: var(--pg-text);
+  border-color: var(--pg-accent);
+}
+.tnai-pick-extra[aria-pressed='true'] {
+  color: var(--pg-text);
+  background: var(--pg-accent-soft);
+  border-color: var(--pg-accent);
+}
+.tnai-pick-extra:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+:root:not(#pg) footer.composer .tnai-pick:not([data-pick='agent']) .tnai-pick-btn {
+  height: 21px;
+  padding: 0 4px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--pg-text-3);
+  font: 400 11.5px var(--pg-sans);
+}
+:root:not(#pg)
+  footer.composer
+  .tnai-pick:not([data-pick='agent'])
+  .tnai-pick-btn:hover:not(:disabled),
+:root:not(#pg)
+  footer.composer
+  .tnai-pick:not([data-pick='agent'])
+  .tnai-pick-btn[aria-expanded='true'] {
+  color: var(--pg-text);
+  background: var(--pg-panel-2);
+  border-color: transparent;
+}
+/* under the pointer only; the pressed or chosen state keeps its own surface */
+:root:not(#pg)
+  footer.composer
+  .tnai-pick:not([data-pick='agent'])
+  .tnai-pick-btn:hover:not(:disabled) {
+  background: var(--pg-panel-hover);
+}
+:root:not(#pg) footer.composer .tnai-pick:not([data-pick='agent']) .tnai-pick-btn > svg {
+  opacity: 0.6;
+}
+:root:not(#pg) footer.composer .tnai-pick[data-pick='model']::before {
+  content: '·';
+  margin-right: 2px;
+  color: var(--pg-text-4);
+  line-height: 21px;
+}
+/* Slim top bar, scaled down: 44px row on every page,
+   incl. 21's Terminal and 38's composer-out rows. */
+:root:not(#pg) .app {
+  grid-template-rows: 44px minmax(0, 1fr) auto;
+}
+:root:not(#pg) .app:has(> .layout.terminal-mode) {
+  grid-template-rows: 44px minmax(0, 1fr) 0 !important;
+}
+:root:not(#pg) .app.tnai-composer-out:not(:has(> .layout.terminal-mode)) {
+  grid-template-rows: 44px minmax(0, 1fr) 44px !important;
+}
+/* Bell with unread notices (larger when it has notices, mainly updates and
+   important info): the tiny avatar badge grows into its own 26px bell chip beside the avatar,
+   tinted by kind (update = accent, needs you = amber), with a soft ring. Nothing unread: back to
+   the badge. */
+:root:not(#pg) .top-right > .tnai-bell:has(.n-count:not([hidden])) {
+  align-self: center;
+  margin: 0 0 0 2px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--pg-accent) 55%, transparent);
+  background: color-mix(in srgb, var(--pg-accent) 18%, var(--pg-panel-solid));
+  color: var(--pg-text);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pg-accent) 14%, transparent);
+  order: 3;
+  transition:
+    width 0.25s var(--pg-ease),
+    height 0.25s var(--pg-ease),
+    margin 0.25s var(--pg-ease);
+}
+:root:not(#pg) .top-right > .tnai-bell:has(.n-count[data-k='blocked']:not([hidden])) {
+  border-color: color-mix(in srgb, var(--pg-wait) 60%, transparent);
+  background: color-mix(in srgb, var(--pg-wait) 16%, var(--pg-panel-solid));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pg-wait) 14%, transparent);
+}
+:root:not(#pg) .top-right > .tnai-bell:has(.n-count:not([hidden])) svg {
+  width: 13px;
+  height: 13px;
+}
+:root:not(#pg) .top-right > .tnai-bell .n-count {
+  border-color: var(--pg-bg);
+  background: var(--pg-accent);
+  font: 600 9px/12px var(--pg-sans);
+}
+:root:not(#pg) .top-right > .tnai-bell .n-count[data-k='blocked'] {
+  background: var(--pg-wait);
+  color: #1a1022;
+}
+/* "Technically Not ready · no agents running" line under the composer: hidden on every page
+   (removed); 11 still writes #activeWorkerLabel. */
+:root:not(#pg) .composer .activityline {
+  display: none !important;
+}
+/* Text boxes: the focus ring hugs the box instead of a 2px ring 2px outside it, which doubled with
+   their own glow and crowded the buttons below (a little more room when a text
+   box is highlighted). */
+:root:not(#pg)
+  :is(
+    input:not([type='checkbox'], [type='radio'], [type='range'], [type='button'], [type='submit']),
+    textarea
+  ):focus-visible {
+  outline: none;
+  border-color: rgba(var(--pg-accent-rgb), 0.6);
+  box-shadow: 0 0 0 3px rgba(var(--pg-accent-rgb), 0.13);
+}
+/* One highlight per field, never two: a box inside a
+   container that already lights up on focus (composer, terminal input, skills search, the terminal
+   itself) draws nothing of its own. Every new container with its own :focus-within look goes into
+   this list: the Skills page search (.sk-search) and Live preview's address bar (.lpp-omni) were
+   missing, so the bare input inside drew a second, smaller ring over its text (a
+   ghost rectangle). Desktop test `focus-rings` finds any that is missing. */
+:root:not(#pg)
+  :is(
+    .composebox,
+    .terminal-input,
+    .tn-skp-search,
+    .sk-search,
+    .lpp-omni,
+    .xterm,
+    .pgo-center footer.composer
+  )
+  :is(input, textarea):focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+/* Agent avatars at the start of the composer's hint row (46 .tnai-to): click = send the next prompt
+   to that agent */
+.composer .tnai-to {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  margin-right: 8px;
+}
+.composer .tnai-to[hidden] {
+  display: none;
+}
+.composer .tnai-to-av {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: var(--c);
+  color: #1b1530;
+  font: 600 10.5px var(--pg-sans);
+  cursor: pointer;
+  opacity: 0.72;
+  transition:
+    opacity 0.15s,
+    box-shadow 0.15s;
+}
+.composer .tnai-to-av.off {
+  opacity: 0.4;
+  filter: saturate(0.55);
+}
+.composer .tnai-to-av:hover,
+.composer .tnai-to-av:focus-visible {
+  opacity: 1;
+  filter: none;
+}
+.composer .tnai-to-av.on {
+  opacity: 1;
+  filter: none;
+  box-shadow:
+    0 0 0 2px var(--pg-bg, #120e1f),
+    0 0 0 3.5px var(--c);
+}
+/* A narrow composer keeps room for the prompt (scaled down as needed to make it
+   fit): New agent, Send and Own worktree go icon-only, then the hint row tightens. Container: the
+   composer's own width, on every page and in its pop-out. */
+footer.composer,
+body.tnai-composer-popout > .composer {
+  container: pgcomposer/inline-size;
+}
+@container pgcomposer (max-width:900px) {
+  .composebox .tnai-new-agent {
+    font-size: 0 !important;
+    gap: 0 !important;
+    padding: 0 10px !important;
+  }
+  .composebox .send {
+    padding: 0 13px !important;
+  }
+  .composebox .send::after {
+    content: '' !important;
+  }
+  .composebox .send::before {
+    margin-left: 0 !important;
+  } /* its own arrow (::before / icon) stays */
+  .wt-compose > span {
+    display: none;
+  }
+}
+@container pgcomposer (max-width:640px) {
+  .composer .tnai-to {
+    gap: 3px;
+    margin-right: 4px;
+  }
+  .composer .tnai-to-av {
+    width: 18px;
+    height: 18px;
+    font-size: 9.5px;
+  }
+  .composer .hints .tnai-route-hint:not(.tnai-far) {
+    display: none;
+  }
+  .composer .hints > .hint:not(.tnai-route-hint):not(:nth-last-child(2)) {
+    display: none;
+  } /* only "↵ send · Ctrl+↵ new agent" stays, so the Model / Effort pickers are never drawn over (as on Overview; Ctrl+K is in the top bar) */
+}
+/* While New agent's Own worktree box is in the row, the two low hints leave whole (the same two as
+   the 640px step): the pickers may shrink and the box may not, so in a full row it was drawn over
+   "Ctrl+K commands". They free more room than it takes. */
+.composer
+  .hints:has(.wt-compose:not([hidden]))
+  > .hint:not(.tnai-route-hint):not(:nth-last-child(2)) {
+  display: none;
+}
+/* The same two leave whole when the pickers are squeezed at any width (11 `fitRoute` sets the class
+   after the route hint is out). */
+.composer .hints.tnai-fit-keys > .hint:not(.tnai-route-hint):not(:nth-last-child(2)) {
+  display: none;
+}
+/* And the last one, when the row is still wider than its room with those two out (11 `fitRoute`):
+   a key hint leaves whole, the pickers are never drawn over. */
+.composer .hints.tnai-fit-all > .hint {
+  display: none;
+}
+/* A line that names another computer is the last to leave (11 `fitRoute`): every key hint gives its
+   room first and the pickers may get narrow, so a prompt or a start that goes to another computer
+   says so under the box in a thread's row too. */
+.composer .hints.tnai-fit-far > .hint:not(.tnai-route-hint) {
+  display: none;
+}
+.composer .hints.tnai-fit-far .tnai-pick {
+  min-width: 56px;
+}
+/* In that same tight row the pickers may get narrower than their usual 96px and end in "…": with
+   seven agents' marks beside them "Access" ran 96 px past the island's edge. */
+.composer .hints.tnai-fit-all .tnai-pick {
+  min-width: 56px;
+}
+/* The TechnicallyNot.ai wordmark back in the top-left, scaled to the space the
+   "tn · Technically Not" mark used */
+:root:not(#pg) .top .brand .pg-logo {
+  display: block;
+  height: 13px;
+  width: auto;
+  max-width: 150px;
+  object-fit: contain;
+}
+/* New agent and Send sit inside the lit prompt box, not over its edge (the buttons are
+   slightly smaller) */
+:root:not(#pg) .composebox .tnai-new-agent {
+  height: 30px;
+  padding: 0 11px;
+  border-radius: 9px;
+  font-size: 12px;
+}
+:root:not(#pg) .composebox .send {
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 9px;
+}
+:root:not(#pg) .composebox .send::after {
+  font-size: 12.5px;
+}
+/* Model and Effort under the prompt: smaller, quieter text */
+:root:not(#pg) footer.composer .tnai-pick:not([data-pick='agent']) .tnai-pick-btn {
+  height: 19px;
+  font-size: 10.5px;
+}
+:root:not(#pg) footer.composer .tnai-pick:not([data-pick='agent']) .tnai-pick-btn svg {
+  width: 11px;
+  height: 11px;
+}
+/* Attachments get their own slim row above the text (screenshots took the chat box
+   and the text box shrank): chips never take the text's width; many chips scroll sideways in one
+   row instead of stacking. */
+:root:not(#pg) .composebox:has(> .attachment-list:not(:empty)) {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+:root:not(#pg) .composebox > .attachment-list:not(:empty) {
+  order: -1;
+  display: flex;
+  flex: 0 0 100%;
+  flex-wrap: nowrap;
+  align-self: auto;
+  max-width: none;
+  max-height: none;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0 0 3px;
+}
+:root:not(#pg) .composebox > .attachment-list:empty {
+  display: none;
+}
+:root:not(#pg) .composebox .attachment-chip {
+  height: 30px;
+}
+:root:not(#pg) .composebox .attachment-chip .attachment-name {
+  max-width: 88px;
+}
+:root:not(#pg) .composebox > .attachment-list {
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+/* A pasted clip's chip (27): its first frame is the play button, the size and corners of an image
+   chip's picture, with a play mark over a soft dark layer so it shows on any frame. */
+:root:not(#pg) .composebox .attachment-chip[data-kind='clip'] {
+  cursor: pointer;
+}
+:root:not(#pg) .attachment-chip .attachment-play {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 26px;
+  height: 26px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+  cursor: pointer;
+}
+:root:not(#pg) .attachment-chip .attachment-play img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
+:root:not(#pg) .attachment-chip .attachment-play::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--pg-bg) 45%, transparent);
+  transition: background 0.15s var(--pg-ease);
+}
+:root:not(#pg) .attachment-chip .attachment-play svg {
+  position: relative;
+  z-index: 1;
+}
+:root:not(#pg) .attachment-chip .attachment-play:hover::after {
+  background: color-mix(in srgb, var(--pg-bg) 25%, transparent);
+}
+:root:not(#pg) .attachment-chip .attachment-play:active::after {
+  background: color-mix(in srgb, var(--pg-bg) 60%, transparent);
+}
+:root:not(#pg) .attachment-chip .attachment-play:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 1px;
+}
+/* The still shown at the pointer over a clip's file name in a terminal panel (113): placed by
+   TnaiFloat, never takes the pointer. */
+.tnai-clip-tip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 2147483000;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  padding: 6px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel-solid);
+  color: var(--pg-text-2);
+  font: 500 11px/1.45 var(--pg-sans);
+  pointer-events: none;
+}
+.tnai-clip-tip[hidden] {
+  display: none;
+}
+.tnai-clip-tip .tnai-clip-still {
+  position: relative;
+  display: block;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.tnai-clip-tip img {
+  display: block;
+  max-width: 320px;
+  max-height: 200px;
+}
+.tnai-clip-tip .tnai-clip-mark {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--pg-bg) 60%, transparent);
+  color: var(--pg-text);
+}

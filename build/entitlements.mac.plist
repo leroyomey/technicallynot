@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Technically Not · macOS hardened-runtime entitlements (package.json build.mac). Electron's V8 needs JIT and writable-executable memory;
+     library validation is off so node-pty's native module and spawn-helper load under the hardened runtime.
+     audio-input lets the voice prompt use the microphone (the usage text is mac.extendInfo.NSMicrophoneUsageDescription). -->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-jit</key><true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+  <key>com.apple.security.cs.disable-library-validation</key><true/>
+  <key>com.apple.security.device.audio-input</key><true/>
+</dict>
+</plist>

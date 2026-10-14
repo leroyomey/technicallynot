@@ -1,0 +1,356 @@
+/* Technically Not · 12-files-purple.css — purple glass look for the Overview file rail (tree, search, connect strip), live change cards (26) and agent worktrees (35: panel badge, Own worktree options, the Merge / Keep working / Discard popover). Look only; ids/classes/hooks unchanged. Tokens: --pg-* (07). */
+
+/* ---------- file rail (Overview): tree card ---------- */
+:root:not(#pg) .layout .repository-rail,
+:root:not(#pg) .layout.overview-mode .dock-content > .repository-rail {
+  margin: 0;
+  padding: 14px 12px;
+  border: 0;
+  border-left: 1px solid var(--pg-line);
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  overflow: hidden;
+}
+/* tree rows like the spec's file rows: 12.5px text, 14px icons */
+:root:not(#pg) .repo-rail-tree :is(.repo-folder-icon, .repo-file-icon) {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  display: inline-grid;
+  place-items: center;
+  font-size: 11px;
+}
+:root:not(#pg) .repo-rail-tree .repo-file-icon {
+  font: 600 6.5px/1 var(--pg-mono);
+  border-radius: 4px;
+}
+:root:not(#pg) .repo-rail-search {
+  margin: 0 10px 6px;
+}
+:root:not(#pg) .repo-rail-tree :is(.repo-row, button) {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  font: 400 12.5px var(--pg-sans);
+  color: var(--pg-text-2);
+}
+:root:not(#pg) .repo-rail-tree :is(.repo-row, button):hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+:root:not(#pg) .repo-row.selected {
+  background: var(--pg-accent-soft);
+  color: var(--pg-text);
+}
+:root:not(#pg) .repo-row-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+}
+:root:not(#pg) .repo-folder .repo-folder-icon {
+  color: var(--pg-accent-2);
+}
+:root:not(#pg) .repo-file-icon {
+  border-radius: 5px;
+  background: var(--pg-panel-2);
+  border: 1px solid var(--pg-line);
+  color: var(--pg-text-2);
+}
+:root:not(#pg) .repo-row.repo-dirty .repo-row-name:after {
+  color: var(--pg-wait);
+}
+/* agent badges on files being edited (real tags from 13): concept .fl chips */
+:root:not(#pg) .repo-agent-tags {
+  gap: 2px;
+}
+:root:not(#pg) .repo-agent-tag,
+:root:not(#pg) .repo-folder .repo-agent-tag {
+  gap: 5px;
+  padding: 2px 7px 2px 5px;
+  border: 1px solid rgba(var(--pg-accent-rgb), 0.3);
+  border-radius: 6px;
+  background: var(--pg-accent-soft);
+  color: var(--pg-text);
+  font: 500 10.5px var(--pg-sans);
+}
+:root:not(#pg) .repo-agent-tag i {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--pg-work);
+}
+/* search results */
+:root:not(#pg) .repo-search-results {
+  padding: 4px 6px;
+}
+:root:not(#pg) .repo-search-hit {
+  border-radius: 9px;
+  min-height: 48px;
+}
+:root:not(#pg) .repo-search-hit:hover,
+:root:not(#pg) .repo-search-hit:focus-visible {
+  background: var(--pg-panel-2);
+}
+/* under the pointer only; the pressed or chosen state keeps its own surface */
+:root:not(#pg) .repo-search-hit:hover {
+  background: var(--pg-panel-hover);
+}
+:root:not(#pg) .repo-search-hit.selected {
+  background: var(--pg-accent-soft);
+}
+:root:not(#pg) .repo-search-hit b {
+  font: 500 12.5px var(--pg-sans);
+  color: var(--pg-text);
+}
+:root:not(#pg) .repo-search-hit small {
+  font: 400 10.5px var(--pg-mono);
+  color: var(--pg-text-4);
+}
+:root:not(#pg) .repo-search-status,
+:root:not(#pg) .repo-info-row {
+  color: var(--pg-text-4);
+  font: 400 11px var(--pg-sans);
+}
+/* connect strip */
+:root:not(#pg) .repo-connect {
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+}
+:root:not(#pg) .repo-connect[data-state='connected'] {
+  border: 0;
+  background: none;
+}
+:root:not(#pg) .repo-connect[data-state='restorable'],
+:root:not(#pg) .repo-connect[data-state='reconnect'] {
+  border-color: color-mix(in srgb, var(--pg-wait) 40%, transparent);
+  background: color-mix(in srgb, var(--pg-wait) 10%, transparent);
+}
+:root:not(#pg) .repo-connect p {
+  color: var(--pg-text-3);
+}
+:root:not(#pg) .repo-connect p b {
+  color: var(--pg-text);
+}
+:root:not(#pg) .repo-connect-button {
+  border: 1px solid var(--pg-line-2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--pg-text);
+  font: 400 11.5px var(--pg-sans);
+}
+:root:not(#pg) .repo-connect-button:hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+:root:not(#pg) .repo-connect-button.primary {
+  background: rgba(189, 99, 255, 0.22);
+  border: 1px solid rgba(189, 99, 255, 0.5);
+  color: var(--pg-text);
+}
+:root:not(#pg) .repo-connect-more {
+  color: var(--pg-text-3);
+}
+:root:not(#pg) .repo-connect-more:hover,
+:root:not(#pg) .repo-connect-more[aria-expanded='true'] {
+  background: var(--pg-panel-2);
+  border-color: var(--pg-line);
+  color: var(--pg-text);
+}
+/* under the pointer only; the pressed or chosen state keeps its own surface */
+:root:not(#pg) .repo-connect-more:hover {
+  background: var(--pg-panel-hover);
+}
+:root:not(#pg) .repo-connect-menu {
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel-solid);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+:root:not(#pg) .repo-connect-menu .repo-connect-button {
+  background: none;
+  border: 0;
+}
+:root:not(#pg) .repo-connect-menu .repo-connect-button:hover {
+  background: var(--pg-panel-hover);
+}
+
+/* live AI change cards (26): concept file rows, +/- in mono */
+:root:not(#pg) .fd-strip {
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel-2);
+}
+:root:not(#pg) .fd-strip-head {
+  border-bottom: 1px solid var(--pg-line);
+  color: var(--pg-text-3);
+  font: 500 11px var(--pg-sans);
+}
+:root:not(#pg) .fd-strip-head button {
+  color: var(--pg-text-3);
+  font: 500 11px var(--pg-sans);
+}
+:root:not(#pg) .fd-strip-head button:hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+:root:not(#pg) .fd-strip-toggle {
+  color: var(--pg-text) !important;
+}
+:root:not(#pg) .fd-card {
+  border: 1px solid var(--pg-line);
+  border-radius: 12px;
+  background: var(--pg-panel);
+}
+:root:not(#pg) .fd-card > header {
+  color: var(--pg-text-3);
+  font: 400 11px var(--pg-sans);
+}
+:root:not(#pg) .fd-who {
+  color: var(--pg-text);
+  font-size: 12.5px;
+}
+:root:not(#pg) .fd-who i {
+  color: var(--pg-text-4);
+}
+:root:not(#pg) .fd-add {
+  color: var(--pg-ready);
+  font: 400 10.5px var(--pg-mono);
+}
+:root:not(#pg) .fd-del {
+  color: var(--pg-err);
+  font: 400 10.5px var(--pg-mono);
+}
+:root:not(#pg) .fd-card > header button {
+  color: var(--pg-text-3);
+}
+:root:not(#pg) .fd-card > header button:hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+:root:not(#pg) .fd-lines {
+  border-top: 1px solid var(--pg-line);
+  font: 400 11px/1.55 var(--pg-mono);
+}
+:root:not(#pg) .fd-line {
+  color: var(--pg-text-2);
+}
+:root:not(#pg) .fd-line i {
+  color: var(--pg-text-4);
+}
+:root:not(#pg) .fd-line.add {
+  background: color-mix(in srgb, var(--pg-ready) 12%, transparent);
+  color: var(--pg-ready);
+}
+:root:not(#pg) .fd-line.del {
+  background: color-mix(in srgb, var(--pg-err) 12%, transparent);
+  color: var(--pg-err);
+}
+:root:not(#pg) :is(.fd-hunk, .fd-more) {
+  background: var(--pg-panel-2);
+  color: var(--pg-text-4);
+  font: 400 10.5px var(--pg-mono);
+}
+:root:not(#pg) .fd-more:hover {
+  color: var(--pg-text);
+}
+
+/* agent worktrees (35): panel badge (concept release-train cars), Own worktree options, and the Merge / Keep working / Discard popover (reuses 08's .pgo-qpop + .pgo-btn) */
+:root:not(#pg) .wt-badge {
+  border: 1px solid color-mix(in srgb, var(--pg-ready) 30%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--pg-ready) 10%, transparent);
+  color: var(--pg-ready);
+  font: 500 11px var(--pg-sans);
+}
+:root:not(#pg) .wt-badge:hover {
+  background: color-mix(in srgb, var(--pg-ready) 18%, transparent);
+}
+:root:not(#pg) .wt-option {
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+  font: 400 12px/1.45 var(--pg-sans);
+}
+:root:not(#pg) .wt-option b {
+  color: var(--pg-text);
+  font: 500 12.5px var(--pg-sans);
+}
+:root:not(#pg) .wt-option small {
+  color: var(--pg-text-3);
+}
+:root:not(#pg) .wt-option input {
+  accent-color: var(--pg-accent);
+}
+:root:not(#pg) .wt-compose {
+  border-color: var(--pg-line);
+  border-radius: 8px;
+  background: var(--pg-panel);
+  color: var(--pg-text-3);
+}
+:root:not(#pg) .wt-compose.on {
+  border-color: rgba(var(--pg-accent-rgb), 0.5);
+  background: var(--pg-accent-soft);
+  color: var(--pg-text);
+}
+.wt-pop {
+  width: min(330px, calc(100vw - 16px));
+}
+.wt-pop h4 {
+  overflow: hidden;
+  font: 500 12.5px var(--pg-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wt-pop .wt-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 0;
+  color: var(--pg-text-2);
+}
+.wt-pop :is(.wt-add, .wt-del) {
+  font: 400 11px var(--pg-mono);
+}
+.wt-pop .wt-add {
+  color: var(--pg-ready);
+}
+.wt-pop .wt-del {
+  color: var(--pg-text-3);
+}
+.wt-pop :is(.wt-note, .wt-ask) {
+  margin: 7px 0 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.wt-pop .wt-ask {
+  color: var(--pg-text);
+}
+.wt-pop .wt-note {
+  color: var(--pg-text-3);
+}
+.wt-pop .wt-note.ok {
+  color: var(--pg-ready);
+}
+.wt-pop .wt-note.error {
+  color: var(--pg-err);
+}
+.wt-pop .pgo-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.wt-pop .pgo-btn:focus-visible {
+  outline: var(--pg-ring) solid rgba(var(--pg-accent-rgb), 0.6);
+  outline-offset: 1px;
+}

@@ -1,0 +1,561 @@
+<!doctype html>
+<!-- Technically Not desktop · snapshot-overlay.html — Snapshot overlay (snapshot-service.js): the frozen screen, dimmed, with the snapshot window on it (every choice in one place: Screenshot S or Clip C, the marker M, enlarging L, Whole screen Enter, Cancel Esc; it leaves when a drag starts and is never in a picture or clip); drag a rectangle to copy it (Enter takes the whole screen), Esc or right-click cancels. C switches to a clip: the dragged area is recorded instead of copied (snapshot-clip.js). With markup on (M, remembered), the selection stays open with a small toolbar: box, arrow, pen, highlighter, text, numbered markers, blur, block out, eraser, move or resize (marks; the selection by its grips), four colors, undo; Enter copies the marked-up picture. L (remembered) copies a small picture enlarged, in whole pixels. -->
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<style>
+  /* Purple glass, like the app. This page stands alone, so the token values of src/styles/07-purple-glass.css are repeated here; the accent picked in the app comes in the address (?accent=). */
+  @font-face { font-family: "Outfit"; font-weight: 400; src: url("../src/assets/fonts/Outfit-Regular.woff2") format("woff2"); }
+  @font-face { font-family: "Outfit"; font-weight: 500; src: url("../src/assets/fonts/Outfit-Medium.woff2") format("woff2"); }
+  @font-face { font-family: "Outfit"; font-weight: 600 700; src: url("../src/assets/fonts/Outfit-SemiBold.woff2") format("woff2"); }
+  @font-face { font-family: "JetBrains Mono"; font-weight: 400; src: url("../src/assets/fonts/JetBrainsMono-Regular.woff2") format("woff2"); }
+  :root { --pg-r: 18px; --pg-r-sm: 10px; --pg-sans: "Outfit", system-ui, "Segoe UI", sans-serif; --pg-mono: "JetBrains Mono", Consolas, monospace; --pg-ease: cubic-bezier(.22,.9,.24,1);
+    --pg-acc: 189,99,255; --pg-acc2: 213,175,244; --pg-tint: 214,196,255; --solid: 26,20,51; --pg-panel-solid: rgb(var(--solid)); --pg-panel: rgba(255,255,255,.04); --pg-panel-2: rgba(255,255,255,.07); --pg-line: rgba(var(--pg-tint),.09); --pg-line-2: rgba(var(--pg-tint),.16);
+    --pg-text: #eee9ff; --pg-text-2: #c0b7da; --pg-text-3: #8e85ab; --pg-on-accent: #14092a; --pg-accent: rgb(var(--pg-acc)); --pg-accent-2: rgb(var(--pg-acc2)); --pg-accent-soft: rgba(var(--pg-acc),.14);
+    --glass: rgba(var(--solid),.9); --dim: rgba(10,6,22,.45); --lift: 0 30px 70px -18px rgba(0,0,0,.7); }
+  html[data-accent="blue"] { --pg-acc: 91,140,255; --pg-acc2: 174,198,255; --pg-tint: 196,210,255; --solid: 20,26,51; }
+  html[data-accent="teal"] { --pg-acc: 44,201,181; --pg-acc2: 158,234,222; --pg-tint: 190,240,232; --solid: 16,34,42; }
+  html[data-accent="rose"] { --pg-acc: 255,107,157; --pg-acc2: 255,179,204; --pg-tint: 255,200,220; --solid: 42,20,38; }
+  html[data-accent="sunset"] { --pg-acc: 255,138,76; --pg-acc2: 255,197,158; --pg-tint: 255,215,190; --solid: 42,26,20; }
+  html[data-accent="neutral"] { --pg-acc: 180,176,196; --pg-acc2: 224,221,233; --pg-tint: 220,220,232; --solid: 27,27,34; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; cursor: crosshair; user-select: none; font: 400 13px var(--pg-sans); color: var(--pg-text); }
+  button { font: inherit; color: inherit; }
+  svg { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+  kbd { flex: none; min-width: 22px; padding: 1px 6px; border: 1px solid var(--pg-line-2); border-radius: 6px; color: var(--pg-text-3); font: 11px/16px var(--pg-mono); text-align: center; }
+  #shot { position: fixed; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
+  #dim { position: fixed; inset: 0; background: var(--dim); pointer-events: none; }
+  #sel { position: fixed; display: none; box-sizing: content-box; border: 1px solid var(--pg-accent); box-shadow: 0 0 0 9999px var(--dim); pointer-events: none; }
+  #size { position: fixed; display: none; padding: 2px 8px; border-radius: 7px; background: var(--glass); color: var(--pg-text-2); font: 11px/18px var(--pg-mono); pointer-events: none; white-space: nowrap; }
+  #hint { position: fixed; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; pointer-events: none; } /* the same words as before, for screen readers and tests; the window below shows them as controls */
+  /* The snapshot window: one slim row, every feature in it, each with its sentence as a tip. It is a layer of this overlay, and the picture is cut from the frame frozen before the overlay opened, so it can never be in a picture; it is gone before a clip starts recording. The script places it (seat). */
+  #pal { position: fixed; top: 28px; left: 0; display: flex; align-items: center; gap: 8px; width: max-content; padding: 8px; border: 1px solid var(--pg-line-2); border-radius: var(--pg-r); background: var(--glass); backdrop-filter: blur(22px); box-shadow: var(--lift); white-space: nowrap; cursor: default; }
+  .pal-set { display: flex; align-items: center; gap: 4px; }
+  .pal-grip, .ib { position: relative; flex: none; display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: var(--pg-r-sm); background: none; color: var(--pg-text-3); cursor: pointer; }
+  .pal-grip { cursor: grab; }
+  .pal-grip:active { cursor: grabbing; }
+  .pal-grip:hover, .ib:hover { background: var(--pg-panel-2); color: var(--pg-text); }
+  .ib[aria-checked="true"] { background: var(--pg-accent-soft); color: var(--pg-accent-2); box-shadow: inset 0 0 0 1px rgba(var(--pg-acc),.5); }
+  .ib[aria-disabled="true"] { background: none; color: var(--pg-text-3); box-shadow: none; cursor: default; } /* in Clip mode: grayed and blocked; only the icon fades, so the tip stays readable */
+  .ib[aria-disabled="true"] svg { opacity: .4; }
+  .mode { position: relative; flex: none; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 5px 0 8px; border: 0; border-radius: var(--pg-r-sm); background: var(--pg-panel); box-shadow: inset 2px 0 0 transparent; font-size: 12.5px; cursor: pointer; transition: background .15s var(--pg-ease); }
+  .mode:hover { background: var(--pg-panel-2); }
+  .mode[aria-pressed="true"] { background: var(--pg-accent-soft); box-shadow: inset 2px 0 0 var(--pg-accent); }
+  .mode svg { color: var(--pg-text-3); }
+  .mode[aria-pressed="true"] svg { color: var(--pg-accent-2); }
+  .btn { position: relative; flex: none; display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 4px 0 10px; border: 1px solid var(--pg-line-2); border-radius: var(--pg-r-sm); background: var(--pg-panel); color: var(--pg-text); font-size: 12.5px; cursor: pointer; }
+  .btn:hover { background: var(--pg-panel-2); }
+  #pal :focus-visible, #bar button:focus-visible { outline: 2px solid var(--pg-accent); outline-offset: 1px; }
+  /* Markup: the selection's own pixels on a canvas over the frozen frame, and its toolbar. */
+  #paper { position: fixed; display: none; }
+  .grip { position: fixed; display: none; width: 9px; height: 9px; background: var(--pg-accent); border: 1px solid var(--pg-panel-solid); }
+  #bar { position: fixed; display: none; align-items: center; gap: 14px; padding: 8px 10px 10px 12px; border: 1px solid var(--pg-line-2); border-radius: var(--pg-r); background: var(--glass); backdrop-filter: blur(22px); box-shadow: var(--lift); cursor: default; }
+  #bar .grp { position: relative; display: flex; gap: 2px; padding-top: 20px; }
+  #bar .cap { position: absolute; left: 7px; top: 0; color: var(--pg-text-3); font-size: 11px; line-height: 16px; }
+  #bar button { all: unset; position: relative; display: grid; place-items: center; width: 30px; height: 30px; border-radius: var(--pg-r-sm); color: var(--pg-text-2); cursor: pointer; }
+  #bar button:hover { background: var(--pg-panel-2); color: var(--pg-text); }
+  #bar button[aria-pressed="true"] { background: var(--pg-accent-soft); color: var(--pg-accent-2); box-shadow: inset 0 0 0 1px rgba(var(--pg-acc),.5); }
+  #bar .ink { width: 14px; height: 14px; border-radius: 50%; pointer-events: none; }
+  #bar button[data-ink][aria-pressed="true"] { background: none; box-shadow: none; }
+  #bar button[data-ink][aria-pressed="true"] .ink { box-shadow: 0 0 0 2px var(--pg-panel-solid), 0 0 0 3.5px var(--pg-text); }
+  #bar button[data-act="copy"] { width: auto; padding: 0 14px; background: var(--pg-accent); color: var(--pg-on-accent); font-weight: 600; font-size: 12.5px; }
+  #bar button[data-act="copy"]:hover { background: var(--pg-accent-2); color: var(--pg-on-accent); }
+  #bar button[data-tip]:hover::after, #pal [data-tip]:hover::after, #pal [data-tip]:focus-visible::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); white-space: nowrap;
+    background: var(--pg-panel-solid); color: var(--pg-text); padding: 4px 8px; border-radius: 7px; font: 400 12px var(--pg-sans); pointer-events: none; box-shadow: 0 0 0 1px var(--pg-line-2); }
+  #bar.low button[data-tip]:hover::after { bottom: auto; top: calc(100% + 8px); }
+  #bar .grp:first-child button:first-of-type:hover::after { left: 0; transform: none; }
+  #bar button[data-act="copy"]:hover::after, #bar button[data-act="cancel"]:hover::after { left: auto; right: 0; transform: none; }
+  /* The snapshot window's tips: 8 px clear of the window, on the side away from the nearer screen edge (data-side), moved sideways to stay on the screen (--tip-dx, set by fitTip), and gone while pressed. */
+  #pal [data-tip]:hover::after, #pal [data-tip]:focus-visible::after { bottom: calc(100% + 17px); transform: translateX(calc(-50% + var(--tip-dx, 0px))); }
+  #pal[data-side="top"] [data-tip]:hover::after, #pal[data-side="top"] [data-tip]:focus-visible::after { bottom: auto; top: calc(100% + 17px); }
+  #pal .btn[data-tip]::after { margin: 1px 0; } /* its 1 px outline is outside the box the tip is measured from */
+  #pal [data-tip]:active::after { display: none; }
+  #note { position: fixed; display: none; width: 240px; margin: 0; padding: 2px 4px; border: 1px solid var(--pg-accent); border-radius: 3px; outline: none;
+    background: rgba(var(--solid),.8); font: 600 16px/20px Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif; cursor: text; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<img id="shot" alt="">
+<div id="dim"></div>
+<div id="sel"></div>
+<canvas id="paper"></canvas>
+<i class="grip" data-edge="nw" style="cursor:nwse-resize"></i><i class="grip" data-edge="n" style="cursor:ns-resize"></i><i class="grip" data-edge="ne" style="cursor:nesw-resize"></i><i class="grip" data-edge="e" style="cursor:ew-resize"></i>
+<i class="grip" data-edge="se" style="cursor:nwse-resize"></i><i class="grip" data-edge="s" style="cursor:ns-resize"></i><i class="grip" data-edge="sw" style="cursor:nesw-resize"></i><i class="grip" data-edge="w" style="cursor:ew-resize"></i>
+<div id="hint" aria-live="polite">Drag to copy a snapshot · Esc to cancel</div>
+<span id="size"></span>
+<!-- Icons: Lucide (https://lucide.dev, ISC), written in because this page loads no script file. -->
+<div id="pal" role="dialog" aria-label="Snapshot" data-mode="shot">
+  <span class="pal-grip" data-tip="Drag to move · double-click to put it back"><svg viewBox="0 0 24 24"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
+  <span class="pal-set">
+    <button class="mode" data-mode="shot" data-tip="A picture, ready to paste · Pick one, then drag over the screen"><svg viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>Screenshot<kbd>S</kbd></button>
+    <button class="mode" data-mode="clip" data-tip="Up to 30 s of video, no sound · Stop with the Stop button, the snapshot key, or at 30 s"><svg viewBox="0 0 24 24"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>Clip<kbd>C</kbd></button>
+  </span>
+  <span class="pal-set">
+    <button class="ib" role="switch" data-opt="markup" aria-label="Use the marker first" data-tip-shot="Use the marker first (M) · Box, arrow, pen, text, numbers, blur, block out" data-tip-clip="The marker is for screenshots; a clip is recorded as it is"><svg viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg></button>
+    <button class="ib" role="switch" data-opt="large" aria-label="Enlarge small pictures" data-tip-shot="Enlarge small pictures (L) · Stays sharp on sites that stretch them" data-tip-clip="Enlarging is for screenshots; a clip is recorded as it is"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/><path d="M11 8v6"/><path d="M8 11h6"/></svg></button>
+  </span>
+  <button class="btn" data-act="whole" data-tip="This window is never in your picture or clip">Whole screen<kbd>Enter</kbd></button>
+  <span class="pal-set"><kbd>Esc</kbd><button class="ib" data-act="cancel" aria-label="Cancel" data-tip="Cancel"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></span>
+</div>
+<div id="bar" role="toolbar" aria-label="Mark up the snapshot">
+  <span class="grp"><span class="cap">Draw</span>
+    <button data-tool="box" data-tip="Box (R)" aria-label="Box"><svg viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/></svg></button>
+    <button data-tool="arrow" data-tip="Arrow (A)" aria-label="Arrow"><svg viewBox="0 0 24 24"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></button>
+    <button data-tool="pen" data-tip="Pen (P)" aria-label="Pen"><svg viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg></button>
+    <button data-tool="mark" data-tip="Highlighter (H)" aria-label="Highlighter"><svg viewBox="0 0 24 24"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg></button>
+    <button data-tool="text" data-tip="Text (T)" aria-label="Text"><svg viewBox="0 0 24 24"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg></button>
+    <button data-tool="number" data-tip="Numbered marker (N)" aria-label="Numbered marker"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m10.5 9.5 2-1.5v8"/></svg></button></span>
+  <span class="grp"><span class="cap">Hide</span>
+    <button data-tool="blur" data-tip="Blur (B) · for secrets, block out instead" aria-label="Blur"><svg viewBox="0 0 24 24"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg></button>
+    <button data-tool="block" data-tip="Block out (K)" aria-label="Block out"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="1" fill="currentColor"/></svg></button></span>
+  <span class="grp"><span class="cap">Fix</span>
+    <button data-tool="erase" data-tip="Eraser (E) · click a mark to remove it" aria-label="Eraser"><svg viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg></button>
+    <button data-tool="move" data-tip="Move or resize (V) · empty space moves the selection" aria-label="Move or resize"><svg viewBox="0 0 24 24"><path d="M12 2v20"/><path d="m15 19-3 3-3-3"/><path d="m19 9 3 3-3 3"/><path d="M2 12h20"/><path d="m5 9-3 3 3 3"/><path d="m9 5 3-3 3 3"/></svg></button>
+    <button data-act="undo" data-tip="Undo (Ctrl+Z)" aria-label="Undo"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button></span>
+  <span class="grp"><span class="cap">Color</span>
+    <button data-ink="0" data-tip="Red (1)" aria-label="Red"><span class="ink" style="background:#ff4d4f"></span></button>
+    <button data-ink="1" data-tip="Yellow (2)" aria-label="Yellow"><span class="ink" style="background:#ffd60a"></span></button>
+    <button data-ink="2" data-tip="Green (3)" aria-label="Green"><span class="ink" style="background:#c7f36b"></span></button>
+    <button data-ink="3" data-tip="Blue (4)" aria-label="Blue"><span class="ink" style="background:#3b9eff"></span></button></span>
+  <span class="grp">
+    <button data-act="cancel" data-tip="Cancel (Esc)" aria-label="Cancel"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+    <button data-act="copy" data-tip="Copy (Enter)">Copy</button></span>
+</div>
+<input id="note" maxlength="120" spellcheck="false" autocomplete="off" aria-label="Text on the snapshot">
+<script>
+  { const accent = new URLSearchParams(location.search).get('accent'); if (/^[a-z]+$/.test(accent || '')) document.documentElement.dataset.accent = accent; } // the accent picked in the app, handed over by the main process
+  const api = window.tnaiSnapshot, $ = id => document.getElementById(id);
+  const shot = $('shot'), dim = $('dim'), sel = $('sel'), hint = $('hint'), pal = $('pal'), sizeTag = $('size'), paper = $('paper'), bar = $('bar'), note = $('note'), grips = [...document.querySelectorAll('.grip')];
+  let from = null, rect = null;
+  api.onImage(url => { shot.onload = () => api.ready(); shot.src = url; });
+
+  // phase: 'select' (drag a rectangle) → without markup the selection is copied at once; with it → 'loading' → 'markup' (draw on it) → 'saving'.
+  let phase = 'select';
+  const MARKUP_KEY = 'tnai.snapshot.markup.v1'; // M in the overlay; remembered for the next snapshot
+  let markup = false; try { markup = localStorage.getItem(MARKUP_KEY) === '1'; } catch {}
+  let clip = false; // C in the overlay, for this snapshot only: record the selection as a short clip
+  const LARGE_KEY = 'tnai.snapshot.large.v1'; // L in the overlay; remembered: a small picture is copied enlarged, in whole pixels
+  let large = false; try { large = localStorage.getItem(LARGE_KEY) === '1'; } catch {}
+  api.large(large);
+  // The window shows the same choices as controls.
+  function sync() {
+    pal.dataset.mode = clip ? 'clip' : 'shot';
+    pal.querySelectorAll('.mode').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.mode === 'clip') === clip)));
+    pal.querySelectorAll('[data-opt]').forEach(b => { // in Clip mode the two switches are grayed and blocked, and their tip says why
+      b.setAttribute('aria-checked', String(b.dataset.opt === 'large' ? large : markup)); b.setAttribute('aria-disabled', String(clip)); b.dataset.tip = clip ? b.dataset.tipClip : b.dataset.tipShot;
+    });
+  }
+  const tell = () => {
+    sync();
+    const size = large ? ' · L for exact size' : ' · L to enlarge small ones';
+    hint.textContent = clip ? 'Drag to record a clip of that area, up to 30 s · Enter for the whole screen · C for a snapshot again · Esc to cancel'
+      : markup ? 'Drag, then mark it up: blur, block out, draw · Enter for the whole screen · M to copy at once' + size + ' · C for a clip · Esc to cancel'
+      : (large ? 'Drag to copy a snapshot, enlarged when small' : 'Drag to copy a snapshot') + ' · Enter for the whole screen · M to mark up first' + size + ' · C for a clip · Esc to cancel';
+  };
+  tell();
+  const again = () => { from = null; sel.style.display = 'none'; dim.style.display = ''; hint.style.display = ''; pal.style.display = ''; sizeTag.style.display = 'none'; phase = 'select'; };
+
+  const box = e => {
+    const x = Math.min(from.x, e.clientX), y = Math.min(from.y, e.clientY);
+    return { x, y, w: Math.abs(e.clientX - from.x), h: Math.abs(e.clientY - from.y) };
+  };
+  // A finished selection (CSS px): copied at once, or opened for markup.
+  function chosen(r) {
+    pal.style.display = 'none'; sizeTag.style.display = 'none';
+    if (clip) api.clip(part(r)); else if (markup) open(r); else api.select(part(r));
+  }
+  const part = r => ({ x: r.x / innerWidth, y: r.y / innerHeight, w: r.w / innerWidth, h: r.h / innerHeight }); // as fractions of the screen
+
+  /* ---- Markup ---- */
+  const INKS = [['#ff4d4f', '#fff'], ['#ffd60a', '#1b1c19'], ['#c7f36b', '#1b1c19'], ['#3b9eff', '#fff']]; // color, text color on it
+  const KEYS = { r: 'box', a: 'arrow', p: 'pen', h: 'mark', t: 'text', n: 'number', b: 'blur', k: 'block', e: 'erase', v: 'move' };
+  const WIDE = { pen: 3, mark: 16 }; // freehand line widths, CSS px
+  const FONT = 'Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif', OUTLINE = '#1b1c19';
+  const ctx = paper.getContext('2d'), tiny = document.createElement('canvas');
+  let base = null, unit = 1;          // the selection's pixels; canvas pixels per CSS pixel
+  let ops = [], draft = null;         // finished marks in drawing order (never changed in place); the one being dragged
+  let past = [], rubbing = false;     // earlier mark lists, for undo; the eraser is held down
+  let frame = null, origin = null;    // the selection in CSS px; where its pixels start in the capture
+  let framing = null;                 // the selection being moved or resized: { edge, x, y, r }
+  let grab = null, ghost = null;      // Move tool: the held mark { index, hx, hy, from, moved }, and how it looks while dragged { index, op }
+  let lit = -1;                       // Move tool: the mark under the pointer, shown with its handles
+  let tool = 'box', color = INKS[0][0], onColor = INKS[0][1], notePoint = null, queued = false;
+
+  // Opens the selection for markup; called again when the selection is moved or resized (the marks stay on the same screen pixels).
+  async function open(r) {
+    const first = !base;
+    phase = 'loading';
+    let got = null, bitmap = null;
+    try {
+      got = await api.crop(part(r));
+      if (got) bitmap = await createImageBitmap(new Blob([got.png], { type: 'image/png' }), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+    } catch {}
+    if (phase !== 'loading') return;
+    if (!bitmap || bitmap.width !== got.width || bitmap.height !== got.height) {
+      if (first) return again(); // too small or unreadable: keep choosing
+      try { await api.crop(part(frame)); } catch {} // the selection stays as it was, in the main process too
+      if (phase === 'loading') place(frame);
+      return;
+    }
+    if (first) { ops = []; past = []; }
+    else {
+      const dx = origin.x - got.x, dy = origin.y - got.y, seen = new Map();
+      const carry = op => seen.get(op) || seen.set(op, shifted(op, dx, dy)).get(op);
+      ops = ops.map(carry); past = past.map(list => list.map(carry));
+      base.close?.();
+    }
+    base = bitmap; origin = { x: got.x, y: got.y }; frame = r;
+    paper.width = base.width; paper.height = base.height; unit = base.width / r.w;
+    place(r);
+  }
+  // The lime frame sits just outside the selection, its shadow dims the rest, and its eight grips resize it.
+  function outline(r) {
+    Object.assign(sel.style, { display: 'block', left: r.x - 1 + 'px', top: r.y - 1 + 'px', width: r.w + 'px', height: r.h + 'px' });
+    for (const g of grips) {
+      const edge = g.dataset.edge, fx = edge.includes('w') ? 0 : edge.includes('e') ? 1 : 0.5, fy = edge.includes('n') ? 0 : edge.includes('s') ? 1 : 0.5;
+      const cramped = (fx === 0.5 && r.w < 40) || (fy === 0.5 && r.h < 40); // a small selection keeps only its corner grips
+      Object.assign(g.style, { display: cramped ? 'none' : 'block', left: Math.round(r.x + r.w * fx - 4.5) + 'px', top: Math.round(r.y + r.h * fy - 4.5) + 'px' });
+    }
+  }
+  function place(r) {
+    draft = grab = ghost = framing = null; rubbing = false; lit = -1;
+    Object.assign(paper.style, { display: 'block', left: r.x + 'px', top: r.y + 'px', width: r.w + 'px', height: r.h + 'px', clipPath: '' });
+    outline(r);
+    dim.style.display = 'none'; hint.style.display = 'none';
+    paint(); pick(tool); ink(INKS.findIndex(i => i[0] === color));
+    // Toolbar: under the selection's right edge, else above it, else inside its bottom edge.
+    bar.style.display = 'flex'; bar.style.visibility = '';
+    const bw = bar.offsetWidth, bh = bar.offsetHeight, edge = 16;
+    let top = r.y + r.h + 8;
+    if (top + bh > innerHeight - edge) top = r.y - bh - 8;
+    if (top < edge) top = Math.max(edge, r.y + r.h - bh - 8);
+    bar.style.left = Math.max(edge, Math.min(innerWidth - bw - edge, r.x + r.w - bw)) + 'px'; bar.style.top = top + 'px';
+    bar.classList.toggle('low', top < 48); // no room above for the button labels
+    phase = 'markup';
+  }
+
+  function pick(next) {
+    tool = next; lit = -1;
+    bar.querySelectorAll('[data-tool]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === tool)));
+    paper.style.cursor = tool === 'text' ? 'text' : tool === 'erase' ? 'cell' : tool === 'move' ? 'all-scroll' : 'crosshair';
+    paint();
+  }
+  function ink(index) {
+    const chosenInk = INKS[index] || INKS[0];
+    color = chosenInk[0]; onColor = chosenInk[1]; note.style.color = color;
+    bar.querySelectorAll('[data-ink]').forEach(b => b.setAttribute('aria-pressed', String(INKS[+b.dataset.ink] === chosenInk)));
+  }
+
+  // A pointer position in canvas pixels, kept inside the canvas.
+  const at = e => {
+    const b = paper.getBoundingClientRect(), keep = (v, max) => Math.min(max, Math.max(0, v));
+    return { x: keep((e.clientX - b.left) * paper.width / b.width, paper.width), y: keep((e.clientY - b.top) * paper.height / b.height, paper.height) };
+  };
+  const span = op => ({ x: Math.min(op.ax, op.bx), y: Math.min(op.ay, op.by), w: Math.abs(op.bx - op.ax), h: Math.abs(op.by - op.ay) });
+  const shifted = (op, dx, dy) => op.pts ? { ...op, pts: op.pts.map((v, i) => v + (i % 2 ? dy : dx)) }
+    : 'ax' in op ? { ...op, ax: op.ax + dx, ay: op.ay + dy, bx: op.bx + dx, by: op.by + dy } : { ...op, x: op.x + dx, y: op.y + dy };
+  const reach = e => { const p = at(e); if (draft.pts) draft.pts.push(p.x, p.y); else { draft.bx = p.x; draft.by = p.y; } }; // the dragged mark follows the pointer
+  // A drag too short to be meant is dropped.
+  const worth = op => op.pts ? op.pts.length >= 4 : op.tool === 'arrow' ? Math.hypot(op.bx - op.ax, op.by - op.ay) >= 6 * unit : span(op).w >= 3 * unit && span(op).h >= 3 * unit;
+
+  function draw(op, n) { // n: a numbered marker's number, counted in drawing order
+    ctx.save();
+    ctx.lineWidth = 3 * unit; ctx.lineCap = ctx.lineJoin = 'round'; ctx.strokeStyle = ctx.fillStyle = op.color;
+    if (op.tool === 'block') { const s = span(op); ctx.fillStyle = '#000'; ctx.fillRect(s.x, s.y, s.w, s.h); }
+    else if (op.tool === 'blur') {
+      // The area shrunk to one sample per 16 CSS px and stretched back, read from the untouched picture: detail is gone, not just smeared.
+      const s = span(op), x = Math.max(0, Math.floor(s.x)), y = Math.max(0, Math.floor(s.y)); // only the part inside the picture
+      const w = Math.min(paper.width, Math.ceil(s.x + s.w)) - x, h = Math.min(paper.height, Math.ceil(s.y + s.h)) - y;
+      if (w >= 1 && h >= 1) {
+        const cell = Math.max(8, Math.round(16 * unit)), tw = Math.max(1, Math.round(w / cell)), th = Math.max(1, Math.round(h / cell));
+        tiny.width = tw; tiny.height = th;
+        const t = tiny.getContext('2d'); t.imageSmoothingEnabled = true; t.imageSmoothingQuality = 'high';
+        t.drawImage(base, x, y, w, h, 0, 0, tw, th);
+        ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(tiny, 0, 0, tw, th, x, y, w, h);
+      }
+    }
+    else if (op.tool === 'box') { const s = span(op); ctx.strokeRect(s.x, s.y, s.w, s.h); }
+    else if (op.tool === 'arrow') {
+      const angle = Math.atan2(op.by - op.ay, op.bx - op.ax), head = Math.min(14 * unit, Math.hypot(op.bx - op.ax, op.by - op.ay));
+      const side = turn => [op.bx - Math.cos(angle + turn) * head, op.by - Math.sin(angle + turn) * head];
+      ctx.beginPath(); ctx.moveTo(op.ax, op.ay); ctx.lineTo(op.bx - Math.cos(angle) * head * 0.7, op.by - Math.sin(angle) * head * 0.7); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(op.bx, op.by); ctx.lineTo(...side(0.42)); ctx.lineTo(...side(-0.42)); ctx.closePath(); ctx.fill();
+    }
+    else if (op.pts) { // pen, or the highlighter: wide and see-through
+      ctx.lineWidth = WIDE[op.tool] * unit;
+      if (op.tool === 'mark') { ctx.globalAlpha = 0.4; ctx.lineCap = 'butt'; }
+      ctx.beginPath(); ctx.moveTo(op.pts[0], op.pts[1]);
+      for (let i = 2; i < op.pts.length; i += 2) ctx.lineTo(op.pts[i], op.pts[i + 1]);
+      ctx.stroke();
+    }
+    else if (op.tool === 'text') {
+      ctx.font = '600 ' + 16 * unit + 'px ' + FONT; ctx.textBaseline = 'top';
+      ctx.strokeStyle = OUTLINE; ctx.strokeText(op.text, op.x, op.y); ctx.fillText(op.text, op.x, op.y); // dark edge: readable on any background
+    }
+    else if (op.tool === 'number') {
+      ctx.beginPath(); ctx.arc(op.x, op.y, 11 * unit, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = 1.5 * unit; ctx.strokeStyle = OUTLINE; ctx.stroke();
+      ctx.font = '600 ' + 12 * unit + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = op.on;
+      ctx.fillText(String(n), op.x, op.y + unit * 0.5);
+    }
+    ctx.restore();
+  }
+  function paint() {
+    if (!base) return;
+    ctx.drawImage(base, 0, 0);
+    const list = ghost ? ops.map((op, i) => i === ghost.index ? ghost.op : op) : ops;
+    let n = 0;
+    for (const op of list) draw(op, op.tool === 'number' ? ++n : 0);
+    if (draft) draw(draft);
+    // Handles of the mark under the Move tool: on screen only, never in the copied picture (copy() leaves 'markup' before it paints).
+    if (phase === 'markup' && tool === 'move' && list[lit]) for (const [hx, hy] of ends(list[lit])) {
+      const half = 3.5 * unit, x = list[lit][hx + 'x'], y = list[lit][hy + 'y'];
+      ctx.save(); ctx.fillStyle = '#fff'; ctx.strokeStyle = OUTLINE; ctx.lineWidth = unit;
+      ctx.fillRect(x - half, y - half, half * 2, half * 2); ctx.strokeRect(x - half, y - half, half * 2, half * 2); ctx.restore();
+    }
+  }
+  const soon = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; paint(); }); };
+  const change = next => { past.push(ops); ops = next; paint(); };
+  const undo = () => { closeNote(false); draft = grab = ghost = null; rubbing = false; lit = -1; if (past.length) ops = past.pop(); paint(); };
+
+  // Eraser: the topmost mark under the pointer goes (a box by its outline, so marks inside it stay reachable).
+  const away = (p, ax, ay, bx, by) => {
+    const dx = bx - ax, dy = by - ay, len = dx * dx + dy * dy, t = len ? Math.max(0, Math.min(1, ((p.x - ax) * dx + (p.y - ay) * dy) / len)) : 0;
+    return Math.hypot(p.x - ax - t * dx, p.y - ay - t * dy);
+  };
+  function touches(op, p) {
+    const reach = 8 * unit;
+    if (op.pts) { const r = Math.max(reach, WIDE[op.tool] * unit / 2); for (let i = 0; i + 3 < op.pts.length; i += 2) if (away(p, op.pts[i], op.pts[i + 1], op.pts[i + 2], op.pts[i + 3]) <= r) return true; return false; }
+    if (op.tool === 'arrow') return away(p, op.ax, op.ay, op.bx, op.by) <= reach;
+    if (op.tool === 'number') return Math.hypot(p.x - op.x, p.y - op.y) <= 13 * unit;
+    const s = op.tool === 'text' ? { x: op.x, y: op.y, w: op.wide, h: 20 * unit } : span(op);
+    const within = grow => p.x >= s.x - grow && p.x <= s.x + s.w + grow && p.y >= s.y - grow && p.y <= s.y + s.h + grow;
+    return op.tool === 'box' ? within(reach) && !(s.w > 2 * reach && s.h > 2 * reach && within(-reach)) : within(op.tool === 'text' ? reach : 0);
+  }
+  function rub(p) { for (let i = ops.length - 1; i >= 0; i--) if (touches(ops[i], p)) return change(ops.filter(op => op !== ops[i])); }
+
+  // Move tool. A box, blur or block-out resizes by its corners and an arrow by its ends (which end gives x, which gives y); every mark moves by its body.
+  const ends = op => op.pts || !('ax' in op) ? [] : op.tool === 'arrow' ? [['a', 'a'], ['b', 'b']] : [['a', 'a'], ['a', 'b'], ['b', 'a'], ['b', 'b']];
+  function hold(p) { // the topmost mark under the pointer, and the handle when one is
+    for (let i = ops.length - 1; i >= 0; i--) {
+      for (const [hx, hy] of ends(ops[i])) if (Math.hypot(p.x - ops[i][hx + 'x'], p.y - ops[i][hy + 'y']) <= 8 * unit) return { index: i, hx, hy };
+      if (touches(ops[i], p)) return { index: i };
+    }
+    return null;
+  }
+  const held = (g, p) => g.hx ? { ...ops[g.index], [g.hx + 'x']: p.x, [g.hy + 'y']: p.y } : shifted(ops[g.index], p.x - g.from.x, p.y - g.from.y);
+  function hover(p) {
+    const g = hold(p), op = g && ops[g.index], s = g?.hx && op.tool !== 'arrow' ? span(op) : null;
+    paper.style.cursor = !g ? 'all-scroll' : !g.hx ? 'move' : !s ? 'crosshair' : (op[g.hx + 'x'] === s.x) === (op[g.hy + 'y'] === s.y) ? 'nwse-resize' : 'nesw-resize';
+    if ((g ? g.index : -1) !== lit) { lit = g ? g.index : -1; paint(); }
+  }
+  // The selection dragged by a grip, or as a whole (Move tool on empty space): the frame follows, the picture is fetched again on release.
+  function stretch(e) {
+    const o = frame, dx = e.clientX - framing.x, dy = e.clientY - framing.y, edge = framing.edge, keep = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+    const minW = Math.min(8, o.w), minH = Math.min(8, o.h);
+    let x1 = o.x, y1 = o.y, x2 = o.x + o.w, y2 = o.y + o.h;
+    if (edge === 'move') { const mx = keep(dx, -x1, innerWidth - x2), my = keep(dy, -y1, innerHeight - y2); x1 += mx; x2 += mx; y1 += my; y2 += my; }
+    else {
+      if (edge.includes('w')) x1 = keep(x1 + dx, 0, x2 - minW); else if (edge.includes('e')) x2 = keep(x2 + dx, x1 + minW, innerWidth);
+      if (edge.includes('n')) y1 = keep(y1 + dy, 0, y2 - minH); else if (edge.includes('s')) y2 = keep(y2 + dy, y1 + minH, innerHeight);
+    }
+    framing.r = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+    outline(framing.r);
+    // Until the new picture arrives, the old one shows only where the two selections overlap.
+    paper.style.clipPath = 'inset(' + [y1 - o.y, o.x + o.w - x2, o.y + o.h - y2, x1 - o.x].map(v => Math.max(0, v) + 'px').join(' ') + ')';
+    bar.style.visibility = 'hidden';
+  }
+
+  // Text: a small box at the click; Enter (or a click elsewhere) puts it on the picture, Esc drops it.
+  function openNote(point, e) {
+    notePoint = point; note.value = '';
+    Object.assign(note.style, { display: 'block', left: e.clientX - 5 + 'px', top: e.clientY - 5 + 'px', color });
+    note.focus();
+  }
+  function closeNote(keep) {
+    if (note.style.display !== 'block') return false;
+    const text = note.value.trim();
+    note.style.display = 'none'; note.value = '';
+    if (keep && text) {
+      ctx.save(); ctx.font = '600 ' + 16 * unit + 'px ' + FONT; const wide = ctx.measureText(text).width; ctx.restore();
+      change(ops.concat({ tool: 'text', color, x: notePoint.x, y: notePoint.y, text, wide }));
+    }
+    return true;
+  }
+
+  async function copy() {
+    if (phase !== 'markup') return;
+    closeNote(true); draft = grab = ghost = framing = null; rubbing = false; lit = -1; phase = 'saving'; paint();
+    try {
+      const blob = await new Promise(done => paper.toBlob(done, 'image/png'));
+      if (!blob) throw new Error('no image');
+      api.compose(await blob.arrayBuffer());
+    } catch { if (phase === 'saving') phase = 'markup'; } // still open: Enter tries again
+  }
+
+  bar.addEventListener('mousedown', e => e.preventDefault()); // a press on the toolbar never takes the keyboard from the picture
+  bar.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.act === 'cancel') return api.cancel();
+    if (phase !== 'markup') return;
+    if (b.dataset.tool) pick(b.dataset.tool); else if (b.dataset.ink) ink(+b.dataset.ink); else if (b.dataset.act === 'undo') undo(); else if (b.dataset.act === 'copy') copy();
+  });
+
+  /* ---- The snapshot window, mouse and keys ---- */
+  let towing = null; // the controls dragged by their grip: where they are held, and whether they moved
+  // Where the controls sit. Dragged somewhere before: there (their center as fractions of the screen, remembered), kept fully on screen. Otherwise bottom center above the taskbar, or top center when the pointer is in the lower 40% of the screen (py and inset come in the address, from the main process). A double-click on the grip forgets the place.
+  const PAL_KEY = 'tnai.snapshot.pal.v1', PAL_EDGE = 28, PAL_KEEP = 8;
+  const share = v => { const n = typeof v === 'number' ? v : parseFloat(v); return n >= 0 && n <= 1 ? n : null; }; // a fraction of the screen, or null
+  const asked = new URLSearchParams(location.search), pointerY = share(asked.get('py')), taskbar = Math.max(0, parseFloat(asked.get('inset')) || 0);
+  let spot = null; try { const s = JSON.parse(localStorage.getItem(PAL_KEY)); if (s && share(s.x) != null && share(s.y) != null) spot = { x: share(s.x), y: share(s.y) }; } catch {}
+  const within = (v, max) => Math.max(PAL_KEEP, Math.min(max - PAL_KEEP, v));
+  const sided = () => { const b = pal.getBoundingClientRect(); pal.dataset.side = b.top + b.height / 2 > innerHeight / 2 ? 'bottom' : 'top'; }; // tips open away from the nearer screen edge
+  function seat() {
+    if (towing || !pal.offsetWidth) return;
+    Object.assign(pal.style, { margin: '0', right: 'auto', bottom: 'auto', left: '0px' }); // measured at the left edge, where nothing squeezes it
+    const b = pal.getBoundingClientRect(), w = b.width, h = b.height;
+    const low = pointerY != null && pointerY > 0.6, room = Math.min(taskbar, Math.max(0, innerHeight - h - 2 * PAL_EDGE));
+    const left = spot ? spot.x * innerWidth - w / 2 : (innerWidth - w) / 2, top = spot ? spot.y * innerHeight - h / 2 : low ? PAL_EDGE : innerHeight - room - PAL_EDGE - h;
+    pal.style.left = Math.round(within(left, innerWidth - w)) + 'px'; pal.style.top = Math.round(within(top, innerHeight - h)) + 'px';
+    sided();
+  }
+  function drop() { // the end of a drag by the grip: the place is remembered when it moved
+    const moved = towing?.moved; towing = null; if (!moved) return;
+    const b = pal.getBoundingClientRect(); spot = { x: (b.left + b.width / 2) / innerWidth, y: (b.top + b.height / 2) / innerHeight };
+    try { localStorage.setItem(PAL_KEY, JSON.stringify(spot)); } catch {}
+    sided();
+  }
+  seat(); document.fonts.ready.then(seat); addEventListener('resize', seat);
+  new ResizeObserver(seat).observe(pal); // a change of its own size (the font arriving, shown again) keeps it centered and on screen
+  pal.addEventListener('dblclick', e => {
+    if (phase !== 'select' || !e.target.closest('.pal-grip')) return;
+    spot = null; try { localStorage.removeItem(PAL_KEY); } catch {}
+    seat();
+  });
+  // L and M: remembered for the next snapshot.
+  function flip(key) {
+    if (key === 'l') { large = !large; try { localStorage.setItem(LARGE_KEY, large ? '1' : '0'); } catch {} api.large(large); }
+    else { markup = !markup; try { localStorage.setItem(MARKUP_KEY, markup ? '1' : '0'); } catch {} }
+    tell();
+  }
+  pal.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b || phase !== 'select') return;
+    if (b.dataset.act === 'cancel') api.cancel();
+    else if (b.dataset.act === 'whole') chosen({ x: 0, y: 0, w: innerWidth, h: innerHeight });
+    else if (b.dataset.mode) { clip = b.dataset.mode === 'clip'; tell(); }
+    else if (b.dataset.opt && !clip) flip(b.dataset.opt === 'large' ? 'l' : 'm');
+  });
+  // A tip stays on the screen: it is moved sideways by what would stick out (its width is measured here, since a tip is not an element).
+  const meter = document.createElement('canvas').getContext('2d');
+  function fitTip(b) {
+    if (!b?.dataset.tip) return;
+    meter.font = '400 12px ' + getComputedStyle(pal).fontFamily;
+    const box = b.getBoundingClientRect(), half = meter.measureText(b.dataset.tip).width / 2 + 9, mid = box.left + box.width / 2;
+    b.style.setProperty('--tip-dx', Math.round(Math.max(8 + half - mid, Math.min(innerWidth - 8 - half - mid, 0))) + 'px');
+  }
+  for (const type of ['mouseover', 'focusin', 'mouseup']) pal.addEventListener(type, e => fitTip(e.target.closest?.('[data-tip]')));
+  addEventListener('mousedown', e => {
+    if (e.button !== 0) return api.cancel();
+    if (phase === 'select') {
+      if (e.target.closest?.('#pal')) { // a press on the window never starts a selection or takes the keyboard; its grip drags it aside
+        e.preventDefault();
+        if (e.target.closest('.pal-grip')) { const b = pal.getBoundingClientRect(); towing = { dx: e.clientX - b.left, dy: e.clientY - b.top, x: e.clientX, y: e.clientY, moved: false }; }
+        return;
+      }
+      from = { x: e.clientX, y: e.clientY }; rect = null; hint.style.display = 'none'; pal.style.display = 'none'; return;
+    }
+    if (phase !== 'markup' || e.target === note) return;
+    const typing = closeNote(true);
+    if (e.target.dataset.edge) { e.preventDefault(); framing = { edge: e.target.dataset.edge, x: e.clientX, y: e.clientY, r: frame }; return; }
+    if (e.target !== paper) return;
+    e.preventDefault();
+    if (typing) return; // that click only finished the text
+    const p = at(e);
+    if (tool === 'text') return openNote(p, e);
+    if (tool === 'number') return change(ops.concat({ tool, color, on: onColor, x: p.x, y: p.y }));
+    if (tool === 'erase') { rubbing = true; return rub(p); }
+    if (tool === 'move') { const g = hold(p); if (g) grab = { ...g, from: p }; else framing = { edge: 'move', x: e.clientX, y: e.clientY, r: frame }; return; }
+    draft = WIDE[tool] ? { tool, color, pts: [p.x, p.y] } : { tool, color, ax: p.x, ay: p.y, bx: p.x, by: p.y };
+  });
+  addEventListener('mousemove', e => {
+    if (towing) {
+      if (!(e.buttons & 1)) return drop();
+      const b = pal.getBoundingClientRect();
+      Object.assign(pal.style, { margin: '0', right: 'auto', bottom: 'auto', left: Math.round(within(e.clientX - towing.dx, innerWidth - b.width)) + 'px', top: Math.round(within(e.clientY - towing.dy, innerHeight - b.height)) + 'px' });
+      if (Math.abs(e.clientX - towing.x) + Math.abs(e.clientY - towing.y) > 2) towing.moved = true; // a press that only trembles (a double-click) is not a drag
+      sided();
+      return;
+    }
+    if (phase !== 'select') {
+      if (phase !== 'markup') return;
+      // A move without the left button held is not part of a drag (the browser sends one at the pointer's resting place after a layout change): it only updates the hover.
+      if (!(e.buttons & 1)) { if (tool === 'move' && e.target === paper && !framing && !grab && !draft) hover(at(e)); return; }
+      if (framing) return stretch(e);
+      if (grab) { grab.moved = true; ghost = { index: grab.index, op: held(grab, at(e)) }; return soon(); }
+      if (rubbing) return rub(at(e));
+      if (!draft) { if (tool === 'move' && e.target === paper) hover(at(e)); return; }
+      reach(e);
+      return soon();
+    }
+    if (!from) return;
+    rect = box(e);
+    Object.assign(sel.style, { display: 'block', left: rect.x + 'px', top: rect.y + 'px', width: rect.w + 'px', height: rect.h + 'px' });
+    dim.style.display = 'none'; // the selection's own shadow dims everything around it
+    // The size the picture will have, in the screen's own pixels; under the selection, or inside its bottom edge at the screen's end.
+    sizeTag.textContent = Math.round(rect.w * devicePixelRatio) + ' × ' + Math.round(rect.h * devicePixelRatio);
+    Object.assign(sizeTag.style, { display: 'block', left: rect.x + 'px', top: Math.min(innerHeight - 30, rect.y + rect.h + 8) + 'px' });
+  });
+  addEventListener('mouseup', e => {
+    if (towing) return drop();
+    if (phase !== 'select') {
+      if (e.button !== 0) return;
+      rubbing = false;
+      if (framing) {
+        stretch(e); // the release point counts
+        const next = framing.r; framing = null;
+        return next.x === frame.x && next.y === frame.y && next.w === frame.w && next.h === frame.h ? place(frame) : open(next);
+      }
+      if (grab) {
+        const g = grab, op = g.moved ? held(g, at(e)) : null; grab = ghost = null;
+        return op && (!g.hx || worth(op)) ? change(ops.map((old, i) => i === g.index ? op : old)) : paint(); // a mark resized to nothing stays as it was
+      }
+      if (!draft) return;
+      reach(e); // the release point counts even when the last move never arrived
+      const done = draft; draft = null;
+      return worth(done) ? change(ops.concat(done)) : paint();
+    }
+    if (!from || e.button !== 0) return;
+    rect = box(e); from = null;
+    if (rect.w < 3 || rect.h < 3) return again(); // a click, not a drag: keep choosing
+    chosen(rect);
+  });
+  addEventListener('keydown', e => {
+    if (e.target === note) { // typing a text: Enter keeps it, Esc drops only the text
+      if (e.isComposing) return;
+      if (e.key === 'Enter') { e.preventDefault(); closeNote(true); } else if (e.key === 'Escape') { e.preventDefault(); closeNote(false); }
+      return;
+    }
+    if (e.key === 'Escape') return api.cancel();
+    const key = e.key.toLowerCase(), plain = !e.ctrlKey && !e.altKey && !e.metaKey;
+    if (phase === 'select') {
+      if (from || e.repeat || !plain) return;
+      if (e.key === 'Enter') { if (!e.target.closest?.('#pal')) chosen({ x: 0, y: 0, w: innerWidth, h: innerHeight }); } // on a button of the window, Enter presses that button
+      else if (key === 'c') { clip = !clip; tell(); }
+      else if (key === 's') { clip = false; tell(); }
+      else if (key === 'l' || key === 'm') flip(key);
+      return;
+    }
+    if (phase !== 'markup') return;
+    if (e.target.closest?.('#bar') && (e.key === 'Enter' || e.key === ' ')) return; // a toolbar button reached with Tab presses itself
+    if ((e.ctrlKey || e.metaKey) && !e.altKey) { if (key === 'z') { e.preventDefault(); undo(); } else if (key === 'c') copy(); return; }
+    if (!plain) return;
+    if (e.key === 'Enter') copy(); else if (KEYS[key]) pick(KEYS[key]); else if (INKS[+key - 1]) ink(+key - 1);
+  });
+  addEventListener('contextmenu', e => e.preventDefault());
+</script>
+</body>
+</html>

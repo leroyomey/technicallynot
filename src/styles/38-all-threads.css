@@ -1,0 +1,397 @@
+/* Technically Not · 38-all-threads.css — The "All threads" page (135): the project's threads side
+   by side as conversations, where the terminals' slideshow stood, with Live preview beside it.
+   Each thread is an island like the open thread of the Threads page; the row slides one thread at
+   a time. */
+.tat {
+  /* the room an arrow takes at each side of the row */
+  --tat-room: 34px;
+  --inset: 16px;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.tat[hidden] {
+  display: none;
+}
+
+/* The terminal panels stay in the page, unseen, while the threads are shown. */
+#terminalView.tat-on .terminal-content {
+  position: relative;
+}
+#terminalView.tat-on .terminal-content > :not(.tat) {
+  display: none !important;
+}
+
+/* The row is cut at the arrows: a thread that slides out is not seen beside or under them. */
+.tat-clip {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  margin: 0 var(--tat-room);
+  overflow: hidden;
+}
+.tat-clip[hidden] {
+  display: none;
+}
+.tat-strip {
+  flex: 1;
+  display: flex;
+  gap: var(--tat-gap, 12px);
+  min-width: 0;
+  min-height: 0;
+  transform: translateX(var(--tat-shift, 0));
+  transition: transform 0.18s ease;
+}
+
+/* the two buttons that size a terminal's text have nothing to size here */
+#terminalView.tat-on :is(#fontDown, #fontUp) {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tat-strip {
+    transition: none;
+  }
+}
+
+.tat-card {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: var(--tat-w, 360px);
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r);
+  background: var(--tnt-glass, var(--pg-panel));
+  cursor: default;
+}
+.tat-card:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+
+/* the thread the prompt box sends to */
+.tat-card.tat-target {
+  /* a soft edge in the accent, not a hard line of it */
+  border-color: color-mix(in srgb, var(--pg-accent) 45%, var(--pg-line));
+  background: color-mix(in srgb, var(--pg-accent) 5%, var(--tnt-glass, var(--pg-panel)));
+}
+
+.tat-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px var(--inset) 8px;
+}
+.tat-dot {
+  --tone: var(--pg-idle);
+  flex: none;
+  width: round(8px, var(--tnai-screen-px, 1px));
+  height: round(8px, var(--tnai-screen-px, 1px));
+  border-radius: 50%;
+  background: var(--tone);
+}
+.tat-dot[data-tone='work'] {
+  --tone: var(--pg-work);
+}
+.tat-dot[data-tone='needs'] {
+  --tone: var(--pg-wait);
+}
+.tat-dot[data-tone='ready'] {
+  --tone: var(--pg-ready);
+}
+.tat-dot[data-tone='err'] {
+  --tone: var(--pg-err);
+}
+.tat-head-text {
+  flex: 1;
+  min-width: 0;
+}
+.tat-head-text b,
+.tat-head-text small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tat-head-text b {
+  color: var(--pg-text);
+  font: 600 15px/1.25 var(--pg-sans);
+}
+.tat-head-text small {
+  margin-top: 1px;
+  color: var(--pg-text-3);
+  font: 400 12px/1.35 var(--pg-sans);
+}
+.tat-open {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  color: var(--pg-text-3);
+  cursor: pointer;
+}
+.tat-open:hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+.tat-open:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+.tat-open svg {
+  display: block;
+}
+
+/* the conversation: 30's own look, in a narrower column */
+.tat-body.tnt-talk {
+  padding: 4px var(--inset) 0;
+}
+.tat-body[hidden],
+.tat-plain[hidden],
+.tat-none[hidden] {
+  display: none;
+}
+.tat-plain,
+.tat-none {
+  margin: auto;
+  padding: 22px var(--inset);
+  color: var(--pg-text-3);
+  font: 400 13.5px/1.5 var(--pg-sans);
+  text-align: center;
+}
+
+/* a thread that is a terminal: one line of words and one button to its screen */
+.tat-plain {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.tat-plain p {
+  margin: 0;
+}
+
+/* an arrow at the middle of each side */
+.tat-nav {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+.tat-nav[hidden] {
+  display: none;
+}
+.tat-prev {
+  left: 0;
+}
+.tat-next {
+  right: 0;
+}
+.tat-nav:hover:not(:disabled) {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+.tat-nav:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.tat-nav:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+
+/* a dot per thread; the ones on screen are lit */
+.tat-dots {
+  flex: none;
+  display: flex;
+  justify-content: center;
+
+  /* the dots and the room between them are whole screen pixels (100, --tnai-screen-px), so every
+     dot is drawn the same size */
+  gap: round(6px, var(--tnai-screen-px, 1px));
+  padding: 8px 0 2px;
+  color: var(--pg-text-3);
+  font: 400 11.5px var(--pg-sans);
+}
+.tat-dots[hidden] {
+  display: none;
+}
+.tat-dots button {
+  flex: none;
+  width: round(7px, var(--tnai-screen-px, 1px));
+  height: round(7px, var(--tnai-screen-px, 1px));
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--pg-line-2);
+  cursor: pointer;
+}
+.tat-dots button[aria-current='true'] {
+  background: var(--pg-accent);
+}
+.tat-dots button:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 2px;
+}
+
+/* The prompt box stands under the row on this page: it sends to the lit thread. (07 hides it on
+   the Terminal page, where the terminals were typed into.) */
+:root:not(#pg) .layout.terminal-mode.tat-on > footer.composer {
+  display: block;
+}
+
+/* ---------------------------------------------------------------- the page's top row */
+/* "New thread" stands in the row. */
+.tat-new {
+  display: none;
+}
+#terminalView.tat-on .tat-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.tat-new svg {
+  display: block;
+}
+
+/* ---------------------------------------------------------------- questions for you */
+/* A thread's questions stand at the foot of its card (121 fills the row): the same amber surface
+   as in the open thread (29 `.tnt-asks > .tnt-ask`), in a narrower column, so the answers go under
+   the question. A long question scrolls inside the row and never pushes the conversation out. */
+.tat-asks {
+  max-height: 60%;
+  padding-bottom: 12px;
+  overflow: hidden auto;
+}
+.tat-asks[hidden] {
+  display: none;
+}
+.tat-asks > .tnt-ask {
+  animation: tat-ask-in 0.18s ease;
+}
+@keyframes tat-ask-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tat-asks > .tnt-ask {
+    animation: none;
+  }
+}
+.tat-asks .tnt-ask-text {
+  flex-basis: 100%;
+}
+.tat-asks .tnt-ask-acts {
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+}
+
+/* the answers: the look of the open thread's answers (29) */
+.tat-asks .tnt-ask-acts button {
+  height: 30px;
+  margin: 0;
+  padding: 0 12px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+  font: 500 12.5px/1 var(--pg-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tat-asks .tnt-ask-acts button[hidden] {
+  display: none;
+}
+.tat-asks .tnt-ask-acts button:hover {
+  border-color: var(--pg-accent);
+  color: var(--pg-text);
+}
+.tat-asks .tnt-ask-acts .tnt-ask-yes {
+  border-color: rgba(var(--pg-accent-rgb), 0.5);
+  background: rgba(var(--pg-accent-rgb), 0.22);
+  color: var(--pg-text);
+}
+.tat-asks .tnt-ask-acts button:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+
+/* the command or path a tool asks for, as the agent wrote it */
+.tnt-ask-detail {
+  max-height: 110px;
+  margin: 6px 0 0;
+  overflow: auto;
+  color: var(--pg-text-2);
+  font: 400 12px/1.45 var(--pg-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tnt-ask-detail[hidden] {
+  display: none;
+}
+
+/* The app's floating permission card is not shown while its question stands in a thread here. */
+.tnai-perm.tnt-ask-in-thread {
+  display: none !important;
+}
+
+/* A thread that waits on you and is not in sight says so on its dot; one in sight shows the
+   question itself, and its dot stays lit as "on the page". */
+.tat-dots button[data-tone='needs']:not([aria-current]) {
+  background: var(--pg-wait);
+}
+
+/* The app's held-prompt notice (71) while it stands in its thread's row (121 moves the node in):
+   the same amber surface as the questions, in the flow of the card, its buttons wrapping. */
+:root:root .tat-asks > .tnai-perm {
+  position: static;
+  width: auto;
+  max-width: none;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--pg-wait) 35%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--pg-wait) 9%, transparent);
+  box-shadow: none;
+  color: var(--pg-text);
+}
+:root:root .tat-asks > .tnai-perm[hidden] {
+  display: none;
+}
+.tat-asks > .tnai-perm .tnai-perm-actions {
+  flex-wrap: wrap;
+}
+
+/* A narrow page (under 860 px, 105's `tp-stack`): there is no room for Live preview beside the
+   threads, and under them it would take the threads' height. It is closed there, with its
+   divider and its button, and comes back when the page is wider. */
+#terminalView.tat-on.tp-stack > :is(.tp-divider, .tp-preview),
+#terminalView.tat-on.tp-stack .tnt-fold-preview {
+  display: none !important;
+}

@@ -1,0 +1,1121 @@
+/* Technically Not · 06-settings.css — Settings page (22-settings-page.js) and every section in it: section list on the left, section head, setting groups (soft bordered cards with row dividers: label + help on the left, control on the right), switches, inputs, chips, and the Accounts rows (15), Agents tab groups (22 While agents work + 63, 51 After an agent finishes, 54 Agent context, 43 Delegation limits), Appearance (32), Updates (36). Colors are plain hex so 32 mirrors them for dark mode. */
+
+/* Page frame */
+.layout.settings-mode {
+  grid-template-columns: var(--nav-width, 205px) minmax(0, 1fr) !important;
+  background: var(--pg-accent-soft);
+}
+.layout.settings-mode > .sidebar {
+  grid-column: 1;
+  grid-row: 1;
+}
+.layout.settings-mode > .settings-page {
+  display: block;
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+.layout.settings-mode > .overview-view,
+.layout.settings-mode > .workspace,
+.layout.settings-mode > .preview,
+.layout.settings-mode > .tnai-resizer {
+  display: none !important;
+}
+/* Settings sends nothing to agents, so the docked composer stays out of the way (a popped-out composer keeps its own window). */
+body:has(.layout.settings-mode) .composer {
+  display: none !important;
+}
+.settings-page {
+  display: none;
+  padding: var(--page-pad);
+  background: var(--pg-accent-soft);
+  --sf: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: var(--pg-sans);
+}
+.settings-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+#settingsPage .agent-page-header h1 {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+/* The gear in the head's tile is drawn, not typed. The tile (04) held the character "⚙", which a
+   symbol font draws off its own middle, so it sat low and to the right in the tile. The tile stays
+   as it is and is left empty; the same gear as the menu's Settings row is laid over its middle. */
+#settingsPage .agent-page-header h1::before {
+  content: '';
+}
+#settingsPage .agent-page-header h1::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 4px;
+  width: 14px;
+  height: 14px;
+  translate: 0 -50%;
+  background-color: var(--ac-fg);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  pointer-events: none;
+}
+.settings-body {
+  display: grid;
+  grid-template-columns: 184px minmax(0, 1fr);
+  gap: 36px;
+  align-items: start;
+  padding: 8px 0 40px;
+}
+/* Desktop: the section content starts level with the page title (title sits above the section list only), so more of each section fits without scrolling. */
+@media (min-width: 1101px) {
+  .settings-inner {
+    display: grid;
+    grid-template-columns: 184px minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+    column-gap: 36px;
+    align-items: start;
+    padding-bottom: 40px;
+  }
+  .settings-inner > .agent-page-header {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+  }
+  .settings-body {
+    display: contents;
+  }
+  .settings-tabs {
+    grid-column: 1;
+    grid-row: 2;
+    margin-top: 8px;
+  }
+  .settings-panels {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+  /* Every section fills the width, so the section list always sits in the left corner (same spot on every tab). */
+  #settingsPage .settings-inner,
+  #settingsPage .settings-panels {
+    max-width: none;
+  }
+  /* General, Updates: setting groups flow into columns that fill the width (one column until each can be 560px wide). */
+  :is(#settingsPanel-general, #settingsPanel-updates):not([hidden]) {
+    grid-template-columns: repeat(auto-fill, minmax(560px, 1fr));
+    align-items: start;
+    column-gap: 24px;
+  }
+  :is(#settingsPanel-general, #settingsPanel-updates) > .settings-section-head {
+    grid-column: 1/-1;
+  }
+  #tnaiDelegationMount,
+  #tnaiAppearanceMount,
+  #tnaiUpdatesMount,
+  #tnaiUpdatesMount > .tnai-updates-panel {
+    display: contents;
+  }
+}
+
+/* Agents groups: each group is one card with its title inside (divider under the head), rows a steady 48px, number inputs lined up in one column. */
+#settingsPanel-agents {
+  gap: 20px;
+}
+#settingsPanel-agents .set-group {
+  gap: 0;
+  border: 1px solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  border-radius: 10px;
+  background: var(--pg-panel);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+#settingsPanel-agents .set-group-head {
+  align-items: center;
+  min-height: 52px;
+  box-sizing: border-box;
+  padding: 10px 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+}
+#settingsPanel-agents .set-group-head > div {
+  gap: 2px;
+}
+/* The head reads as the card's title, not another option row: a soft tinted band (Settings' own #f6f7f3) and a larger title. Dark mode remaps both colors (32 mapColor). */
+#settingsPanel-agents .set-group-head {
+  background: var(--pg-accent-soft);
+}
+#settingsPanel-agents .set-group-head h3 {
+  font-size: 15px;
+  font-weight: 650;
+}
+#settingsPanel-agents .set-card {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+#settingsPanel-agents .set-row {
+  gap: 16px;
+  min-height: 48px;
+  padding: 8px 16px;
+}
+#settingsPanel-agents .set-text {
+  gap: 1px;
+}
+#settingsPanel-agents .set-text small {
+  line-height: 1.45;
+}
+#settingsPanel-agents .set-sub > .set-row {
+  padding-left: 32px;
+}
+#settingsPanel-agents .set-sub > .set-row::before {
+  left: 18px;
+}
+#settingsPanel-agents .set-num {
+  width: 76px;
+}
+#settingsPanel-agents .set-empty {
+  border-radius: 10px;
+}
+
+/* Section list */
+.settings-tabs {
+  position: sticky;
+  top: 0;
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 4px 0;
+}
+.settings-tabs button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  color: var(--pg-text-2);
+  font: 500 12.5px/1 var(--pg-sans);
+  text-align: left;
+  cursor: pointer;
+}
+.settings-tabs button svg {
+  flex: none;
+  color: var(--pg-text-3);
+}
+.settings-tabs button:hover {
+  background: var(--pg-accent-soft);
+  color: var(--pg-accent-2);
+}
+.settings-tabs button:focus-visible {
+  outline: var(--pg-ring) solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  outline-offset: 1px;
+}
+.settings-tabs button[aria-selected='true'] {
+  border-color: color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  background: var(--pg-panel);
+  color: var(--pg-text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.13);
+}
+.settings-tabs button[aria-selected='true'] svg {
+  color: var(--pg-accent-2);
+}
+.settings-tabs button[aria-selected='true']::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--pg-accent);
+}
+
+/* Section */
+.settings-panels {
+  min-width: 0;
+  max-width: 820px;
+}
+.settings-panel {
+  display: grid;
+  gap: 28px;
+}
+.settings-panel[hidden] {
+  display: none;
+}
+.settings-section-head {
+  display: grid;
+  gap: 5px;
+  padding: 2px 0 0;
+}
+.settings-section-head h2 {
+  margin: 0;
+  color: var(--pg-text);
+  font: 600 20px/1.25 var(--pg-sans);
+  letter-spacing: -0.3px;
+}
+.settings-section-head p {
+  margin: 0;
+  color: var(--pg-text-2);
+  font: 13px/1.5 var(--pg-sans);
+}
+.set-empty {
+  padding: 28px 20px;
+  border: 1px dashed color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  border-radius: 10px;
+  color: var(--pg-text-2);
+  font: 12.5px/1.5 var(--pg-sans);
+  text-align: center;
+}
+
+/* Groups, cards, rows */
+.set-group {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.set-group-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 2px;
+}
+.set-group-head > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.set-group-head h3 {
+  margin: 0;
+  color: var(--pg-accent-2);
+  font: 600 13.5px/1.3 var(--pg-sans);
+}
+.set-group-head p {
+  margin: 0;
+  color: var(--pg-text-3);
+  font: 12px/1.55 var(--pg-sans);
+}
+.set-card {
+  border: 1px solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  border-radius: 10px;
+  background: var(--pg-panel);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+.set-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 24px;
+  min-height: 56px;
+  box-sizing: border-box;
+  padding: 12px 16px;
+  border-top: 1px solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  cursor: default;
+}
+label.set-row {
+  cursor: pointer;
+}
+.set-card > .set-row:first-child,
+.set-card > .set-sub:first-child > .set-row:first-child {
+  border-top: 0;
+}
+.set-text {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.set-text b {
+  color: var(--pg-accent-2);
+  font: 500 13px/1.4 var(--pg-sans);
+}
+.set-text small {
+  color: var(--pg-text-3);
+  font: 12px/1.5 var(--pg-sans);
+}
+.set-text kbd,
+.set-row kbd {
+  display: inline-block;
+  min-width: 14px;
+  padding: 0 4px;
+  border: 1px solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--pg-accent-soft);
+  color: var(--pg-accent-2);
+  font: 11px/1.45 var(--pg-mono);
+  text-align: center;
+}
+.set-ctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.set-ctl em {
+  color: var(--pg-text-3);
+  font: normal 12px var(--pg-sans);
+}
+.set-foot {
+  margin: 0;
+  padding: 0 2px;
+  color: var(--pg-text-3);
+  font: 12px/1.5 var(--pg-sans);
+}
+.set-saved {
+  flex: none;
+  min-height: 16px;
+  color: var(--pg-accent-2);
+  font: 500 12px var(--pg-sans);
+}
+.set-saved:empty {
+  display: none;
+}
+
+/* Dependent options: indented under the switch that turns them on, dimmed while it is off. */
+.set-sub {
+  background: var(--pg-accent-soft);
+}
+.set-sub > .set-row {
+  padding-left: 36px;
+  border-top: 1px solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+}
+.set-sub > .set-row {
+  position: relative;
+}
+.set-sub > .set-row::before {
+  content: '';
+  position: absolute;
+  left: 22px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--pg-accent-soft);
+}
+/* Options that only matter while their parent switch is on fold away when it is off. */
+.set-sub.off {
+  display: none;
+}
+.set-sub:not(.off) {
+  animation: set-sub-in 0.2s ease;
+}
+@keyframes set-sub-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .set-sub:not(.off) {
+    animation: none;
+  }
+}
+.set-row.off .set-text,
+.set-row.off .set-ctl {
+  opacity: 0.5;
+}
+.set-text small[title] {
+  cursor: help;
+}
+.set-group-head p[title] {
+  cursor: help;
+}
+
+/* Switch (a real checkbox). `input.tnai-switch` is the same switch outside Settings: "On top"
+   in the composer's own window (38) and in Live preview's own window (65). */
+:is(#settingsPage input.set-switch, input.tnai-switch) {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: none;
+  box-sizing: border-box;
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  border: 0;
+  border-radius: 99px;
+  background: var(--pg-accent);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+:is(#settingsPage input.set-switch, input.tnai-switch)::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--pg-panel);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  transition: transform 0.15s ease;
+}
+:is(#settingsPage input.set-switch, input.tnai-switch):checked {
+  background: var(--pg-accent);
+}
+:is(#settingsPage input.set-switch, input.tnai-switch):checked::before {
+  transform: translateX(14px);
+}
+:is(#settingsPage input.set-switch, input.tnai-switch):hover:not(:disabled) {
+  background: var(--pg-accent);
+}
+:is(#settingsPage input.set-switch, input.tnai-switch):checked:hover:not(:disabled) {
+  background: var(--pg-accent);
+}
+:is(#settingsPage input.set-switch, input.tnai-switch):focus-visible {
+  outline: var(--pg-ring) solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  outline-offset: 2px;
+}
+:is(#settingsPage input.set-switch, input.tnai-switch):disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+#settingsPage label.set-row:has(.set-switch:disabled) {
+  cursor: default;
+}
+#settingsPage label.set-row:has(.set-switch:disabled) .set-text {
+  opacity: 0.6;
+}
+
+/* Inputs and selects */
+#settingsPage .set-input {
+  box-sizing: border-box;
+  height: 30px;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  border-radius: 7px;
+  background: var(--pg-panel);
+  color: var(--pg-accent-2);
+  font: 12.5px var(--pg-sans);
+  outline: none;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+#settingsPage .set-input:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--pg-accent) 35%, transparent);
+}
+#settingsPage .set-input:focus {
+  border-color: color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.35);
+}
+#settingsPage .set-input:disabled {
+  opacity: 0.55;
+}
+#settingsPage .set-num {
+  width: 88px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+#settingsPage select.set-input {
+  min-width: 220px;
+  padding-right: 28px;
+  cursor: pointer;
+}
+#settingsPage .set-text-input {
+  width: 280px;
+}
+
+/* Chips: several on/off choices in one row (which CLIs a feature applies to). */
+.set-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.set-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 11px 0 9px;
+  border: 1px solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  border-radius: 99px;
+  background: var(--pg-panel);
+  color: var(--pg-accent-2);
+  font: 12px var(--pg-sans);
+  cursor: pointer;
+  user-select: none;
+}
+.set-chip:hover {
+  border-color: color-mix(in srgb, var(--pg-accent) 35%, transparent);
+}
+.set-chip:has(input:checked) {
+  border-color: color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  background: var(--pg-accent-soft);
+  color: var(--pg-accent-2);
+}
+.set-chip input {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: none;
+  box-sizing: border-box;
+  width: 24px;
+  height: 14px;
+  margin: 0;
+  border-radius: 99px;
+  background: var(--pg-accent);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.set-chip input::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--pg-panel);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.4);
+  transition: transform 0.15s ease;
+}
+.set-chip input:checked {
+  background: var(--pg-accent);
+}
+.set-chip input:checked::before {
+  transform: translateX(10px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .set-chip input,
+  .set-chip input::before {
+    transition: none;
+  }
+}
+.set-chip:has(input:focus-visible) {
+  outline: var(--pg-ring) solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  outline-offset: 1px;
+}
+
+/* Segmented control (Appearance › Theme): radio inputs kept for keyboard and tests, drawn as one pill group. */
+.set-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  border-radius: 9px;
+  background: var(--pg-accent-soft);
+}
+.set-seg label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  box-sizing: border-box;
+  height: 30px;
+  padding: 0 13px;
+  border-radius: 7px;
+  color: var(--pg-text-2);
+  font: 500 12.5px var(--pg-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.set-seg label:hover {
+  color: var(--pg-accent-2);
+}
+.set-seg input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.set-seg label:has(input:checked) {
+  background: var(--pg-panel);
+  color: var(--pg-text);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.25),
+    0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+.set-seg label:has(input:focus-visible) {
+  outline: var(--pg-ring) solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  outline-offset: 1px;
+}
+.set-seg-sm {
+  padding: 2px;
+  border-radius: 8px;
+}
+.set-seg-sm label {
+  height: 26px;
+  padding: 0 11px;
+  font-size: 12px;
+}
+.set-seg-ico {
+  width: 14px;
+  color: var(--pg-text-3);
+  font: 13px/1 Arial;
+  text-align: center;
+}
+.set-seg label:has(input:checked) .set-seg-ico {
+  color: var(--pg-accent-2);
+}
+#settingsPage .settings-keys-button {
+  box-sizing: border-box;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  border-radius: 7px;
+  background: var(--pg-panel);
+  color: var(--pg-accent-2);
+  font: 500 12px var(--pg-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+#settingsPage .settings-keys-button:hover {
+  background: var(--pg-accent-soft);
+}
+
+/* Appearance, Updates */
+#tnaiAppearanceMount,
+.tnai-updates-panel {
+  display: grid;
+  gap: 28px;
+}
+.tnai-updates-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+#settingsPage .tnai-updates-actions .button {
+  font: 500 12px var(--pg-sans);
+}
+#settingsPage .tnai-updates-version {
+  font-weight: 600;
+}
+
+/* Status pills inside Settings: readable size, never pushed by an auto margin. */
+#settingsPage .agent-status-pill {
+  flex: none;
+  margin: 0;
+  gap: 6px;
+  padding: 4px 9px;
+  font: 500 11.5px/1.2 var(--pg-sans);
+}
+#settingsPage .agent-status-pill i {
+  width: 6px;
+  height: 6px;
+}
+
+/* Accounts (15): a toolbar line, then one card that lists every agent CLI, with its accounts nested under it. */
+#tnaiAccountsMount {
+  display: grid;
+  gap: 12px;
+}
+#tnaiAccountsMount .tnai-acct-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 0 2px;
+}
+#tnaiAccountsMount .tnai-acct-head > div {
+  min-width: 0;
+}
+#tnaiAccountsMount .tnai-acct-head small {
+  display: block;
+  color: var(--pg-text-3);
+  font: 12px/1.55 var(--pg-sans);
+}
+#tnaiAccountsMount .tnai-acct-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  color: var(--pg-text-3);
+  font: 12px var(--pg-sans);
+  white-space: nowrap;
+}
+#tnaiAccountsMount .tnai-acct-grid {
+  display: grid;
+  border: 1px solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  border-radius: 10px;
+  background: var(--pg-panel);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+#tnaiAccountsMount .tnai-cli {
+  display: grid;
+  border-top: 1px solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+}
+#tnaiAccountsMount .tnai-cli:first-child {
+  border-top: 0;
+}
+#tnaiAccountsMount .tnai-cli-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 16px;
+}
+#tnaiAccountsMount .tnai-cli-head .agent-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+}
+#tnaiAccountsMount .tnai-cli-identity {
+  display: grid;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+#tnaiAccountsMount .tnai-cli-identity b {
+  color: var(--pg-text);
+  font: 600 13.5px/1.3 var(--pg-sans);
+}
+#tnaiAccountsMount .tnai-cli-identity small {
+  overflow: hidden;
+  color: var(--pg-text-3);
+  font: 12px/1.4 var(--pg-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#tnaiAccountsMount .tnai-cli.missing .tnai-cli-head > :not(.tnai-acct-tools),
+#tnaiAccountsMount .tnai-cli.missing .tnai-acct-note {
+  opacity: 0.55;
+}
+#tnaiAccountsMount .tnai-acct-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: none;
+}
+#tnaiAccountsMount .tnai-acct-tools:empty {
+  display: none;
+}
+#tnaiAccountsMount .tnai-acct-list {
+  display: grid;
+  margin: 0 16px 12px 62px;
+  border: 1px solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  border-radius: 8px;
+  background: var(--pg-accent-soft);
+}
+#tnaiAccountsMount .tnai-acct-list:empty {
+  display: none;
+}
+#tnaiAccountsMount .tnai-acct-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px;
+  border-top: 1px solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+}
+#tnaiAccountsMount .tnai-acct-row:first-child {
+  border-top: 0;
+}
+#tnaiAccountsMount .tnai-acct-name {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+#tnaiAccountsMount .tnai-acct-name b {
+  overflow: hidden;
+  color: var(--pg-accent-2);
+  font: 500 13px/1.35 var(--pg-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#tnaiAccountsMount .tnai-acct-name small {
+  overflow: hidden;
+  color: var(--pg-text-3);
+  font: 12px/1.4 var(--pg-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#tnaiAccountsMount .tnai-acct-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+#tnaiAccountsMount .tnai-acct-plan,
+#tnaiAccountsMount .tnai-acct-active {
+  flex: none;
+  padding: 4px 9px;
+  border-radius: 99px;
+  font: 500 11.5px/1.2 var(--pg-sans);
+  white-space: nowrap;
+}
+#tnaiAccountsMount .tnai-acct-plan {
+  background: var(--pg-accent-soft);
+  color: var(--pg-text-2);
+}
+#tnaiAccountsMount .tnai-acct-active {
+  background: var(--pg-accent-soft);
+  color: var(--pg-accent-2);
+}
+#tnaiAccountsMount .tnai-acct-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+#tnaiAccountsMount .tnai-acct-actions:empty {
+  display: none;
+}
+#tnaiAccountsMount .tnai-acct-note {
+  margin: -6px 16px 14px 62px;
+  color: var(--pg-text-3);
+  font: 12px/1.55 var(--pg-sans);
+}
+#tnaiAccountsMount .tnai-acct-note p {
+  margin: 0;
+}
+#tnaiAccountsMount .tnai-acct-note summary {
+  width: max-content;
+  cursor: pointer;
+  color: var(--pg-text-3);
+}
+#tnaiAccountsMount .tnai-acct-note summary:hover {
+  color: var(--pg-accent-2);
+}
+#tnaiAccountsMount .tnai-acct-note details[open] summary {
+  margin-bottom: 2px;
+}
+#tnaiAccountsMount .tnai-acct-addrow {
+  display: grid;
+  gap: 8px;
+  margin: 0 16px 14px 62px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  border-radius: 8px;
+  background: var(--pg-accent-soft);
+}
+#tnaiAccountsMount .tnai-acct-addrow label {
+  color: var(--pg-text);
+  font: 500 12.5px var(--pg-sans);
+}
+#tnaiAccountsMount .tnai-acct-addline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+#tnaiAccountsMount .tnai-acct-addline input {
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  border-radius: 7px;
+  background: var(--pg-panel);
+  color: var(--pg-accent-2);
+  font: 12.5px var(--pg-sans);
+  outline: none;
+}
+#tnaiAccountsMount .tnai-acct-addline input:focus {
+  border-color: color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.35);
+}
+#tnaiAccountsMount .tnai-acct-addnames {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--pg-text-3);
+  font: 12px var(--pg-sans);
+}
+/* Buttons: 30 standard (toolbar, CLI rows, add form), 24 compact (account rows, name chips). */
+#tnaiAccountsMount button {
+  box-sizing: border-box;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  border-radius: 7px;
+  background: var(--pg-panel);
+  color: var(--pg-accent-2);
+  font: 500 12px/1 var(--pg-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+#tnaiAccountsMount button:hover {
+  background: var(--pg-accent-soft);
+}
+#tnaiAccountsMount button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+#tnaiAccountsMount .tnai-acct-row button,
+#tnaiAccountsMount .tnai-acct-addnames button {
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 6px;
+  font-size: 11.5px;
+}
+#tnaiAccountsMount .tnai-acct-addnames button {
+  border-radius: 99px;
+}
+#tnaiAccountsMount button.link {
+  border-color: transparent;
+  background: none;
+  color: var(--pg-text-2);
+}
+#tnaiAccountsMount button.link:hover {
+  background: var(--pg-accent-soft);
+  color: var(--pg-accent-2);
+}
+#tnaiAccountsMount button.link[data-acct='remove']:hover {
+  background: color-mix(in srgb, var(--pg-err) 14%, transparent);
+  color: var(--pg-err);
+}
+#tnaiAccountsMount .tnai-acct-addline button.primary {
+  border-color: color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  background: var(--pg-accent);
+  color: var(--pg-on-accent);
+}
+#tnaiAccountsMount .tnai-acct-addline button.primary:hover {
+  background: var(--pg-accent);
+}
+#tnaiAccountsMount .tnai-acct-keynote {
+  margin: 0;
+  color: var(--pg-text-3);
+  font: 12px/1.45 var(--pg-sans);
+}
+#tnaiAccountsMount .tnai-acct-keynote a {
+  color: var(--pg-accent-2);
+  font-weight: 500;
+}
+#tnaiAccountsMount .tnai-acct-keynote a:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent-2);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+#tnaiAccountsMount .tnai-acct-keyerror {
+  margin: 0;
+  color: var(--pg-err);
+  font: 12px var(--pg-sans);
+}
+
+/* Desktop Accounts: each agent CLI is its own card in a two-column grid, so every connection fits without scrolling. */
+@media (min-width: 1101px) {
+  #settingsPanel-accounts {
+    gap: 16px;
+  }
+  #tnaiAccountsMount .tnai-acct-grid {
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    align-items: start;
+    gap: 12px;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    overflow: visible;
+  }
+  #tnaiAccountsMount .tnai-cli {
+    align-self: stretch;
+    align-content: start;
+    border: 1px solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+    border-radius: 10px;
+    background: var(--pg-panel);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+  }
+  /* Card head: icon | name, path, then the status pill under them | buttons — so the name keeps its room in a half-width card. */
+  #tnaiAccountsMount .tnai-cli-head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 12px;
+    row-gap: 6px;
+    padding: 12px 14px;
+  }
+  #tnaiAccountsMount .tnai-cli-head > :first-child {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+  #tnaiAccountsMount .tnai-cli-identity {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  #tnaiAccountsMount .tnai-cli-head > .agent-status-pill {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: start;
+  }
+  #tnaiAccountsMount .tnai-cli-head > .tnai-acct-tools {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+  #tnaiAccountsMount .tnai-acct-list,
+  #tnaiAccountsMount .tnai-acct-addrow {
+    margin: 0 14px 12px;
+  }
+  #tnaiAccountsMount .tnai-acct-note {
+    margin: -4px 14px 12px;
+  }
+  /* Half-width card: a row's buttons go on their own line (as on tablet), so an added account's buttons never push the card past its column. */
+  #tnaiAccountsMount .tnai-acct-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  #tnaiAccountsMount .tnai-acct-actions {
+    grid-column: 1/-1;
+    justify-content: flex-start;
+  }
+}
+
+/* Tablet: the section list becomes a row of tabs above the section. */
+@media (max-width: 1100px) {
+  .settings-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+  .settings-tabs {
+    position: static;
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    padding: 0 0 8px;
+    border-bottom: 1px solid color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  }
+  .settings-tabs button {
+    flex: none;
+  }
+  .settings-tabs button[aria-selected='true'] {
+    border-color: transparent;
+    background: none;
+    box-shadow: none;
+  }
+  .settings-tabs button[aria-selected='true']::before {
+    left: 10px;
+    right: 10px;
+    top: auto;
+    bottom: -9px;
+    width: auto;
+    height: 2px;
+    border-radius: 2px;
+  }
+  .settings-panels {
+    max-width: none;
+  }
+  #tnaiAccountsMount .tnai-acct-list,
+  #tnaiAccountsMount .tnai-acct-note,
+  #tnaiAccountsMount .tnai-acct-addrow {
+    margin-left: 16px;
+  }
+  #tnaiAccountsMount .tnai-acct-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  #tnaiAccountsMount .tnai-acct-actions {
+    grid-column: 1/-1;
+    justify-content: flex-start;
+  }
+}

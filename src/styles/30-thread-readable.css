@@ -1,0 +1,1032 @@
+/* Technically Not · the thread layout's Readable view: a thread as its conversation.
+   Markup comes from
+   src/scripts/122-thread-readable.js; the tokens are the
+   frame's (27-thread-frame.css). Every rule is under .tnt-view, which exists only inside the
+   frame's main slot, so nothing here applies while the thread layout is off.
+
+   The look is the mock's conversation: one reading column in the middle of the island, your words
+   as a bubble tinted in the accent on the right, the agent's words as plain text, its actions as
+   quiet lines beside one soft rule, a question as the one amber surface, and no line between
+   parts: they are set apart by space. */
+
+/* ---------------------------------------------------------------- the top row */
+/* the name, and after it the tool's own title for the conversation, which shortens with "…" */
+.tnt-head-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.tnt-head-line h1 {
+  flex: none;
+  max-width: 100%;
+}
+.tnt-head-topic {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pg-text-3);
+  font-size: 13.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* a tool with no record this app can read: one plain sentence above its terminal */
+.tnt-plain {
+  flex: none;
+  margin: 0;
+  padding: 0 var(--inset) 6px;
+  color: var(--pg-text-3);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+/* ---------------------------------------------------------------- the conversation */
+/* The pane scrolls inside the island and opens at its newest line. */
+.tnt-talk {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden auto;
+  padding: 8px var(--inset) 0;
+
+  /* the same room on both sides, so the reading column stays in the middle with or without a
+     scrollbar */
+  scrollbar-gutter: stable both-edges;
+}
+
+/* a slim rounded thumb and no arrows */
+.tnt-talk::-webkit-scrollbar {
+  width: 10px;
+}
+.tnt-talk::-webkit-scrollbar-track,
+.tnt-talk::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.tnt-talk::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 5px;
+  background: var(--pg-line-2);
+  background-clip: content-box;
+}
+.tnt-talk::-webkit-scrollbar-button {
+  display: none;
+}
+.tnt-talk-list,
+.tnt-talk-empty {
+  width: min(100%, var(--tnt-read-w, 780px));
+  margin: 0 auto;
+}
+.tnt-talk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 18px;
+  color: var(--pg-text);
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+/* Speed: a long conversation is up to 400 blocks, and putting it on screen laid every one of them
+   out and painted it, about 0.4 s for each change of thread and 0.2 s for each change from the
+   Terminal view (measured 2026-10-12, `perf-thread-switch`). A block that is not in view is now
+   skipped until it scrolls in; the height it had is remembered, and a block never yet drawn is
+   taken as 56 px high. The live line is always drawn. Nothing looks different. */
+.tnt-talk-list > :not(.tnt-live) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 56px;
+}
+.tnt-talk-empty {
+  padding: 22px 0;
+  color: var(--pg-text-3);
+  font-size: 13.5px;
+  text-align: center;
+}
+
+/* your words */
+.tnt-you {
+  align-self: flex-end;
+  max-width: 86%;
+  padding: 9px 14px;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--pg-accent-soft);
+  white-space: pre-wrap;
+}
+
+/* words another agent sent, in the hand-off color */
+.tnt-from {
+  align-self: flex-start;
+  max-width: 90%;
+  padding: 9px 14px;
+  border-radius: 14px 14px 14px 4px;
+  background: color-mix(in srgb, var(--pg-handoff) 12%, transparent);
+  color: var(--pg-text-2);
+  white-space: pre-wrap;
+}
+.tnt-from small {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--pg-handoff);
+  font-size: 12px;
+}
+
+/* the agent's words: light markdown from the app's own renderer */
+.tnt-say > :first-child {
+  margin-top: 0;
+}
+.tnt-say > :last-child {
+  margin-bottom: 0;
+}
+.tnt-say p,
+.tnt-say ul,
+.tnt-say ol,
+.tnt-say blockquote,
+.tnt-say pre {
+  margin: 0 0 10px;
+}
+.tnt-say h1,
+.tnt-say h2,
+.tnt-say h3,
+.tnt-say h4 {
+  margin: 14px 0 6px;
+  font: 600 15px/1.35 var(--pg-sans);
+}
+.tnt-say ul,
+.tnt-say ol {
+  padding-left: 20px;
+}
+.tnt-say li {
+  margin: 2px 0;
+}
+.tnt-say code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--pg-panel-2);
+  font: 12.5px/1.5 var(--pg-mono);
+}
+.tnt-say pre {
+  padding: 10px 12px;
+  overflow: auto hidden;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+.tnt-say pre code {
+  padding: 0;
+  background: none;
+  white-space: pre;
+}
+.tnt-say blockquote {
+  padding-left: 12px;
+  border-left: 2px solid var(--pg-line-2);
+  color: var(--pg-text-2);
+}
+.tnt-say a {
+  color: var(--pg-accent-2);
+}
+.tnt-say hr {
+  height: 0;
+  margin: 12px 0;
+  border: 0;
+}
+
+/* what it did: quiet lines beside one soft rule */
+.tnt-did {
+  display: grid;
+  gap: 0;
+  margin-top: -6px;
+  padding-left: 12px;
+  border-left: 2px solid var(--pg-line-2);
+  color: var(--pg-text-3);
+  font-size: 12.5px;
+  line-height: 1.8;
+}
+/* Actions are quiet lines in the reading face: an icon for the kind, the verb, the thing by its
+   name. Only a name (a file, a command, a skill) is in the code face, and nothing is cut with an
+   ellipsis: a long line wraps, and what a command printed is behind a press. */
+.tnt-grp-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.tnt-grp-head[hidden] {
+  display: none;
+}
+.tnt-grp-head > svg,
+.tnt-act > svg {
+  flex: none;
+  align-self: center;
+  color: var(--pg-text-4);
+}
+
+/* the heading's arrow shows only where a press folds the lines away or brings them back */
+.tnt-grp-head > svg:last-child {
+  display: none;
+  transition: rotate 0.2s var(--pg-ease);
+}
+.tnt-grp[data-folds='true'] > .tnt-grp-head {
+  cursor: pointer;
+}
+.tnt-grp[data-folds='true'] > .tnt-grp-head > svg:last-child {
+  display: block;
+}
+.tnt-grp[data-open='true'] > .tnt-grp-head > svg:last-child,
+.tnt-act-open[aria-expanded='true'] > svg {
+  rotate: 90deg;
+}
+.tnt-grp[data-folds='true'] > .tnt-grp-head:hover {
+  color: var(--pg-text-2);
+}
+.tnt-grp-head:focus-visible,
+.tnt-act-open:focus-visible,
+.tnt-added-press:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.tnt-grp[data-folds='true'][data-open='false'] > .tnt-grp-list {
+  display: none;
+}
+
+/* under a heading the lines stand in from it, and the heading has said the verb and the icon */
+.tnt-grp[data-many='true'] > .tnt-grp-list {
+  padding-left: 20px;
+}
+.tnt-grp[data-many='true'] .tnt-act > svg:first-child,
+.tnt-grp[data-many='true'] .tnt-act-verb {
+  display: none;
+}
+.tnt-act {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 6px;
+  min-width: 0;
+}
+.tnt-act-verb {
+  flex: none;
+}
+.tnt-act-what {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--pg-text-2);
+  overflow-wrap: anywhere;
+}
+code.tnt-act-what {
+  font: 12px/1.8 var(--pg-mono);
+}
+.tnt-act-counts {
+  flex: none;
+  font: 12px/1.8 var(--pg-mono);
+}
+.tnt-act-result {
+  flex: none;
+}
+.tnt-act-open {
+  display: grid;
+  place-items: center;
+  align-self: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  box-shadow: none;
+  color: var(--pg-text-4);
+  cursor: pointer;
+}
+.tnt-act-open[hidden] {
+  display: none;
+}
+.tnt-act-open > svg {
+  transition: rotate 0.2s var(--pg-ease);
+}
+.tnt-act:has(.tnt-act-open:not([hidden])) {
+  cursor: pointer;
+}
+.tnt-act:has(.tnt-act-open:not([hidden])):hover .tnt-act-open {
+  color: var(--pg-text-2);
+}
+
+/* the whole command and what it printed: the one place in the conversation in the code face */
+.tnt-act-more {
+  max-height: 260px;
+  margin: 2px 0 6px;
+  padding: 8px 10px;
+  overflow: auto;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+  font: 12px/1.6 var(--pg-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+.tnt-act-more[hidden] {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tnt-grp-head > svg:last-child,
+  .tnt-act-open > svg {
+    transition: none;
+  }
+}
+
+/* what the app wrote around a prompt: one quiet line under the user's words, opened by a press */
+.tnt-added {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  margin-top: -10px;
+  color: var(--pg-text-3);
+  font-size: 12.5px;
+}
+.tnt-added-you {
+  justify-items: end;
+}
+.tnt-added-press {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.tnt-added-press:hover {
+  color: var(--pg-text-2);
+}
+.tnt-added-press > svg {
+  transition: rotate 0.2s var(--pg-ease);
+}
+.tnt-added-press[aria-expanded='true'] > svg {
+  rotate: 90deg;
+}
+.tnt-added-text {
+  max-width: 86%;
+  padding: 9px 14px;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+  white-space: pre-wrap;
+}
+.tnt-added-text[hidden] {
+  display: none;
+}
+
+/* Status sections and outcome words in a reply, in the colors they have in the terminal
+   (75-report-highlight.js writes the --rp-* colors, a light set and a dark set). */
+.tnt-say [data-section='done'] {
+  color: var(--rp-section-done);
+}
+.tnt-say [data-section='stopped'] {
+  color: var(--rp-section-stopped);
+}
+.tnt-say [data-section='open'] {
+  color: var(--rp-section-open);
+}
+.tnt-say [data-section='you'] {
+  color: var(--rp-section-you);
+}
+.tnt-say [data-section='notice'] {
+  padding: 6px 10px;
+  border-radius: var(--pg-r-sm);
+  background: var(--rp-remains-row);
+  color: var(--rp-section-notice);
+}
+.tnt-outcome[data-outcome='fixed'] {
+  color: var(--rp-outcome-fixed);
+}
+.tnt-outcome[data-outcome='partly'] {
+  color: var(--rp-outcome-partly);
+}
+.tnt-outcome[data-outcome='failing'] {
+  color: var(--rp-outcome-failing);
+}
+.tnt-outcome[data-outcome='idle'] {
+  color: var(--rp-outcome-idle);
+}
+.tnt-act-counts:empty,
+.tnt-act-result:empty {
+  display: none;
+}
+.tnt-view u {
+  color: var(--pg-work);
+  text-decoration: none;
+}
+.tnt-view s {
+  margin-left: 6px;
+  color: var(--pg-err);
+  text-decoration: none;
+}
+.tnt-act[data-state='failed'] .tnt-act-result {
+  color: var(--pg-err);
+}
+.tnt-act[data-state='running'] .tnt-act-what::after {
+  content: ' …';
+  color: var(--pg-text-3);
+}
+
+/* a question the agent asks: the one amber surface */
+.tnt-askbox {
+  padding: 14px 16px;
+  border-radius: var(--pg-r-sm);
+  background: color-mix(in srgb, var(--pg-wait) 9%, transparent);
+  box-shadow: inset 2.5px 0 0 var(--pg-wait);
+}
+.tnt-askbox[data-state='answered'] {
+  background: var(--pg-panel);
+  box-shadow: inset 2.5px 0 0 var(--pg-line-2);
+}
+.tnt-askbox b {
+  display: block;
+  font-weight: 500;
+}
+.tnt-askbox ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+  color: var(--pg-text-2);
+  font-size: 13px;
+}
+.tnt-askbox small {
+  display: block;
+  margin-top: 10px;
+  color: var(--pg-text-3);
+  font-size: 12.5px;
+}
+.tnt-askbox .tnt-ask-go.tnt-ask-go,
+.tnt-askbox .tnt-ask-option.tnt-ask-option,
+.tnt-view .tnt-decide-options button {
+  height: 30px;
+  margin: 0;
+  padding: 0 12px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text);
+  font: 500 12.5px/1 var(--pg-sans);
+  cursor: pointer;
+}
+.tnt-askbox .tnt-ask-go.tnt-ask-go {
+  margin-top: 12px;
+}
+
+/* the choices as buttons, when the tool's menu can be answered from here */
+.tnt-ask-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.tnt-askbox .tnt-ask-option.tnt-ask-option:disabled {
+  border-color: transparent;
+  color: var(--pg-text-3);
+  cursor: default;
+}
+
+/* with choices to press, the way to the terminal is the quiet second choice */
+.tnt-askbox .tnt-ask-options ~ .tnt-ask-go.tnt-ask-go {
+  border-color: transparent;
+  background: transparent;
+  color: var(--pg-text-3);
+}
+.tnt-askbox .tnt-ask-go.tnt-ask-go:hover,
+.tnt-askbox .tnt-ask-option.tnt-ask-option:hover:not(:disabled),
+.tnt-view .tnt-decide-options button:hover:not(:disabled) {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+}
+.tnt-askbox .tnt-ask-go.tnt-ask-go:focus-visible,
+.tnt-askbox .tnt-ask-option.tnt-ask-option:focus-visible,
+.tnt-view .tnt-decide-options button:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+
+/* the end of a task: how long it took, and the files it changed */
+.tnt-worked {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--pg-text-3);
+  font-size: 12.5px;
+}
+.tnt-files {
+  padding: 10px 14px;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+}
+.tnt-files-head,
+.tnt-file {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  height: 26px;
+  line-height: 26px;
+}
+.tnt-files-head b {
+  flex: 1;
+  color: var(--pg-text);
+  font-weight: 500;
+}
+.tnt-file code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pg-text-2);
+  font: 12px/26px var(--pg-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tnt-file em {
+  flex: none;
+  color: var(--pg-text-4);
+  font-size: 11.5px;
+  font-style: normal;
+}
+.tnt-files u,
+.tnt-files s {
+  flex: none;
+  font: 12px/26px var(--pg-mono);
+}
+
+/* the report agents end a task with: one soft card, its lines parted by space */
+.tnt-report {
+  padding: 14px 16px;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+}
+.tnt-report h3 {
+  margin: 0 0 8px;
+  color: var(--pg-text-3);
+  font: 500 12px/1.3 var(--pg-sans);
+  letter-spacing: 0.02em;
+}
+.tnt-report-row {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  column-gap: 12px;
+  padding: 3px 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.tnt-report-row > span {
+  color: var(--pg-text-3);
+}
+.tnt-report-row ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tnt-report-row li + li {
+  margin-top: 2px;
+}
+
+/* Each label in the color it has in the terminal: one list of kinds, in 75-report-highlight.js,
+   which writes these colors for Light and for Dark. */
+.tnt-report-row[data-kind='did'] > span {
+  color: var(--rp-did);
+}
+.tnt-report-row[data-kind='found'] > span {
+  color: var(--rp-found);
+}
+.tnt-report-row[data-kind='changed'] > span {
+  color: var(--rp-changed);
+}
+.tnt-report-row[data-kind='decided'] > span,
+.tnt-decide > b {
+  color: var(--rp-decided);
+}
+.tnt-report-row[data-kind='remains'] > span {
+  color: var(--rp-remains);
+}
+.tnt-report-row[data-kind='blockers'] > span {
+  color: var(--rp-blockers);
+}
+
+/* a decision the report asks for: amber while it can be answered here */
+.tnt-decide {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+}
+.tnt-decide[data-open='true'] {
+  background: color-mix(in srgb, var(--pg-wait) 9%, transparent);
+  box-shadow: inset 2.5px 0 0 var(--pg-wait);
+}
+.tnt-decide b {
+  display: block;
+  margin-bottom: 10px;
+  font-weight: 500;
+}
+.tnt-decide-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tnt-view .tnt-decide-options button {
+  height: auto;
+  min-height: 30px;
+  padding: 6px 12px;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+}
+.tnt-view .tnt-decide-options button:disabled {
+  border-color: transparent;
+  color: var(--pg-text-2);
+  cursor: default;
+}
+
+/* small facts in the middle: a command, an interrupt, where a long conversation starts */
+.tnt-note {
+  align-self: center;
+  color: var(--pg-text-3);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+/* the last line while the agent works */
+.tnt-live {
+  --tone: var(--pg-work);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--pg-text-2);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.tnt-live[hidden] {
+  display: none;
+}
+.tnt-live[data-tone='needs'] {
+  --tone: var(--pg-wait);
+}
+.tnt-live i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tone);
+}
+.tnt-live span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tnt-live em {
+  flex: none;
+  color: var(--pg-text-4);
+  font-style: normal;
+}
+
+/* ---------------------------------------------------------------- a lead and its helpers */
+/* A helper the lead started: a card in the lead's conversation. A press opens the helper's own
+   conversation beside this one (123). The dot says whether it still works. */
+.tnt-view .tnt-helper,
+.tnt-side-panel .tnt-helper {
+  --tone: var(--pg-work);
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  margin: 0;
+  padding: 9px 10px 9px 14px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tnt-helper[data-state='done'] {
+  --tone: var(--pg-idle);
+}
+.tnt-helper[data-state='failed'] {
+  --tone: var(--pg-err);
+}
+.tnt-helper:hover {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+}
+.tnt-helper:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+.tnt-helper-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tone);
+}
+.tnt-helper-text {
+  min-width: 0;
+}
+.tnt-helper-text b {
+  display: block;
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tnt-helper-text small {
+  display: block;
+  color: var(--pg-text-3);
+  font-size: 12px;
+  line-height: 1.3;
+}
+.tnt-helper-open {
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--pg-text-3);
+}
+.tnt-helper-open svg {
+  display: block;
+}
+
+/* "N helpers" in the thread's top row */
+.tnt-view .tnt-helpers-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  margin: 0 4px 0 0;
+  padding: 0 11px;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+  font: 500 12.5px/1 var(--pg-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tnt-view .tnt-helpers-btn svg {
+  flex: none;
+  display: block;
+}
+.tnt-view .tnt-helpers-btn:hover,
+.tnt-view .tnt-helpers-btn[aria-pressed='true'] {
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+}
+/* under the pointer only; the pressed or chosen state keeps its own surface */
+.tnt-view .tnt-helpers-btn:hover {
+  background: var(--pg-panel-hover);
+}
+.tnt-view .tnt-helpers-btn:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+
+/* The files this thread and its helpers hold, and who holds each: a row under the top row. It
+   wraps onto a second line before anything is cut. */
+.tnt-shared {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 var(--inset) 8px;
+}
+.tnt-shared-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--pg-panel);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.tnt-shared-file code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pg-text-2);
+  font: 12px/1 var(--pg-mono);
+  text-overflow: ellipsis;
+}
+.tnt-shared-file em {
+  flex: none;
+  color: var(--pg-text-3);
+  font-style: normal;
+}
+
+/* The side island: the helpers of the open thread, and the chosen one's own conversation. */
+.tnt-side-panel {
+  --inset: 16px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.tnt-side-panel * {
+  box-sizing: border-box;
+}
+.tnt-side-panel [hidden] {
+  display: none !important;
+}
+.tnt-side-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px var(--inset) 8px;
+}
+.tnt-side-head h2 {
+  flex: 1;
+  margin: 0;
+  font: 600 15px/1.3 var(--pg-sans);
+}
+.tnt-side-panel .tnt-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  color: var(--pg-text-3);
+  cursor: pointer;
+}
+.tnt-side-panel .tnt-icon-btn:hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+.tnt-side-panel .tnt-icon-btn:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+.tnt-side-panel .tnt-icon-btn svg {
+  display: block;
+}
+.tnt-side-chips {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 var(--inset) 10px;
+}
+.tnt-side-chip {
+  --tone: var(--pg-idle);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  height: 28px;
+  margin: 0;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+  font: 12.5px/1 var(--pg-sans);
+  cursor: pointer;
+}
+.tnt-side-chip[data-tone='work'] {
+  --tone: var(--pg-work);
+}
+.tnt-side-chip[data-tone='needs'] {
+  --tone: var(--pg-wait);
+}
+.tnt-side-chip[data-tone='ready'] {
+  --tone: var(--pg-ready);
+}
+.tnt-side-chip[data-tone='err'] {
+  --tone: var(--pg-err);
+}
+.tnt-side-chip i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tone);
+}
+.tnt-side-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tnt-side-chip:hover,
+.tnt-side-chip[aria-selected='true'] {
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+}
+/* under the pointer only; the pressed or chosen state keeps its own surface */
+.tnt-side-chip:hover {
+  background: var(--pg-panel-hover);
+}
+.tnt-side-chip:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+.tnt-side-note {
+  margin: 0;
+  padding: 4px var(--inset) 0;
+  color: var(--pg-text-3);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+/* A helper's line: whose helper it is, its state, and Keep or Release (43 draws it; 123 puts it
+   under the helpers' chips and under the top row of a helper opened as its own thread). The
+   line's old colors are replaced by the tokens; its state dot keeps the status colors of 05. */
+.tnt-helper-line {
+  flex: none;
+  min-width: 0;
+  padding: 0 var(--inset) 8px;
+}
+.tnt-helper-line[hidden] {
+  display: none;
+}
+:root:not(#pg) .tnt-helper-line .tnai-graph-line {
+  gap: 10px;
+  min-height: 24px;
+  color: var(--pg-text-3);
+  font: 12.5px/1.4 var(--pg-sans);
+}
+:root:not(#pg) .tnt-helper-line .tnai-graph-line .g-text b {
+  color: var(--pg-text-2);
+  font-weight: 500;
+}
+:root:not(#pg) .tnt-helper-line .tnai-graph-line .g-state {
+  color: var(--pg-text-3);
+}
+:root:not(#pg) .tnt-helper-line .tnai-graph-keep {
+  height: 24px;
+  margin-left: auto;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+  font: 12px/1 var(--pg-sans);
+}
+:root:not(#pg) .tnt-helper-line .tnai-graph-keep:hover,
+:root:not(#pg) .tnt-helper-line .tnai-graph-keep[data-on] {
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+}
+/* under the pointer only; the pressed or chosen state keeps its own surface */
+:root:not(#pg) .tnt-helper-line .tnai-graph-keep:hover {
+  background: var(--pg-panel-hover);
+}
+:root:not(#pg) .tnt-helper-line .tnai-graph-keep:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+
+/* the helper's conversation uses the conversation's own rules; here it only has the side's inset */
+.tnt-side-panel .tnt-side-talk {
+  padding: 4px var(--inset) 0;
+}
+.tnt-side-panel .tnt-talk-list u {
+  color: var(--pg-work);
+  text-decoration: none;
+}
+.tnt-side-panel .tnt-talk-list s {
+  margin-left: 6px;
+  color: var(--pg-err);
+  text-decoration: none;
+}
+
+/* who was refused a held file and waits for it: amber, after the holder */
+.tnt-shared-file b {
+  flex: none;
+  color: var(--pg-wait);
+  font-weight: 400;
+}

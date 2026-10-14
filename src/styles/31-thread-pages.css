@@ -1,0 +1,669 @@
+/* Technically Not · the thread layout's looks, on every page, and its three-dots menu.
+   The look: two looks only, a clean neutral Dark
+   and an off-white Light, with the accent as a choice beside them. No purple glass.
+
+   How a page gets the look: every page keeps its own layout and reads its colors from the app's
+   --pg-* tokens. While the thread layout's setting is on, 118 sets html.tnt-on on every page, and
+   this file gives those tokens the mock's values. Colors that older sheets wrote by hand are
+   recolored by 32-theme-and-shortcuts.js, which uses a neutral ground while the setting is on.
+   What a page needed beyond tokens is at the end of this file, one block a page, each with why.
+
+   Everything here is scoped to html.tnt-on, or to a class that exists only on nodes this layout
+   builds (.tnt-menu-full, .tnt-look-row). With the setting off no rule in this file applies.
+   Selector weight: the app's own rules use :root:not(#pg); these use
+   html.tnt-on:not(#tnt):not(#pg) to win over them. Menu markup: src/scripts/124-thread-menu.js. */
+
+/* ---------------------------------------------------------------- the ground, both looks */
+/* The ground never follows the accent: one neutral set for every accent. The accent tokens
+   (--pg-acc and its pairs) are not touched, so they keep following the accent choice. */
+html.tnt-on:not(#tnt):not(#pg) {
+  --pg-bg-d: #0e0e13;
+  --pg-solid-d: #1b1b22;
+  --pg-bg-l: #e9e7e1;
+  --pg-tint: 220, 220, 232;
+  --pg-tint-l: 50, 50, 70;
+}
+
+/* ---------------------------------------------------------------- Dark: clean and neutral */
+/* Three steps of depth: the ground, the islands and cards, what lies in or over them. Status
+   colors are the app's own and are not set here.
+   The three fills of a surface, in both looks:
+   --tnt-glass   an island: see-through, the very fill of a card (--pg-panel), so the ground's
+                 aurora shows faintly through every panel as it does through a Settings card.
+   --tnt-island  the flat color a terminal draws on (32 reads it for the terminal theme), and the
+                 fill of a surface that holds a terminal, so the screen is never a block of
+                 another tone on its surface.
+   --tnt-over    what floats over the page (a menu, a popover, a dialog): denser, because it must
+                 read over whatever lies under it, a terminal's text or a page in the preview. */
+html.tnt-on[data-theme='dark']:not(#tnt):not(#pg) {
+  --pg-panel: rgba(255, 255, 255, 0.045);
+  --pg-panel-2: rgba(255, 255, 255, 0.08);
+  /* what a soft button gets under the pointer: here the value of --pg-panel-2 */
+  --pg-panel-hover: rgba(255, 255, 255, 0.08);
+  --pg-text: #ededf2;
+  --pg-text-2: #bdbdc8;
+  --pg-text-3: #92929e;
+  --pg-text-4: #6b6b77;
+  --pg-scrim: rgba(8, 8, 12, 0.62);
+  --pg-aura: 0.55;
+  --tnt-island: #17171c;
+  --tnt-glass: var(--pg-panel);
+  --tnt-over: rgba(32, 32, 40, 0.82);
+  --tnt-aura-1: 90, 85, 120;
+  --tnt-aura-2: 60, 60, 90;
+  --tnt-send: linear-gradient(135deg, rgb(var(--pg-acc2)), rgb(var(--pg-acc)));
+  --tnt-on-send: #160f2a;
+}
+
+/* ---------------------------------------------------------------- Light: off-white, not white */
+/* A warm, dimmer ground with softer surfaces and a soft near-black text. Status colors are darker
+   here so they read on a pale ground; their meaning is the same as in Dark.
+   A surface must read as a surface: on a ground this pale a thin white fill is lost, so the fill
+   is strong enough to stand some 18 levels over the ground, and the hairline around a surface is
+   a step firmer than the app's own Light line. The island's flat color is what that fill measures
+   over the ground, so a terminal's surface matches the see-through ones beside it. */
+html.tnt-on:not([data-theme='dark']):not(#tnt):not(#pg) {
+  --pg-panel: rgba(255, 255, 255, 0.72);
+  --pg-panel-2: rgba(255, 255, 255, 0.9);
+  /* What a soft button gets under the pointer. In Light it is a faint shade, not a
+     whiter white: over this pale ground --pg-panel-2 stood one level over --pg-panel,
+     which nobody could see. In Dark it is the value of --pg-panel-2. */
+  --pg-panel-hover: rgba(var(--pg-tint-l), 0.06);
+  --pg-line: rgba(var(--pg-tint-l), 0.17);
+  --pg-panel-solid: #f6f4ef;
+  --pg-text: #26232d;
+  --pg-text-2: #4b4755;
+  --pg-text-3: #6a6674;
+  /* a step darker than the mock's #8d8996, which read 3 to 1 on the island */
+  --pg-text-4: #7b7784;
+  --pg-work: #0f7a52;
+  --pg-wait: #a86206;
+  --pg-ready: #2a63c8;
+  --pg-idle: #7d7888;
+  --pg-err: #c8364f;
+  --pg-handoff: #0d7c75;
+  --pg-shadow: 0 20px 50px rgba(50, 40, 30, 0.16);
+  --pg-scrim: rgba(60, 54, 46, 0.34);
+  --pg-grain: 0.035;
+  --pg-aura: 0.3;
+  --tnt-island: #f7f6f4;
+  --tnt-glass: var(--pg-panel);
+  --tnt-over: rgba(250, 249, 247, 0.9);
+  --tnt-aura-1: 150, 140, 120;
+  --tnt-aura-2: 120, 120, 140;
+  --tnt-send: rgb(var(--pg-acc2-l));
+  --tnt-on-send: #fff;
+}
+
+/* The app's aurora, in neutral colors and without the accent's own glow. */
+html.tnt-on:not(#tnt):not(#pg) body::before {
+  background:
+    radial-gradient(40% 35% at 70% 20%, rgba(var(--tnt-aura-1), 0.3), transparent 70%),
+    radial-gradient(35% 40% at 20% 80%, rgba(var(--tnt-aura-2), 0.26), transparent 70%);
+}
+
+/* ---------------------------------------------------------------- one ground, no hard cuts */
+/* The whole window stands on one ground: the same color and the same aurora behind the top bar,
+   the list, every page and its terminals. A part of the frame (the top bar, a page, a page's top
+   row) paints no fill and draws no line of its own, so two areas never meet in an edge or a band
+   of another tone. What sits on the ground is a surface with a round edge: an island, a card, a
+   terminal. Test: thread-ground reads this from a capture of the window. */
+html.tnt-on:not(#tnt):not(#pg) .top,
+html.tnt-on:not(#tnt):not(#pg) #terminalView .terminal-toolbar {
+  border-bottom: 0;
+}
+html.tnt-on:not(#tnt):not(#pg) #terminalView {
+  background: transparent;
+}
+
+/* A terminal is one surface from its name row to its last line: the islands' own color, which is
+   also the color the terminal program draws on (32 reads --tnt-island for the terminal theme), so
+   the screen, the room around it and the name row never differ by a tone. */
+html.tnt-on:not(#tnt):not(#pg) .terminal-pane,
+html.tnt-on:not(#tnt):not(#pg) .tnai-xterm,
+html.tnt-on:not(#tnt):not(#pg) .tnai-xterm .xterm-viewport {
+  background: var(--tnt-island) !important;
+}
+html.tnt-on:not(#tnt):not(#pg) .terminal-pane {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+html.tnt-on:not(#tnt):not(#pg) .terminal-pane-head {
+  border-bottom: 0;
+}
+
+/* The Terminal page's preview column is an island too. Its address row and the empty stage under
+   it were two more tones with a straight edge between them: they are the island's own surface. */
+html.tnt-on:not(#tnt):not(#pg) #terminalView.tp-on > .tp-preview {
+  background: var(--tnt-glass);
+}
+
+/* A thread that shows its terminal: the island and the prompt box under it take the terminal's
+   own flat color while it is shown, so the screen and the room around it stay one tone. */
+html.tnt-on:not(#tnt):not(#pg)
+  .layout.threads-mode
+  > .tnt-main:has(> .tnt-view > .tnt-term:not([hidden])),
+html.tnt-on:not(#tnt):not(#pg)
+  .layout.threads-mode:has(> .tnt-main > .tnt-view > .tnt-term:not([hidden]))
+  > footer.composer {
+  background: var(--tnt-island);
+}
+
+/* What floats over the page is one material everywhere: the menus, the popovers and the dialogs
+   take the floating fill the three-dots menu has, over the blur they already had. The Settings
+   fill itself is too thin here: over a white page in the preview a Dark menu would turn pale
+   under its pale text. */
+html.tnt-on:not(#tnt):not(#pg)
+  :is(
+    .tnai-user-menu,
+    .repo-project-menu,
+    .repo-connect-menu,
+    .tnai-skill-menu,
+    .tnai-attach-menu,
+    .tnai-pick-menu,
+    .tnai-at-menu,
+    .pgo-qpop,
+    .tnai-bell-pop,
+    .tnai-ws-close-modal,
+    .bw-file-modal,
+    .tnai-auth-modal,
+    .tnai-keys,
+    .tnai-voice-modal,
+    .terminal-launcher
+  ) {
+  background: var(--tnt-over);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+}
+html.tnt-on:not(#tnt):not(#pg) #terminalView .tp-preview .lp-browser .lp-bar {
+  border: 0;
+  background: transparent;
+}
+html.tnt-on:not(#tnt):not(#pg) #terminalView .tp-preview :is(.lp-stage, .lp-blank) {
+  background: transparent;
+}
+
+/* Lines that ran from edge to edge of a page or a card, each on one side of a box: above the
+   prompt box under a page, under the Live preview page's address row, between two rows of a
+   settings card. Space parts these, as it parts the islands. */
+html.tnt-on:not(#tnt):not(#pg) .layout:not(.threads-mode) > footer.composer {
+  border-top: 0;
+}
+html.tnt-on:not(#tnt):not(#pg) .lpp-chrome {
+  border-bottom: 0;
+}
+html.tnt-on:not(#tnt):not(#pg) #settingsPage .set-row {
+  border-top: 0;
+}
+html.tnt-on:not(#tnt):not(#pg) #settingsPage .settings-tabs {
+  border-bottom: 0;
+}
+
+/* Agents and history: the line under an agent's head row, the line down the side column and the
+   rule above each of its sections. */
+html.tnt-on:not(#tnt):not(#pg) .ap-head {
+  border-bottom: 0;
+}
+html.tnt-on:not(#tnt):not(#pg) .ap-side {
+  border-left: 0;
+}
+html.tnt-on:not(#tnt):not(#pg) .ap-sec {
+  border-top: 0;
+}
+
+/* A page that scrolls ran straight into the top bar and the window's lower edge, where its cards
+   were cut off in a line. The last 12 px at both ends fade out instead. At rest nothing is faded:
+   the fade lies inside the page's own padding (14 px or more at both ends). */
+html.tnt-on:not(#tnt):not(#pg) :is(#settingsPage, .layout.devices-mode > .dv-page) {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 12px,
+    #000 calc(100% - 12px),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 12px,
+    #000 calc(100% - 12px),
+    transparent
+  );
+}
+
+/* The Skills page's list scrolls inside the page and has no padding of its own: it gets 12 px at
+   its end for the fade to lie in, so the last card is whole when the list is scrolled to its end. */
+html.tnt-on:not(#tnt):not(#pg) .skills-library {
+  padding-bottom: 12px;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 var(--tnt-fade-top),
+    #000 calc(100% - 12px),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 var(--tnt-fade-top),
+    #000 calc(100% - 12px),
+    transparent
+  );
+
+  /* At its upper end the list has no room for a fade to lie in, and its first card must be whole
+     at rest. So the fade there follows the scroll: none at the top, 12 px once the list has moved
+     24 px. It is tied to the scroll position, not to time, so nothing runs while the list rests. */
+  animation: tnt-fade-top linear both;
+  animation-timeline: scroll(self);
+  animation-range: 0 24px;
+}
+@property --tnt-fade-top {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes tnt-fade-top {
+  from {
+    --tnt-fade-top: 0px;
+  }
+  to {
+    --tnt-fade-top: 12px;
+  }
+}
+
+/* While a page fades into Threads or back, the thread list keeps still: on Threads it stands in
+   the frame's own slot, on every other page in the old navigation's column, and both carry the
+   one name the page cross-fade leaves in place. */
+html.vt-page .layout.threads-mode > .tnt-list {
+  view-transition-name: tn-nav;
+}
+
+/* A thin scroll bar with no color of its own is drawn by the system: a pale band with a hard edge
+   down the side of the area it scrolls (seen on the Skills page in a low window). These areas
+   asked for the thin bar and named no color; they get the quiet one every other area has. */
+html.tnt-on:not(#tnt):not(#pg)
+  :is(.skills-library, .skills-agent-list, .sk-d-scroll, .lp-blank, .lp-errs-list, .tnai-bg-pop) {
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+
+/* What opens over the page comes in with a short fade instead of appearing at once. */
+@keyframes tnt-rise {
+  from {
+    opacity: 0;
+  }
+}
+.tnt-menu.tnt-menu-full:not([hidden]) {
+  animation: tnt-rise 0.16s var(--pg-ease);
+}
+
+/* A side column that is shown or hidden, and a change of look: the page before fades into the
+   page after (TnaiMotion.swap, kind "fold"). The top bar keeps still. */
+html.vt-fold header.top {
+  view-transition-name: tn-top;
+}
+html.vt-fold::view-transition-old(root) {
+  animation: tn-vt-out 0.07s var(--pg-ease) both;
+}
+html.vt-fold::view-transition-new(root) {
+  animation: tn-vt-fade 0.12s var(--pg-ease) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tnt-menu.tnt-menu-full:not([hidden]) {
+    animation: none;
+  }
+}
+
+/* ---------------------------------------------------------------- the three-dots menu */
+/* One rhythm for the list, even and symmetrical.
+   The rule, in numbers: the same room on all four sides (--pad, plus the 1px edge);
+   every row, the search field and the look switch one height (--row); a group label one height
+   (--label) with its text in the middle; one inset (--inset) for icons, label text and the first
+   swatch; boxes run from edge to edge of the padding. Nothing is placed by a one-off margin.
+   What opens over the page is the islands' own material, only denser (user: "Menu appears off
+   themed or off color"). */
+.tnt-menu.tnt-menu-full {
+  --row: 30px;
+  --label: 28px;
+  --inset: 10px;
+  --pad: 10px;
+  --step: 4px;
+  position: fixed;
+  z-index: 60;
+  width: 300px;
+  max-height: calc(100vh - 80px);
+  overflow: hidden auto;
+  box-sizing: border-box;
+  padding: var(--pad);
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r);
+  background: var(--tnt-over);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  box-shadow: var(--pg-shadow);
+  color: var(--pg-text);
+  font: 13px/1 var(--pg-sans);
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+.tnt-menu-full[hidden],
+.tnt-menu-full [hidden] {
+  display: none !important;
+}
+
+/* The search field. Its padding is one pixel less than a row's: the field has a 1px edge, and its
+   icon must stand in the icons' column. */
+.tnt-menu-full .tnt-menu-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--row);
+  margin: 0 0 var(--step);
+  padding: 0 calc(var(--inset) - 1px);
+  box-sizing: border-box;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text-3);
+  cursor: text;
+}
+.tnt-menu-full .tnt-menu-search:focus-within {
+  border-color: rgba(var(--pg-accent-rgb), 0.6);
+  box-shadow: 0 0 0 3px rgba(var(--pg-accent-rgb), 0.13);
+}
+.tnt-menu-full .tnt-menu-search svg {
+  flex: none;
+  display: block;
+}
+
+/* The field lights up, so the bare text box inside draws nothing of its own (one highlight per
+   field; the app's ring rule in 07 would add a second one). */
+html.tnt-on:not(#tnt):not(#pg) .tnt-menu-search input,
+html.tnt-on:not(#tnt):not(#pg) .tnt-menu-search input:focus-visible {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none !important;
+  box-shadow: none !important;
+  background: none;
+  color: var(--pg-text);
+  font: 13px/1 var(--pg-sans);
+}
+.tnt-menu-full .tnt-menu-search input::placeholder {
+  color: var(--pg-text-3);
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-menu-full .tnt-menu-search kbd {
+  flex: none;
+  margin: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 6px;
+  background: var(--pg-panel-2);
+  box-shadow: none;
+  color: var(--pg-text-2);
+  font: 11px/1.3 var(--pg-mono);
+  white-space: nowrap;
+}
+
+/* Groups, labels and rows. */
+.tnt-menu-full .tnt-menu-group {
+  margin: 0;
+  padding: 0;
+}
+.tnt-menu-full .tnt-menu-label {
+  display: flex;
+  align-items: center;
+  height: var(--label);
+  margin: 0;
+  padding: 0 var(--inset);
+  color: var(--pg-text-3);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.tnt-menu-full .tnt-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: var(--row);
+  margin: 0;
+  padding: 0 var(--inset);
+  box-sizing: border-box;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  color: var(--pg-text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tnt-menu-full .tnt-menu-row:hover,
+.tnt-menu-full .tnt-menu-row:focus-visible {
+  outline: none;
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+}
+/* under the pointer only; the pressed or chosen state keeps its own surface */
+.tnt-menu-full .tnt-menu-row:hover {
+  background: var(--pg-panel-hover);
+}
+.tnt-menu-full .tnt-menu-row svg {
+  flex: none;
+  display: block;
+}
+.tnt-menu-full .tnt-menu-row span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* a shortcut at a row's end is plain small text; the search field's is the app's own key chip */
+.tnt-menu-full .tnt-menu-row .tnt-menu-key {
+  flex: none;
+  color: var(--pg-text-3);
+  font: 11.5px var(--pg-mono);
+}
+.tnt-menu-full .tnt-menu-none {
+  display: flex;
+  align-items: center;
+  height: var(--row);
+  margin: 0;
+  padding: 0 var(--inset);
+  color: var(--pg-text-3);
+  font-size: 12.5px;
+}
+
+/* The look switch (Dark and Light) of the Look row in Settings › General › Color. */
+.tnt-menu-seg {
+  display: flex;
+  height: 30px;
+  margin: 0 0 4px;
+  padding: 2px;
+  box-sizing: border-box;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+}
+.tnt-menu-seg button {
+  flex: 1;
+  min-width: 0;
+  height: auto;
+  margin: 0;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--pg-text-3);
+  font: 12.5px/1 var(--pg-sans);
+  cursor: pointer;
+}
+.tnt-menu-seg button:hover {
+  color: var(--pg-text);
+}
+.tnt-menu-seg button[aria-pressed='true'] {
+  background: var(--pg-panel-2);
+  box-shadow: inset 0 0 0 1px var(--pg-line-2);
+  color: var(--pg-text);
+}
+.tnt-menu-seg button:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+
+/* ---------------------------------------------------------------- Settings › General › Color */
+/* The Look row (124) sits above the accent row. The two accents the thread layout does not offer
+   (blue is "finished", orange is "needs you") leave the picker unless one of them is the saved
+   choice. */
+.tnt-look-row .tnt-menu-seg {
+  flex: none;
+  width: 168px;
+  margin: 0;
+}
+html.tnt-on:not(#tnt):not(#pg)
+  .tnai-accent-options
+  label:has(input[value='blue'], input[value='sunset']):not(:has(input:checked)) {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- beyond tokens, part by part */
+/* Each block below is something a page drew with a color written by hand, or in the accent, where
+   the two looks need another. Nothing here moves or resizes anything. */
+
+/* Send is one button on every page: from the pale accent to the accent with dark ink in Dark, the
+   darker accent with white in Light (27 sets the same on the Threads page). */
+html.tnt-on:not(#tnt):not(#pg) .composebox .send {
+  background: var(--tnt-send);
+
+  /* the label and the arrow are drawn by the app in this token (07) */
+  --pg-on-accent: var(--tnt-on-send);
+}
+
+/* The top bar's logo is the white one. On the off-white ground the dark one takes its place. */
+html.tnt-on:not([data-theme='dark']):not(#tnt):not(#pg) .top .brand .pg-logo {
+  content: url('../assets/logo-dark.png');
+}
+
+/* Skills, Accounts and Usage: their group cards carried a wash of the accent in one corner. In
+   these looks a surface is neutral, and the accent stays on what you press and what is chosen. */
+html.tnt-on:not(#tnt):not(#pg) .skills-group,
+html.tnt-on:not(#tnt):not(#pg) .skills-page .sk-agents,
+html.tnt-on:not(#tnt):not(#pg) #settingsPage #tnaiAccountsMount .ac-tool,
+html.tnt-on:not(#tnt):not(#pg) .uz-hero {
+  background: var(--pg-panel);
+}
+
+/* Live preview: the stage was a purple-black with a glow of the accent on top. Dark keeps a
+   neutral well with the same dot grid. */
+html.tnt-on[data-theme='dark']:not(#tnt):not(#pg) .lpp-stage {
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.07) 1px, transparent 1.4px) 0 0/18px 18px,
+    rgba(0, 0, 0, 0.28);
+}
+
+/* Light only. These parts were wells made by laying black over the dark ground (14% to 22%, and
+   the Live preview stage at 60%): on off-white that is a gray slab with faint text on it. They
+   become the mock's light well, a warm tint a step under the ground. */
+html.tnt-on:not([data-theme='dark']):not(#tnt):not(#pg) {
+  --tnt-well: rgba(60, 50, 40, 0.06);
+}
+html.tnt-on:not([data-theme='dark']):not(#tnt):not(#pg) .lpp-stage {
+  background:
+    radial-gradient(circle, rgba(50, 50, 70, 0.12) 1px, transparent 1.4px) 0 0/18px 18px,
+    var(--tnt-well);
+}
+html.tnt-on:not([data-theme='dark']):not(#tnt):not(#pg) .lp-stage,
+html.tnt-on:not([data-theme='dark']):not(#tnt):not(#pg) .lpp-omni,
+html.tnt-on:not([data-theme='dark']):not(#tnt):not(#pg) .lp-browser .lp-url,
+html.tnt-on:not([data-theme='dark']):not(#tnt):not(#pg) .sk-md,
+html.tnt-on:not([data-theme='dark']):not(#tnt):not(#pg) .sk-md pre,
+html.tnt-on:not([data-theme='dark']):not(#tnt):not(#pg) .set-foot,
+html.tnt-on:not([data-theme='dark']):not(#tnt):not(#pg) .sa-meta {
+  background: var(--tnt-well);
+}
+
+/* The rows a switch reveals, on every settings page but Agents, whose cards give those rows the
+   card's own surface (25). The :where() keeps this from outranking that. */
+html.tnt-on:not([data-theme='dark']):not(#tnt):not(#pg)
+  :where(.set-sub:not(#settingsPanel-agents .set-sub)) {
+  background: var(--tnt-well);
+}
+
+/* A custom agent's card has no fill of its own (25). In Dark its darker well of facts gives it a
+   body; on off-white there is nothing to see it by, so here it is a card like every other. */
+html.tnt-on:not([data-theme='dark']):not(#tnt):not(#pg) .sa-agent {
+  background: var(--pg-panel);
+}
+
+/* Settings › Accounts is not in the list above, on purpose: an account, its usage bars and the
+   "Add account" rows have no fill at all (20, "fewer boxes": one faint line on the left sets an
+   account apart). Named here they got the well as a fill of their own, which won over that rule
+   and drew a square gray block with hard edges on each tool's card. */
+
+/* On the Live preview page two of them lie inside another one; one tint is enough there. */
+html.tnt-on:not([data-theme='dark']):not(#tnt):not(#pg) .lpp-stage .lp-stage,
+html.tnt-on:not([data-theme='dark']):not(#tnt):not(#pg) .lpp-omni .lp-url {
+  background: transparent;
+}
+
+/* ---------------------------------------------------------------- The Terminal page in the frame */
+/* The thread list is the one list of agents: the page is the threads, a divider and Live preview. */
+html.tnt-on:not(#tnt):not(#pg) #terminalView.tp-on:not(.tp-stack) {
+  grid-template-columns: minmax(0, var(--tp-a, 43fr)) 10px minmax(0, var(--tp-b, 57fr));
+}
+html.tnt-on:not(#tnt):not(#pg) #terminalView.tp-on > .terminal-content {
+  grid-column: 1;
+}
+html.tnt-on:not(#tnt):not(#pg) #terminalView.tp-on:not(.tp-stack) > .tp-divider {
+  grid-column: 2;
+}
+html.tnt-on:not(#tnt):not(#pg) #terminalView.tp-on:not(.tp-stack) > .tp-preview {
+  grid-column: 3;
+}
+
+/* Narrow page: the preview under the terminal, both in the one column that is left. */
+html.tnt-on:not(#tnt):not(#pg) #terminalView.tp-stack {
+  grid-template-columns: minmax(0, 1fr);
+}
+html.tnt-on:not(#tnt):not(#pg) #terminalView.tp-stack > :is(.tp-divider, .tp-preview) {
+  grid-column: 1;
+}
+
+/* The page's top row. Its title keeps its width, so the workspace tabs never lie over it, and the
+   old subtitle ("Readable output for every run") goes: the row has the tabs, the add buttons, the
+   view buttons and the text size to carry beside a list that is wider than the old navigation. */
+html.tnt-on:not(#tnt):not(#pg) #terminalView .terminal-toolbar > div:first-child {
+  flex: none;
+  margin-right: 12px;
+}
+html.tnt-on:not(#tnt):not(#pg) #terminalView .terminal-toolbar .terminal-subtitle {
+  display: none;
+}
+html.tnt-on:not(#tnt):not(#pg) #terminalView .terminal-toolbar .terminal-tools {
+  min-width: 0;
+}
+
+/* All threads beside Live preview (135 sets the two numbers). This rule stands here, before
+   33-thread-collapse.css, because the rule there for a closed preview has the same weight and
+   must come later to win. */
+/* Beside Live preview the threads keep their number (otherwise one stood on a page where three
+   were asked for). The preview column has its share of the page, but no more than what is left
+   beside the threads at their smallest width, and never under 320 px, where a page in it could
+   no longer be read. What the threads need: up to three (--tat-wanted, from 135) at 300 px with
+   10 px between them, and the room of two arrows when there are more of them (--tat-more). */
+#terminalView {
+  --tat-arrow-room: 34px;
+  --tat-need: calc(
+    var(--tat-wanted, 1) * 300px + (var(--tat-wanted, 1) - 1) * 10px + var(--tat-more, 0) * 2 *
+      var(--tat-arrow-room)
+  );
+}
+html.tnt-on:not(#tnt):not(#pg) #terminalView.tp-on.tp-pages:not(.tp-stack) {
+  grid-template-columns:
+    minmax(0, 1fr) 10px
+    clamp(320px, calc(100% - var(--tat-need) - 10px), var(--tp-right, 57%));
+}

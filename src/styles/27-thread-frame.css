@@ -1,0 +1,390 @@
+/* Technically Not · the thread layout's frame.
+   Markup comes from src/scripts/118-thread-frame.js. The look:
+   a clean neutral Dark, the app's
+   accent, three soft islands on a darker ground set apart by space. The mock's Light is not here
+   yet: the app itself has no Light look today (32 resolves every theme choice to dark), so it
+   comes with stage 7 of the plan.
+
+   Everything here is scoped to html.tnt-open, a class that is only set while the Threads page
+   shows, or to .threads-mode on the layout. With the setting off neither is ever set, so no rule
+   in this file applies and the app looks as it did. */
+
+/* ---------------------------------------------------------------- the frame's own token set */
+/* The app's surfaces read their colors from the --pg-* tokens. While the Threads page shows, the
+   ground and the neutrals are set to the mock's values, so the top bar, the prompt box and every
+   menu that opens over the page are one look with the islands. The accent is not touched: it keeps
+   following the app's accent choice. Status colors keep their meaning. */
+html.tnt-open:not(#tnt):not(#pg) {
+  --pg-bg-d: #0e0e13;
+  --pg-solid-d: #1b1b22;
+  --pg-bg-l: #e9e7e1;
+  --pg-tint: 220, 220, 232;
+  --pg-tint-l: 50, 50, 70;
+  --tnt-gap: 12px;
+  --tnt-pad: 12px;
+  --tnt-list-w: 260px;
+}
+html.tnt-open[data-theme='dark']:not(#tnt):not(#pg) {
+  --pg-panel: rgba(255, 255, 255, 0.045);
+  --pg-panel-2: rgba(255, 255, 255, 0.08);
+  /* what a soft button gets under the pointer: here the value of --pg-panel-2 */
+  --pg-panel-hover: rgba(255, 255, 255, 0.08);
+  --pg-text: #ededf2;
+  --pg-text-2: #bdbdc8;
+  --pg-text-3: #92929e;
+  --pg-text-4: #6b6b77;
+  --pg-aura: 0.55;
+  --tnt-island: #17171c;
+  --tnt-glass: var(--pg-panel);
+  --tnt-over: rgba(32, 32, 40, 0.82);
+  --tnt-aura-1: 90, 85, 120;
+  --tnt-aura-2: 60, 60, 90;
+  --tnt-send: linear-gradient(135deg, rgb(var(--pg-acc2)), rgb(var(--pg-acc)));
+  --tnt-on-send: #160f2a;
+}
+
+/* The ground never follows the accent: the app's aurora in neutral colors. */
+html.tnt-open:not(#tnt):not(#pg) body::before {
+  background:
+    radial-gradient(40% 35% at 70% 20%, rgba(var(--tnt-aura-1), 0.3), transparent 70%),
+    radial-gradient(35% 40% at 20% 80%, rgba(var(--tnt-aura-2), 0.26), transparent 70%);
+}
+
+/* ---------------------------------------------------------------- the page */
+/* The slots are children of .layout and show only on the Threads page. */
+.layout > .tnt-slot {
+  display: none;
+}
+html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode {
+  grid-template-columns: var(--tnt-list-w) minmax(0, 1fr) !important;
+  grid-template-rows: minmax(0, 1fr) auto !important;
+  column-gap: var(--tnt-gap);
+  row-gap: 0;
+  /* The same room on all four sides: an island never touches the top bar's line (found by the
+     touching audit, 2026-10-11). */
+  padding: var(--tnt-pad);
+  box-sizing: border-box;
+}
+html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode.tnt-has-side {
+  /* --tnt-side-w: the width the user dragged the column to (133); without it, the app's own */
+  grid-template-columns:
+    var(--tnt-list-w) minmax(0, 1fr)
+    var(--tnt-side-w, clamp(340px, 31vw, 460px)) !important;
+}
+
+/* Nothing of another page shows: only the slots and the prompt box. */
+html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode > :not(.tnt-slot):not(footer.composer) {
+  display: none !important;
+}
+
+/* The three islands: one soft surface each, parted by space. */
+html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode > .tnt-slot {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r);
+  background: var(--tnt-glass);
+  color: var(--pg-text);
+  font: 14px/1.45 var(--pg-sans);
+}
+html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode > .tnt-slot[hidden] {
+  display: none;
+}
+html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode > .tnt-list {
+  grid-column: 1;
+  grid-row: 1 / -1;
+}
+html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode > .tnt-side {
+  grid-column: 3;
+  grid-row: 1 / -1;
+}
+
+/* The thread and the prompt box under it are one island: the thread is its top, the prompt box
+   its bottom, in a row of its own so it never lies over the thread. */
+html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode > .tnt-main {
+  grid-column: 2;
+  grid-row: 1;
+  border-bottom: 0;
+  border-radius: var(--pg-r) var(--pg-r) 0 0;
+}
+html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode > footer.composer {
+  grid-column: 2 !important;
+  grid-row: 2 !important;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 12px 20px 14px;
+  border: 1px solid var(--pg-line);
+  border-top: 0;
+  border-radius: 0 0 var(--pg-r) var(--pg-r);
+  background: var(--tnt-glass);
+}
+
+/* The prompt box and the row under it are as wide as the conversation above them (30 reads the
+   same number), so the two share their left and right edges in a wide window. */
+html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode {
+  --tnt-read-w: 780px;
+}
+html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode > footer.composer > :is(.composebox, .hints) {
+  /* 46 caps the prompt box at 920px for every page with !important, so this needs it too */
+  max-width: var(--tnt-read-w) !important;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* The row under the prompt box (the agents' marks, model, effort, access, the key hints) stands
+   3 px lower than the app's 7, so it has some air under the box. */
+html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode > footer.composer > .hints {
+  margin-top: 10px;
+}
+
+/* Send, as the mock draws it: from the pale accent to the accent with dark ink in Dark, the darker
+   accent with white in Light, so the arrow reads on every accent. */
+html.tnt-open:not(#tnt):not(#pg) .composebox .send {
+  background: var(--tnt-send);
+
+  /* the label and the arrow are drawn by the app in this token (07) */
+  --pg-on-accent: var(--tnt-on-send);
+}
+
+/* ---------------------------------------------------------------- the three-dots menu */
+/* The button sits in the app's top bar, before the window buttons. It is a button, so the bar does
+   not drag the window from it. */
+.tnt-menu-btn {
+  display: none;
+}
+
+/* The top bar's row stands in the middle between the window's edge and the islands. Centered in
+   its own 44px it had 10 px over it and 22 under it (its own 10 and the islands' 12), so it read
+   as pushed against the top. The islands' room is added over it. */
+html.tnt-on:not(#tnt):not(#pg) .top {
+  padding-top: var(--tnt-pad);
+}
+
+/* The window's own buttons are never the part that is cut. In a bar too narrow for everything
+   (768 px at full scale: Close stood 26 px outside the window) the project chip gives way: its
+   word "Workspace" leaves whole first, and after that the project's name may end in "…". The
+   right side of the bar keeps its width. */
+html.tnt-on:not(#tnt):not(#pg) .top .top-left {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+html.tnt-on:not(#tnt):not(#pg) .top .project {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+html.tnt-on:not(#tnt):not(#pg) .top .project #projectCrumb {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html.tnt-on:not(#tnt):not(#pg) .top .top-right {
+  flex: none;
+}
+@media (max-width: 800px) {
+  html.tnt-on:not(#tnt):not(#pg) .top .project > .pd + span {
+    display: none;
+  }
+
+  /* and the chip stands a little nearer the mark, so a usual project name is drawn whole */
+  html.tnt-on:not(#tnt):not(#pg) .top .project {
+    margin-left: 4px;
+  }
+}
+html.tnt-on:not(#tnt):not(#pg) .top .tnt-menu-btn {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  color: var(--pg-text-2);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+html.tnt-on:not(#tnt):not(#pg) .top .tnt-menu-btn:hover,
+html.tnt-on:not(#tnt):not(#pg) .top .tnt-menu-btn[aria-expanded='true'] {
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+}
+/* under the pointer only; the pressed or chosen state keeps its own surface */
+html.tnt-on:not(#tnt):not(#pg) .top .tnt-menu-btn:hover {
+  background: var(--pg-panel-hover);
+}
+html.tnt-on:not(#tnt):not(#pg) .top .tnt-menu-btn:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+html.tnt-on:not(#tnt):not(#pg) .top .tnt-menu-btn svg {
+  display: block;
+}
+
+/* One rhythm for the list (even and symmetrical): one padding
+   on all four sides, every row one height, a group label one height with its text in the middle,
+   one inset for icons and one for text. What opens over the page is the islands' own material,
+   only denser. */
+.tnt-menu {
+  --row: 30px;
+  --label: 28px;
+  --inset: 10px;
+  position: fixed;
+  z-index: 60;
+  width: 264px;
+  max-height: calc(100vh - 80px);
+  overflow: hidden auto;
+  box-sizing: border-box;
+  padding: 11px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r);
+  background: var(--tnt-over);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  box-shadow: var(--pg-shadow);
+  color: var(--pg-text);
+  font: 13px/1 var(--pg-sans);
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+.tnt-menu[hidden] {
+  display: none;
+}
+.tnt-menu-label {
+  display: flex;
+  align-items: center;
+  height: var(--label);
+  padding: 0 var(--inset);
+  color: var(--pg-text-3);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.tnt-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: var(--row);
+  margin: 0;
+  padding: 0 var(--inset);
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  color: var(--pg-text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tnt-menu-row:hover,
+.tnt-menu-row:focus-visible {
+  outline: none;
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+}
+/* under the pointer only; the pressed or chosen state keeps its own surface */
+.tnt-menu-row:hover {
+  background: var(--pg-panel-hover);
+}
+.tnt-menu-row svg {
+  flex: none;
+  display: block;
+}
+.tnt-menu-row span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tnt-menu-row kbd {
+  flex: none;
+  color: var(--pg-text-4);
+  font: 11.5px var(--pg-mono);
+}
+
+/* the app draws a key as a boxed chip; in a menu row it is plain small text at the row's end */
+.tnt-menu-row kbd {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  text-decoration: none;
+}
+
+/* A narrow window has no room for the thread and the side island next to each other: the side
+   island takes the thread's place, and its close button brings the thread back. */
+@media (max-width: 1140px) {
+  html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode.tnt-has-side {
+    grid-template-columns: var(--tnt-list-w) minmax(0, 1fr) !important;
+  }
+  html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode.tnt-has-side > .tnt-main,
+  html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode.tnt-has-side > footer.composer {
+    display: none !important;
+  }
+  html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode.tnt-has-side > .tnt-side {
+    grid-column: 2;
+  }
+}
+
+/* ---------------------------------------------------------------- the list on every other page */
+/* The thread layout is the app, so the old left navigation is never seen. On every page but
+   Threads its own items are hidden and the thread list (moved in by 118) stands in its column, as
+   the same island. The page beside it keeps its own layout. */
+html.tnt-on:not(#tnt):not(#pg) {
+  --tnt-gap: 12px;
+  --tnt-pad: 12px;
+  --tnt-list-w: 260px;
+}
+html.tnt-on:not(#tnt):not(#pg) .layout:not(.threads-mode) {
+  --nav-width: calc(var(--tnt-list-w) + var(--tnt-pad)) !important;
+}
+html.tnt-on:not(#tnt):not(#pg) .layout:not(.threads-mode) > .sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: var(--tnt-pad) 0 var(--tnt-pad) var(--tnt-pad);
+  border: 0;
+  background: none;
+  overflow: hidden;
+}
+html.tnt-on:not(#tnt):not(#pg) .layout > .sidebar > :not(.tnt-list) {
+  display: none !important;
+}
+html.tnt-on:not(#tnt):not(#pg) .layout > .sidebar > .tnt-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r);
+  background: var(--tnt-glass);
+  color: var(--pg-text);
+  font: 14px/1.45 var(--pg-sans);
+}
+
+/* The old navigation's resize handle has nothing to act on. Nor has the old file rail's, which
+   still took 6 px at the window's right edge, so a page stood nearer the left edge than the right
+   (measured on the Terminal page, 2026-10-12: 18 and 23). */
+html.tnt-on:not(#tnt):not(#pg) .layout > .nav-resizer,
+html.tnt-on:not(#tnt):not(#pg) .layout > .workspace-resizer {
+  display: none !important;
+}
+
+/* In a narrow window the list column is as wide as the old navigation had been (216 with its
+   room at the edge), so a page beside it keeps the width it was laid out for: at the smallest
+   window Settings' row of tabs needs every pixel of it. */
+@media (max-width: 1140px) {
+  html.tnt-on:not(#tnt):not(#pg) {
+    --tnt-list-w: 204px;
+  }
+}

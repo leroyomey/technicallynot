@@ -1,0 +1,305 @@
+/* Technically Not · the thread layout's left island: New thread and the list of threads.
+   Markup comes from src/scripts/119-thread-list.js;
+   the tokens are the frame's (27-thread-frame.css). Every rule is under .tnt-lst, which exists only
+   inside the frame's list slot, so nothing here applies while the thread layout is off.
+
+   One rhythm (the mock's rule): one padding on all four sides of the island, one inset for every
+   row, heading and button, one height for every heading. No rule between rows: a row is set apart
+   by space, and the open one by a soft fill and a short accent bar. */
+.tnt-lst {
+  --pad: 12px;
+  --inset: 10px;
+  --face: 44px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: var(--pad);
+  box-sizing: border-box;
+}
+.tnt-lst * {
+  box-sizing: border-box;
+}
+
+/* New thread: the island's one button. Lit in the accent while the next prompt starts an agent. */
+.tnt-lst .tnt-new {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 38px;
+  margin: 0;
+  padding: 0 var(--inset);
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+  font: 500 13.5px/1 var(--pg-sans);
+  cursor: pointer;
+}
+.tnt-lst .tnt-new svg {
+  flex: none;
+  display: block;
+}
+.tnt-lst .tnt-new:hover:not(:disabled) {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+}
+.tnt-lst .tnt-new[aria-pressed='true'] {
+  border-color: rgba(var(--pg-accent-rgb), 0.5);
+  background: rgba(var(--pg-accent-rgb), 0.22);
+}
+.tnt-lst .tnt-new:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+.tnt-lst .tnt-new:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.tnt-lst-note {
+  flex: none;
+  margin: 8px 0 0;
+  padding: 0 var(--inset);
+  color: var(--pg-text-3);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.tnt-lst-note[hidden] {
+  display: none;
+}
+
+/* The list scrolls inside the island; the button above it stays put. */
+.tnt-threads {
+  flex: 1;
+  min-height: 0;
+  margin-top: 10px;
+  overflow: hidden auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+
+/* A group heading: the project's name and how many threads are open in it. */
+.tnt-proj {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 var(--inset);
+  color: var(--pg-text-3);
+  font: 500 12px/1 var(--pg-sans);
+  letter-spacing: 0.02em;
+}
+.tnt-proj span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tnt-proj em {
+  flex: none;
+  font: 11.5px/1 var(--pg-mono);
+  font-style: normal;
+}
+.tnt-proj:not(:first-child) {
+  margin-top: 12px;
+}
+
+/* A thread is its agent: the device character, the name, a time, and one line of what it is and
+   does. The status color is set once per row and used by the screen, the dot and the line. */
+.tnt-th {
+  --tone: var(--pg-idle);
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--face) minmax(0, 1fr) auto;
+  column-gap: 12px;
+  align-items: center;
+  width: 100%;
+  margin: 0;
+  padding: 8px var(--inset);
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  color: var(--pg-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tnt-th[data-tone='work'] {
+  --tone: var(--pg-work);
+}
+.tnt-th[data-tone='needs'] {
+  --tone: var(--pg-wait);
+}
+.tnt-th[data-tone='ready'] {
+  --tone: var(--pg-ready);
+}
+.tnt-th[data-tone='err'] {
+  --tone: var(--pg-err);
+}
+.tnt-th:hover {
+  background: var(--pg-panel);
+}
+.tnt-th[aria-selected='true'] {
+  background: linear-gradient(
+    90deg,
+    rgba(var(--pg-accent-rgb), 0.2),
+    rgba(var(--pg-accent-rgb), 0.04)
+  );
+}
+.tnt-th[aria-selected='true']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 2.5px;
+  border-radius: 3px;
+  background: var(--pg-accent);
+}
+.tnt-th:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+.tnt-th b {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tnt-th time {
+  color: var(--pg-text-4);
+  font: 11px/1.3 var(--pg-mono);
+}
+.tnt-th small {
+  grid-column: 2 / 4;
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  margin-top: 1px;
+  color: var(--pg-text-3);
+  font-size: 12.5px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+/* The line shortens with "…"; the word "inferred" after it is shown whole or not at all. */
+.tnt-th-line {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tnt-th[data-tone='needs'] small {
+  color: var(--pg-wait);
+}
+.tnt-th-inf {
+  flex: none;
+  font-style: normal;
+  color: var(--pg-text-4);
+}
+
+/* The device character: stacked pictures of one size (960 x 780). The screen picture is a mask
+   filled with the status color, so a lit screen says how the agent is. It keeps its room before
+   its pictures have loaded. */
+.tnt-face {
+  position: relative;
+  grid-row: 1 / 3;
+  display: block;
+  width: var(--face);
+  aspect-ratio: 960 / 780;
+}
+.tnt-face img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.tnt-face-screen {
+  position: absolute;
+  inset: 0;
+  background: var(--tone);
+  opacity: 0.6;
+  -webkit-mask: var(--tnt-screen) center / 100% 100% no-repeat;
+  mask: var(--tnt-screen) center / 100% 100% no-repeat;
+}
+
+/* the small status dot at the character's foot, ringed in the island's color */
+.tnt-face::after {
+  content: '';
+  position: absolute;
+  right: -1px;
+  bottom: 3px;
+
+  /* a whole number of screen pixels (100, --tnai-screen-px), so every row's dot is drawn the
+     same size */
+  width: round(9px, var(--tnai-screen-px, 1px));
+  height: round(9px, var(--tnai-screen-px, 1px));
+  border-radius: 50%;
+  background: var(--tone);
+  box-shadow: 0 0 0 round(2.5px, var(--tnai-screen-px, 1px)) var(--tnt-island);
+}
+
+/* asleep: nothing runs in this thread */
+.tnt-face[data-face$='asleep'] img,
+.tnt-face[data-face$='asleep'] .tnt-face-screen {
+  filter: saturate(0.4) brightness(0.75);
+}
+
+/* The closed eyes are drawn in a dark ink, for a lit screen. An asleep screen is dimmed, in both
+   looks, so the dark ink was lost on it: there the same picture is shown in a pale ink. */
+.tnt-face[data-face$='asleep'] .tnt-face-eyes {
+  filter: brightness(0) invert(1);
+  opacity: 0.85;
+}
+
+/* A sub-agent that runs in a panel of its own is a thread set in under its lead. */
+.tnt-th.tnt-kid {
+  --face: 34px;
+  padding-left: calc(var(--inset) + 20px);
+}
+
+/* A Claude Code sub-agent has no terminal of its own: a small row under its lead, in the text
+   column, with a dot for its state. */
+.tnt-th.tnt-sub {
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  column-gap: 10px;
+  padding: 4px var(--inset) 4px calc(var(--inset) + var(--face) + 12px);
+}
+.tnt-th.tnt-sub b {
+  color: var(--pg-text-2);
+  font-size: 12.5px;
+  font-weight: 400;
+}
+.tnt-th.tnt-sub small {
+  font-size: 12px;
+}
+.tnt-dot {
+  width: round(8px, var(--tnai-screen-px, 1px));
+  height: round(8px, var(--tnai-screen-px, 1px));
+  border-radius: 50%;
+  background: var(--tone);
+}
+
+/* Nothing running: one sentence, no row. */
+.tnt-lst-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px var(--inset);
+  color: var(--pg-text-3);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.tnt-lst-empty b {
+  color: var(--pg-text-2);
+  font-size: 13.5px;
+  font-weight: 500;
+}

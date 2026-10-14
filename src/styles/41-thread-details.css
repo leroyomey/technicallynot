@@ -1,0 +1,517 @@
+/* Technically Not · an agent's details beside its thread (src/scripts/139-thread-details.js): the
+   total running time, the queued prompts and the sections Now, Sub-agents, Recent activity,
+   Working with, Files, Skills and Setup. It stands in the side column (35), which is an island
+   already, so nothing here draws a box around a part or a line between parts: the sections are set
+   apart by space, and only a block of the agent's own text gets a soft ground. Type sizes, row
+   heights and the inset are the side column's. */
+
+.ttd {
+  --inset: 16px;
+  flex: 1;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 var(--inset) 14px;
+  overflow: hidden auto;
+  color: var(--pg-text-2);
+  font: 400 13px/1.5 var(--pg-sans);
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+.ttd *,
+.ttd *::before,
+.ttd *::after {
+  box-sizing: border-box;
+}
+.ttd [hidden] {
+  display: none !important;
+}
+
+/* ---------------------------------------------------------------- the total running time */
+/* Text color only says how long the session has run: green within the recommended time, yellow
+   getting long, red past it. */
+.ttd-total {
+  margin: 0 0 6px;
+  color: var(--pg-text-3);
+  font: 400 12px/28px var(--pg-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ttd-total[data-age='ok'] {
+  color: var(--pg-work);
+}
+.ttd-total[data-age='long'] {
+  color: var(--pg-wait);
+}
+.ttd-total[data-age='over'] {
+  color: var(--pg-err);
+}
+
+/* ---------------------------------------------------------------- a section and its heading */
+.ttd-sec {
+  margin: 0 0 10px;
+}
+
+/* The heading is the fold button: the small heading of the thread list's groups, with a mark that
+   turns when the section is open. */
+html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-head:not(#lp),
+.ttd button.ttd-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--pg-text-3);
+  font: 500 12px/1 var(--pg-sans);
+  letter-spacing: 0.02em;
+  text-align: left;
+  cursor: pointer;
+}
+.ttd-head > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ttd-head > em {
+  flex: 1;
+  color: var(--pg-text-3);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+.ttd-head::after {
+  content: '›';
+  flex: none;
+  width: 14px;
+  color: var(--pg-text-3);
+  font: 400 14px/1 var(--pg-sans);
+  text-align: center;
+  transition: transform 0.15s;
+}
+.ttd-head[aria-expanded='true']::after {
+  transform: rotate(90deg);
+}
+html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-head:not(#lp):hover,
+.ttd button.ttd-head:hover {
+  color: var(--pg-text);
+}
+html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-head:not(#lp):focus-visible,
+.ttd button.ttd-head:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+
+/* An opened section comes in softly, it does not jump. */
+.ttd-body {
+  padding: 2px 0 4px;
+  animation: ttd-in 0.16s ease-out;
+}
+@keyframes ttd-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ttd-body {
+    animation: none;
+  }
+  .ttd-head::after {
+    transition: none;
+  }
+}
+
+/* One line of words: an empty section, or a remark over a list. */
+.ttd-note {
+  margin: 0;
+  color: var(--pg-text-3);
+  font: 400 12.5px/1.5 var(--pg-sans);
+  overflow-wrap: anywhere;
+}
+.ttd-links + .ttd-note,
+.ttd-note + .ttd-links {
+  margin-top: 6px;
+}
+
+/* ---------------------------------------------------------------- label and value rows */
+.ttd-kv {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 14px;
+  margin: 0;
+  font: 400 13px/1.5 var(--pg-sans);
+}
+.ttd-kv dt {
+  color: var(--pg-text-3);
+}
+.ttd-kv dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--pg-text);
+  overflow-wrap: anywhere;
+}
+.ttd-kv .ttd-kv-wide {
+  grid-column: 1 / -1;
+}
+.ttd-kv dd.ttd-kv-wide {
+  margin-top: -3px;
+}
+
+/* A long value shows three lines; "View more" appears only when there is more. */
+.ttd-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.ttd-kv dd.ttd-open .ttd-clamp {
+  display: block;
+}
+html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-more:not(#lp),
+.ttd button.ttd-more {
+  display: none;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  margin: 2px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--pg-accent-2);
+  font: 400 12px/1.5 var(--pg-sans);
+  cursor: pointer;
+}
+html.tnt-on:not(#tnt):not(#pg) .ttd dd[data-over] > button.ttd-more:not(#lp),
+.ttd dd[data-over] > button.ttd-more {
+  display: inline-block;
+}
+.ttd button.ttd-more:hover {
+  text-decoration: underline;
+}
+
+/* ---------------------------------------------------------------- queued prompts */
+.ttd-queue {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ttd-q {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  min-width: 0;
+}
+html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-q-item:not(#lp),
+.ttd button.ttd-q-item {
+  display: flex;
+  flex: 1 1 100%;
+  align-items: baseline;
+  gap: 8px;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  min-height: 30px;
+  margin: 0 -8px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--pg-text);
+  font: 400 13px/1.5 var(--pg-sans);
+  text-align: left;
+  cursor: pointer;
+}
+html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-q-item:not(#lp):hover,
+.ttd button.ttd-q-item:hover {
+  background: var(--pg-panel-hover);
+}
+.ttd button.ttd-q-item:focus-visible,
+.ttd button.ttd-link:focus-visible,
+.ttd .ttd-q-acts button:focus-visible,
+.ttd button.ttd-text-btn:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+.ttd-q-item > b {
+  flex: none;
+  color: var(--pg-text-3);
+  font: 400 12px/1.5 var(--pg-mono);
+  font-variant-numeric: tabular-nums;
+}
+.ttd-q-item > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ttd-q-item[aria-expanded='true'] > span {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Under a prompt: Send now, Edit and Remove on one Technically Not still holds, or a quiet remark
+   on one the agent already has. */
+.ttd-q-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 4px 22px;
+}
+.ttd-q-note {
+  margin: 0 0 4px 22px;
+  color: var(--pg-text-3);
+  font: 400 12px/1.5 var(--pg-sans);
+}
+html.tnt-on:not(#tnt):not(#pg) .ttd .ttd-q-acts button:not(#lp),
+html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-text-btn:not(#lp),
+.ttd .ttd-q-acts button,
+.ttd button.ttd-text-btn {
+  width: auto;
+  min-width: 0;
+  height: 24px;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--pg-text-2);
+  font: 500 12px/1 var(--pg-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+html.tnt-on:not(#tnt):not(#pg) .ttd .ttd-q-acts button:not(#lp):hover,
+html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-text-btn:not(#lp):hover,
+.ttd .ttd-q-acts button:hover,
+.ttd button.ttd-text-btn:hover {
+  border-color: var(--pg-accent);
+  color: var(--pg-text);
+}
+
+/* ---------------------------------------------------------------- sub-agents */
+.ttd-sub + .ttd-sub {
+  margin-top: 12px;
+}
+.ttd-sub-head {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 2px 9px;
+  color: var(--pg-text);
+  font: 400 13px/1.4 var(--pg-sans);
+}
+.ttd-sub-head > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ttd-sub-head small {
+  grid-column: 2;
+  color: var(--pg-text-3);
+  font: 400 12px/1.4 var(--pg-sans);
+}
+.ttd-dot {
+  /* beside the first line of a task that takes several */
+  align-self: start;
+  margin-top: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pg-idle);
+}
+.ttd-sub[data-status='running'] .ttd-dot,
+.ttd-sub[data-status='starting'] .ttd-dot {
+  background: var(--pg-work);
+}
+.ttd-sub[data-status='done'] .ttd-dot {
+  background: var(--pg-ready);
+}
+.ttd-sub[data-status='failed'] .ttd-dot {
+  background: var(--pg-err);
+}
+.ttd-sub > .ttd-kv,
+.ttd-sub > .ttd-note,
+.ttd-sub > details,
+.ttd-sub > .ttd-text-btn {
+  margin: 6px 0 0 17px;
+}
+.ttd-sub > .ttd-kv {
+  font-size: 12.5px;
+}
+
+/* Remove, under a sub-agent stuck on Starting: in line with the rest of its rows (the button
+   rule above sets no margin, and it wins over the plain rule). */
+html.tnt-on:not(#tnt):not(#pg) .ttd .ttd-sub > button.ttd-text-btn:not(#lp) {
+  margin: 8px 0 0 17px;
+}
+.ttd-sub details {
+  color: var(--pg-text-2);
+  font: 400 12px/1.5 var(--pg-sans);
+}
+.ttd-sub summary {
+  color: var(--pg-accent-2);
+  cursor: pointer;
+}
+
+/* The agent's own words, as it wrote them: the one soft ground in this part. */
+.ttd-pre {
+  max-height: 180px;
+  margin: 6px 0 0;
+  padding: 9px 10px;
+  overflow: auto;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+  font: 400 12px/1.5 var(--pg-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+
+/* ---------------------------------------------------------------- rows that lead somewhere */
+.ttd-links {
+  display: grid;
+  gap: 2px;
+}
+html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-link:not(#lp),
+.ttd .ttd-link {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  min-height: 30px;
+  margin: 0 -8px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  box-shadow: none;
+  color: var(--pg-text);
+  font: 400 13px/1.5 var(--pg-sans);
+  text-align: left;
+}
+.ttd button.ttd-link {
+  cursor: pointer;
+}
+html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-link:not(#lp):hover,
+.ttd button.ttd-link:hover {
+  background: var(--pg-panel-hover);
+}
+.ttd-link > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A row that is not a button is a sub-agent: its few words of state are never cut, its task is. */
+.ttd div.ttd-link > small {
+  max-width: none;
+}
+.ttd-link > small {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  color: var(--pg-text-3);
+  font: 400 11.5px/1.5 var(--pg-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- skills */
+.ttd-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ttd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 12px;
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+  font: 400 12px/1 var(--pg-sans);
+}
+.ttd-chip > i {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pg-idle);
+}
+.ttd-chip[data-state='in-use'] > i {
+  background: var(--pg-work);
+}
+.ttd-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- recent activity */
+.ttd-timeline {
+  display: grid;
+  gap: 2px;
+  max-height: 360px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden auto;
+  list-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+.ttd-timeline li {
+  display: grid;
+  /* the time takes the room it needs ("06:07:07 PM" where the clock has 12 hours): in a fixed
+     column its end lay over the first letters of the step */
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0 10px;
+  padding: 4px 0;
+  color: var(--pg-text-2);
+  font: 400 12.5px/1.45 var(--pg-sans);
+}
+.ttd-timeline time {
+  grid-row: 1 / span 2;
+  color: var(--pg-text-3);
+  font: 400 11.5px/1.6 var(--pg-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ttd-timeline b {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pg-text);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ttd-timeline span {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ttd-timeline span:empty {
+  display: none;
+}

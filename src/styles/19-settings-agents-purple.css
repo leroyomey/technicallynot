@@ -1,0 +1,601 @@
+/* Technically Not · 19-settings-agents-purple.css — purple glass layout for Settings › Agents: a sub-nav of topics (glass card, icon tile, live
+   state line) beside one panel per topic; each group's head sits above its glass rows, related rows are split by small captions, long help in a
+   "?" tip (Floating UI); custom agents as a gallery of cards. Settings › Accounts and Settings › Usage are in 20-usage-accounts-purple.css.
+   Values: glass 18px, controls 10px, --pg-* colors only, 11-16px type. data-pg: the remap engine skips it.
+   Markup: 22 (sub-nav, panes, captions, tips, gallery); rows from 51, 54, 63, 76, 84, 89 and 43. The control-column cap at the end of 14 still applies. */
+
+/* ---------- frame: sub-nav + stage ---------- */
+:root:not(#pg) #settingsPanel-agents {
+  gap: 18px;
+}
+:root:not(#pg) .sa-shell {
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+:root:not(#pg) .sa-nav {
+  position: sticky;
+  top: 12px;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r);
+  background: var(--pg-panel);
+  backdrop-filter: var(--pg-glass-blur);
+  -webkit-backdrop-filter: var(--pg-glass-blur);
+}
+:root:not(#pg) .sa-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--pg-text-2);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+:root:not(#pg) .sa-item:hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+:root:not(#pg) .sa-item:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+:root:not(#pg) .sa-item[aria-selected='true'] {
+  background: linear-gradient(90deg, var(--pg-accent-soft), transparent);
+  color: var(--pg-text);
+}
+:root:not(#pg) .sa-item[aria-selected='true']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 2.5px;
+  border-radius: 3px;
+  background: var(--pg-accent);
+}
+:root:not(#pg) .sa-ic {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--pg-panel-2);
+  color: var(--pg-text-3);
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+:root:not(#pg) .sa-item[aria-selected='true'] .sa-ic {
+  background: var(--pg-accent-soft);
+  color: var(--pg-accent-2);
+}
+:root:not(#pg) .sa-tx {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+:root:not(#pg) .sa-tx b {
+  overflow: hidden;
+  font: 500 13.5px/1.3 var(--pg-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:root:not(#pg) .sa-tx small {
+  overflow: hidden;
+  color: var(--pg-text-3);
+  font: 400 11.5px/1.35 var(--pg-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* One topic at a time, at a calm reading width; the gallery uses the full width. */
+:root:not(#pg) .sa-stage {
+  min-width: 0;
+  max-width: 980px;
+}
+:root:not(#pg) .sa-stage:has(> .sa-pane[data-sa-pane='custom']:not([hidden])) {
+  max-width: none;
+}
+:root:not(#pg) .sa-pane {
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+}
+:root:not(#pg) .sa-pane[hidden] {
+  display: none;
+}
+/* Section switch: only the stage cross-fades (TnaiMotion.swap 'sa'); 100 skips the transition under reduced motion. */
+html.vt-sa .sa-stage {
+  view-transition-name: sa-stage;
+}
+html.vt-sa::view-transition-old(root),
+html.vt-sa::view-transition-new(root) {
+  animation: none;
+}
+html.vt-sa::view-transition-group(sa-stage) {
+  animation-duration: 0s;
+}
+html.vt-sa::view-transition-old(sa-stage) {
+  animation: sa-out 120ms var(--pg-ease) both;
+}
+html.vt-sa::view-transition-new(sa-stage) {
+  animation: sa-in 220ms var(--pg-ease) both;
+}
+@keyframes sa-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes sa-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* ---------- a group: head above, glass rows below ---------- */
+:root:not(#pg) #settingsPage #settingsPanel-agents .set-group {
+  gap: 18px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+:root:not(#pg) #settingsPage #settingsPanel-agents .set-group-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  min-height: 0;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+}
+:root:not(#pg) #settingsPage #settingsPanel-agents .set-group-head > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+:root:not(#pg) #settingsPage #settingsPanel-agents .set-group-head h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--pg-text);
+  font: 500 16px/1.3 var(--pg-sans);
+}
+:root:not(#pg) #settingsPage #settingsPanel-agents .set-group-head p {
+  margin-top: 3px;
+  color: var(--pg-text-3);
+  font: 400 12.5px/1.5 var(--pg-sans);
+}
+/* Rows: each direct child (a switched-off .set-sub is display:none, so the row before it closes the group)  of the card is its own glass segment, so a caption can split the card into short groups. */
+:root:not(#pg) #settingsPage #settingsPanel-agents .set-card {
+  display: block;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+/* The card is only a wrapper here (captions + glass segments), so 07's cursor spotlight border must not draw: it showed as a stray box around
+   the caption and the segments while the pointer was over the card (hovering, selecting text). */
+:root:not(#pg) #settingsPanel-agents .set-card::before {
+  content: none;
+}
+:root:not(#pg) #settingsPanel-agents .set-card > :not(.sa-cap) {
+  border: 1px solid var(--pg-line);
+  border-width: 0 1px;
+  background: var(--pg-panel);
+  backdrop-filter: var(--pg-glass-blur);
+  -webkit-backdrop-filter: var(--pg-glass-blur);
+}
+:root:not(#pg) #settingsPanel-agents .set-card > .set-sub {
+  background: linear-gradient(rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.14)), var(--pg-panel);
+}
+:root:not(#pg) #settingsPanel-agents .set-card > :not(.sa-cap):is(:first-child, .sa-cap + *) {
+  border-top-width: 1px;
+  border-top-left-radius: 14px;
+  border-top-right-radius: 14px;
+}
+:root:not(#pg)
+  #settingsPanel-agents
+  .set-card
+  > :not(.sa-cap):is(
+    :last-child,
+    :has(+ .sa-cap),
+    :has(+ .set-sub.off:last-child),
+    :has(+ .set-sub.off + .sa-cap)
+  ) {
+  border-bottom-width: 1px;
+  border-bottom-left-radius: 14px;
+  border-bottom-right-radius: 14px;
+  overflow: hidden;
+}
+:root:not(#pg) #settingsPanel-agents .set-card > .sa-cap + .set-row,
+:root:not(#pg) #settingsPanel-agents .set-card > .sa-cap + * > .set-row:first-child {
+  border-top: 0;
+}
+:root:not(#pg) #settingsPanel-agents .set-row {
+  gap: 20px;
+  min-height: 62px;
+  padding: 12px 18px;
+} /* 62 = name + one help line: rows with and without help are the same height */
+:root:not(#pg) #settingsPanel-agents .set-sub > .set-row {
+  padding-left: 36px;
+}
+:root:not(#pg) #settingsPanel-agents .set-sub > .set-row::before {
+  left: 20px;
+}
+:root:not(#pg) #settingsPanel-agents .set-text b {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+:root:not(#pg) #settingsPanel-agents .set-text small {
+  line-height: 1.45;
+}
+:root:not(#pg) .sa-cap {
+  margin: 18px 4px 8px;
+  color: var(--pg-text-3);
+  font: 500 11.5px/1.3 var(--pg-sans);
+  letter-spacing: 0.02em;
+}
+:root:not(#pg) .set-card > .sa-cap:first-child {
+  margin-top: 0;
+}
+:root:not(#pg) #settingsPage #settingsPanel-agents .set-num {
+  width: 100px;
+} /* fits the largest value (2000000) beside the stepper; 92px cut its last digit */
+/* Units share one column, so the number inputs of a card share both edges ("tokens", "minutes", "hours" differ in width). */
+:root:not(#pg) #settingsPanel-agents .set-ctl > .set-num + em:not(:empty) {
+  min-width: 46px;
+}
+:root:not(#pg) #settingsPanel-agents .set-empty {
+  border-radius: 14px;
+}
+
+/* ---------- "?" help and its tip ---------- */
+:root:not(#pg) .sa-q {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: var(--pg-text-4);
+  cursor: help;
+  transition:
+    color 0.2s,
+    background 0.2s;
+}
+:root:not(#pg) .sa-q:hover,
+:root:not(#pg) .sa-q[aria-describedby] {
+  background: var(--pg-panel-2);
+  color: var(--pg-accent-2);
+}
+/* under the pointer only; the pressed or chosen state keeps its own surface */
+:root:not(#pg) .sa-q:hover {
+  background: var(--pg-panel-hover);
+}
+:root:not(#pg) .sa-q:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 1px;
+}
+:root:not(#pg) .sa-tip {
+  z-index: 60;
+  max-width: 340px;
+  padding: 10px 12px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel-solid);
+  color: var(--pg-text-2);
+  font: 400 12px/1.55 var(--pg-sans);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+:root:not(#pg) .sa-tip[hidden] {
+  display: none;
+}
+
+/* ---------- buttons ---------- */
+:root:not(#pg) .sa-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: none;
+  color: var(--pg-text-2);
+  font: 400 12px var(--pg-sans);
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    color 0.2s,
+    border-color 0.2s;
+}
+:root:not(#pg) .sa-btn:hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+:root:not(#pg) .sa-btn:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 2px;
+}
+:root:not(#pg) .sa-btn.primary {
+  border-color: color-mix(in srgb, var(--pg-accent) 50%, transparent);
+  background: var(--pg-accent-soft);
+  color: var(--pg-text);
+}
+:root:not(#pg) .sa-btn.primary:hover {
+  background: color-mix(in srgb, var(--pg-accent) 32%, transparent);
+}
+:root:not(#pg) .sa-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---------- Custom agents gallery ---------- */
+:root:not(#pg) .sa-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 14px;
+}
+:root:not(#pg) .sa-gallery[hidden] {
+  display: none;
+}
+:root:not(#pg) .sa-agent {
+  --av: var(--pg-accent-2);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r);
+  background: var(--pg-panel);
+  backdrop-filter: var(--pg-glass-blur);
+  -webkit-backdrop-filter: var(--pg-glass-blur);
+  transition: border-color 0.25s;
+}
+:root:not(#pg) .sa-agent:hover {
+  border-color: var(--pg-line-2);
+}
+:root:not(#pg) .sa-agent-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+:root:not(#pg) .sa-av {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid color-mix(in srgb, var(--av) 45%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--av) 20%, transparent);
+  color: var(--av);
+  font: 600 16px var(--pg-sans);
+}
+:root:not(#pg) .sa-agent-tx {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 2px;
+  min-width: 0;
+}
+:root:not(#pg) .sa-agent-tx b {
+  overflow: hidden;
+  color: var(--pg-text);
+  font: 500 14px/1.3 var(--pg-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:root:not(#pg) .sa-agent-tx small {
+  overflow: hidden;
+  color: var(--pg-text-3);
+  font: 400 11.5px/1.35 var(--pg-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:root:not(#pg) .sa-role {
+  display: -webkit-box;
+  margin: -4px 0 0;
+  overflow: hidden;
+  color: var(--pg-text-2);
+  font: 400 12px/1.5 var(--pg-sans);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+:root:not(#pg) .sa-state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 3px 9px;
+  border: 1px solid var(--pg-line);
+  border-radius: 99px;
+  color: var(--pg-text-3);
+  font: 400 11px var(--pg-sans);
+}
+:root:not(#pg) .sa-state i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pg-idle);
+}
+:root:not(#pg) .sa-state.on {
+  border-color: color-mix(in srgb, var(--pg-ready) 35%, transparent);
+  color: var(--pg-text-2);
+}
+:root:not(#pg) .sa-state.on i {
+  background: var(--pg-ready);
+}
+:root:not(#pg) .sa-meta {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.14);
+}
+:root:not(#pg) .sa-meta > div {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+:root:not(#pg) .sa-meta dt {
+  color: var(--pg-text-4);
+  font: 400 11px var(--pg-sans);
+}
+:root:not(#pg) .sa-meta dd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--pg-text-2);
+  font: 400 12px/1.35 var(--pg-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:root:not(#pg) .sa-cli {
+  --cli: var(--pg-text-3);
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--cli);
+}
+:root:not(#pg) .sa-agent .sa-btn {
+  align-self: stretch;
+  margin-top: auto;
+}
+:root:not(#pg) .sa-new {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 196px;
+  padding: 16px;
+  border: 1px dashed var(--pg-line-2);
+  border-radius: var(--pg-r);
+  background: none;
+  color: var(--pg-text-3);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    color 0.2s,
+    background 0.2s;
+}
+:root:not(#pg) .sa-new .tn-ico {
+  width: 34px;
+  height: 34px;
+  padding: 8px;
+  border-radius: 10px;
+  background: var(--pg-accent-soft);
+  color: var(--pg-accent-2);
+  box-sizing: border-box;
+}
+:root:not(#pg) .sa-new b {
+  color: var(--pg-text);
+  font: 500 13.5px var(--pg-sans);
+}
+:root:not(#pg) .sa-new small {
+  max-width: 220px;
+  font: 400 11.5px/1.45 var(--pg-sans);
+}
+:root:not(#pg) .sa-new:hover {
+  border-color: color-mix(in srgb, var(--pg-accent) 50%, transparent);
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+}
+:root:not(#pg) .sa-new:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 2px;
+}
+
+/* ---------- a narrow section (laptops, tablets): the sub-nav becomes a row of tabs above the panel ---------- */
+:root:not(#pg) #settingsPanel-agents {
+  container: sa-panel/inline-size;
+}
+@container sa-panel (max-width:980px) {
+  :root:not(#pg) .sa-shell {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  :root:not(#pg) .sa-nav {
+    position: static;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  :root:not(#pg) .sa-item {
+    padding: 8px 12px;
+  }
+  :root:not(#pg) .sa-ic {
+    display: none;
+  } /* the text keeps the room */
+  :root:not(#pg) .sa-item[aria-selected='true']::before {
+    left: 12px;
+    right: 12px;
+    top: auto;
+    bottom: 0;
+    width: auto;
+    height: 2px;
+  }
+}
+/* A very narrow panel: a wide control (segments, chips, number + unit) moves under its text instead of being cut off or squeezing the text. */
+@container sa-panel (max-width:520px) {
+  :root:not(#pg) #settingsPanel-agents .set-row:has(> :is(.set-seg, .set-chips, .set-ctl)) {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  :root:not(#pg) #settingsPanel-agents .set-row > :is(.set-seg, .set-chips, .set-ctl) {
+    justify-self: start;
+    justify-content: flex-start;
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+  :root:not(#pg) .tnai-deleg-row .set-ctl {
+    min-width: 0;
+  }
+}
+/* Delegation: "No limit" beside the two sub-agent counts (43) */
+:root:not(#pg) .tnai-deleg-row .set-ctl {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-width: 212px;
+} /* 212 = input + "No limit": every row's input starts on the same line */
+:root:not(#pg) .tnai-deleg-row .set-num:disabled {
+  opacity: 0.45;
+}
+:root:not(#pg) .tnai-deleg-free:has(input:checked) {
+  border-color: rgba(var(--pg-accent-rgb), 0.55);
+  background: rgba(var(--pg-accent-rgb), 0.16);
+  color: var(--pg-text);
+}

@@ -1,0 +1,247 @@
+name: Release
+
+# Push a tag vX.Y.Z that matches "version" in package.json. Windows and Linux are built side by
+# side, then one job publishes every installer and update file (latest.yml, latest-linux.yml,
+# latest-linux-arm64.yml) as a release of THIS repository. Installed copies read their updates
+# from the newest release here: the build writes this repository's name into the app
+# (package.json "tnaiPublicRepo"), so a fork that runs this workflow updates from the fork.
+#
+# It needs no secret: publishing uses the token GitHub gives every run. The installers are not
+# code-signed. macOS is not built here: a Mac app can update itself only when it is signed and
+# notarized with an Apple developer account.
+#
+# The text of the release ("What's new" in the app) is the message of the annotated tag:
+#   git tag -a v1.2.3 -m "New: ..."   then   git push origin v1.2.3
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      build: ${{ steps.version.outputs.build }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      # Electron has no install step of its own; fetch its program for the window tests.
+      - name: Install
+        run: |
+          npm ci
+          node node_modules/electron/install.js
+
+      - name: Version matches the tag
+        id: version
+        shell: bash
+        run: |
+          V=$(node -p "require('./package.json').version")
+          if [ "$GITHUB_REF_NAME" != "v$V" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $V"
+            exit 1
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "build=$(node -p "require('./package.json').tnaiBuild")" >> "$GITHUB_OUTPUT"
+
+      - name: Syntax and references
+        run: npm run check
+
+      - name: Window tests (updates, saved state)
+        shell: pwsh
+        run: |
+          foreach ($test in 'app-updates', 'persistence') {
+            $out = & .\tools\desktop-check\check.ps1 -Test $test 2>&1 | Out-String
+            Write-Output $out
+            if ($out -notmatch 'RESULT: PASS') { throw "Window test $test failed" }
+          }
+
+      # actions/checkout leaves the tag as a plain pointer to the commit, so the tag itself is
+      # fetched first; its message is the text of the release.
+      - name: Release notes (the message of the tag)
+        shell: bash
+        run: |
+          mkdir -p build
+          git fetch --force --depth=1 origin "+refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME" 2>/dev/null || true
+          NOTES=$(git for-each-ref --format='%(contents)' "refs/tags/$GITHUB_REF_NAME" 2>/dev/null || true)
+          printf '%s\n' "${NOTES:-Technically Not ${{ steps.version.outputs.version }}}" > build/release-notes.md
+
+      - name: Release mark and open-source notices
+        run: node tools/prebuild.js
+
+      # The build cannot be started as plain Node, so it ships a Node runtime of its own for the
+      # `tnai` and agent commands. The script downloads it from nodejs.org and refuses a file whose
+      # SHA-256 is not the one written in the script.
+      - name: Node runtime for the installer (checked against its SHA-256)
+        run: node tools/fetch-node-runtime.js
+
+      - name: Build the installer
+        shell: bash
+        run: |
+          npx electron-builder --win nsis --publish never \
+            "-c.nsis.artifactName=TechnicallyNot.ai-Setup-\${version}.\${ext}" \
+            "-c.extraMetadata.tnaiPublicRepo=$GITHUB_REPOSITORY" \
+            "-c.releaseInfo.releaseName=Technically Not ${{ steps.version.outputs.version }} build ${{ steps.version.outputs.build }}"
+
+      - name: Package check (no development files, maps or keys inside)
+        run: node tools/check-package.js dist/win-unpacked
+
+      - name: Keep the notes with the installer (the publish job uses them)
+        shell: bash
+        run: cp build/release-notes.md dist/release-notes.md
+
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          retention-days: 1
+          name: release-windows
+          if-no-files-found: error
+          path: |
+            dist/TechnicallyNot.ai-Setup-*.exe
+            dist/TechnicallyNot.ai-Setup-*.exe.blockmap
+            dist/latest.yml
+            dist/release-notes.md
+
+  # Linux is built on Ubuntu 22.04, so the app also runs on Ubuntu 22.04, Debian 12 and newer.
+  # Each kind of processor builds on its own: node-pty is compiled here, then built again for
+  # Electron. A failed Linux build only leaves Linux out of the release.
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-22.04
+            unpacked: dist/linux-unpacked
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+            unpacked: dist/linux-arm64-unpacked
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      # The tool that makes the .deb comes with electron-builder for x64 only; arm64 uses the
+      # system's own.
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb cmake patchelf
+          if [ "${{ matrix.arch }}" = arm64 ]; then
+            sudo apt-get install -y ruby ruby-dev build-essential
+            sudo gem install fpm --no-document
+            echo "USE_SYSTEM_FPM=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install
+        run: |
+          npm ci
+          node node_modules/electron/install.js
+          npx electron-builder install-app-deps
+
+      - name: Version
+        id: version
+        run: |
+          V=$(node -p "require('./package.json').version")
+          if [ "$GITHUB_REF_NAME" != "v$V" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $V"
+            exit 1
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "build=$(node -p "require('./package.json').tnaiBuild")" >> "$GITHUB_OUTPUT"
+
+      - name: Syntax and references
+        run: npm run check
+
+      - name: Window test from source (a terminal panel echoes through bash)
+        run: xvfb-run -a node tools/desktop-check/check.js shell-echo
+
+      - name: Build the speech engine
+        run: bash tools/build-whisper.sh
+
+      - name: Release mark and open-source notices
+        run: node tools/prebuild.js
+
+      # Each Linux machine builds for its own processor, so it fetches the runtime for itself.
+      - name: Node runtime for the app (checked against its SHA-256)
+        run: node tools/fetch-node-runtime.js
+
+      - name: Build AppImage and deb
+        run: |
+          npx electron-builder --linux AppImage deb --${{ matrix.arch }} --publish never \
+            "-c.extraMetadata.tnaiPublicRepo=$GITHUB_REPOSITORY" \
+            "-c.releaseInfo.releaseName=Technically Not ${{ steps.version.outputs.version }} build ${{ steps.version.outputs.build }}"
+
+      - name: Package check (no development files, maps or keys inside)
+        run: node tools/check-package.js ${{ matrix.unpacked }}
+
+      # --no-sandbox only here: the unpacked folder's sandbox helper is not set up on the runner.
+      # The .deb sets it up when it is installed.
+      - name: The built app starts (a terminal panel echoes)
+        run: xvfb-run -a node tools/desktop-check/packaged-check.mjs --exe ${{ matrix.unpacked }}/technicallynot --no-sandbox
+
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          retention-days: 1
+          name: release-linux-${{ matrix.arch }}
+          if-no-files-found: error
+          path: |
+            dist/TechnicallyNot.ai-linux-*.AppImage
+            dist/TechnicallyNot.ai-linux-*.deb
+            dist/latest-linux*.yml
+
+  publish:
+    needs: [windows, linux]
+    # Windows must have built; Linux joins when its jobs produced files.
+    if: always() && needs.windows.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      V: ${{ needs.windows.outputs.version }}
+      BUILD: ${{ needs.windows.outputs.build }}
+    steps:
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: out
+
+      # A draft first, so no update file points at a release whose installers are still being
+      # uploaded; then it becomes the newest release, which is the one installed copies read.
+      - name: Publish as a release of this repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd out
+          mv release-notes.md ../release-notes.md
+          FILES=(TechnicallyNot.ai-Setup-$V.exe TechnicallyNot.ai-Setup-$V.exe.blockmap latest.yml)
+          for f in TechnicallyNot.ai-linux-* latest-linux*.yml; do
+            [ -f "$f" ] && FILES+=("$f")
+          done
+          ls -l "${FILES[@]}"
+          [ -f latest-linux.yml ] || echo "::warning::No Linux x64 build in this release."
+          [ -f latest-linux-arm64.yml ] || echo "::warning::No Linux arm64 build in this release."
+          gh release create "v$V" "${FILES[@]}" \
+            --repo "$GITHUB_REPOSITORY" --title "Technically Not $V build $BUILD" \
+            --notes-file ../release-notes.md --draft
+          gh release edit "v$V" --repo "$GITHUB_REPOSITORY" --draft=false --latest

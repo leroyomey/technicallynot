@@ -1,0 +1,14 @@
+# Technically Not relay: your own meeting point for your computers and phone.
+# Deploy:  npx wrangler deploy
+# Secret:  npx wrangler secret put RELAY_SECRET   (32 characters or more; `npm run secret` makes one)
+name = "technically-not-relay"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+[[durable_objects.bindings]]
+name = "RELAY_HUB"
+class_name = "RelayHub"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RelayHub"]

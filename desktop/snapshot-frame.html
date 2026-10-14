@@ -1,0 +1,72 @@
+<!doctype html>
+<!-- Technically Not desktop · snapshot-frame.html — The frame shown around an area while a clip of it is recorded (snapshot-clip.js): camera-viewfinder corner brackets just outside the area, and a badge with a blinking red dot, REC, the running time and a Stop button. The window is see-through, lets the mouse through everywhere but the Stop button, and is hidden from screen capture, so none of it is in the clip. -->
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<style>
+  /* Purple glass, like the snapshot window (snapshot-overlay.html): the same token values, and the accent picked in the app comes in the address (?accent=). The corners stay white: they must show on any screen content. */
+  @font-face { font-family: "Outfit"; font-weight: 400; src: url("../src/assets/fonts/Outfit-Regular.woff2") format("woff2"); }
+  @font-face { font-family: "Outfit"; font-weight: 600 700; src: url("../src/assets/fonts/Outfit-SemiBold.woff2") format("woff2"); }
+  @font-face { font-family: "JetBrains Mono"; font-weight: 400; src: url("../src/assets/fonts/JetBrainsMono-Regular.woff2") format("woff2"); }
+  :root { --pg-tint: 214,196,255; --solid: 26,20,51; }
+  html[data-accent="blue"] { --pg-tint: 196,210,255; --solid: 20,26,51; }
+  html[data-accent="teal"] { --pg-tint: 190,240,232; --solid: 16,34,42; }
+  html[data-accent="rose"] { --pg-tint: 255,200,220; --solid: 42,20,38; }
+  html[data-accent="sunset"] { --pg-tint: 255,215,190; --solid: 42,26,20; }
+  html[data-accent="neutral"] { --pg-tint: 220,220,232; --solid: 27,27,34; }
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; user-select: none; cursor: default; }
+  #view { position: fixed; display: none; pointer-events: none; }
+  /* Four viewfinder corners, 3 px outside the recorded area. */
+  #view i { position: absolute; width: 22px; height: 22px; border: 0 solid #fff; filter: drop-shadow(0 0 1px #000) drop-shadow(0 1px 2px #0009); }
+  #view i:nth-child(1) { left: -5px; top: -5px; border-left-width: 2px; border-top-width: 2px; }
+  #view i:nth-child(2) { right: -5px; top: -5px; border-right-width: 2px; border-top-width: 2px; }
+  #view i:nth-child(3) { left: -5px; bottom: -5px; border-left-width: 2px; border-bottom-width: 2px; }
+  #view i:nth-child(4) { right: -5px; bottom: -5px; border-right-width: 2px; border-bottom-width: 2px; }
+  /* An area that reaches the screen's edge (a whole-screen clip) has its corners just inside instead. */
+  #view.inset i:nth-child(1) { left: 8px; top: 8px; } #view.inset i:nth-child(2) { right: 8px; top: 8px; }
+  #view.inset i:nth-child(3) { left: 8px; bottom: 8px; } #view.inset i:nth-child(4) { right: 8px; bottom: 8px; }
+  #badge { position: fixed; display: none; align-items: center; gap: 8px; box-sizing: border-box; height: 32px; padding: 0 4px 0 12px; border: 1px solid rgba(var(--pg-tint),.16); border-radius: 10px; background: rgba(var(--solid),.92); color: #eee9ff;
+    font: 12.5px/1.4 "Outfit", system-ui, "Segoe UI", sans-serif; box-shadow: 0 30px 70px -18px rgba(0,0,0,.7); white-space: nowrap; }
+  #time { color: #c0b7da; font: 11.5px "JetBrains Mono", Consolas, monospace; }
+  #dot { width: 8px; height: 8px; border-radius: 50%; background: #ff7d8e; }
+  .recording #dot { animation: blink 1.2s steps(2, jump-none) infinite; }
+  @keyframes blink { to { opacity: 0.25; } }
+  @media (prefers-reduced-motion: reduce) { .recording #dot { animation: none; } }
+  #rec { font-weight: 600; letter-spacing: 0.06em; }
+  #stop { all: unset; display: flex; align-items: center; gap: 6px; height: 22px; padding: 0 10px; border-radius: 7px; background: rgba(255,255,255,.07); cursor: pointer; }
+  #stop:hover { background: rgba(255,255,255,.14); }
+  #stop:focus-visible { outline: 2px solid #eee9ff; outline-offset: 1px; }
+  #stop::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: #eee9ff; }
+</style>
+</head>
+<body>
+<div id="view"><i></i><i></i><i></i><i></i></div>
+<div id="badge" role="status"><span id="dot"></span><span id="rec">REC</span><span id="time">Starting</span><button id="stop" aria-label="Stop recording and keep the clip">Stop</button></div>
+<script>
+  { const accent = new URLSearchParams(location.search).get('accent'); if (/^[a-z]+$/.test(accent || '')) document.documentElement.dataset.accent = accent; } // the accent picked in the app, handed over by the main process
+  const api = window.tnaiClip, view = document.getElementById('view'), badge = document.getElementById('badge'), time = document.getElementById('time'), stop = document.getElementById('stop');
+  const clock = ms => { const s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+  let maxMs = 30000;
+  api.onFrame(place => {
+    maxMs = place.maxMs;
+    Object.assign(view.style, { display: 'block', left: place.left + 'px', top: place.top + 'px', width: place.width + 'px', height: place.height + 'px' });
+    view.classList.toggle('inset', place.left < 5 || place.top < 5 || place.left + place.width > innerWidth - 5 || place.top + place.height > innerHeight - 5);
+    // The badge sits above the area's left corner, else below it, else inside its top-left corner (still out of the clip: the window is hidden from capture).
+    badge.style.display = 'flex';
+    const bh = badge.offsetHeight, bw = badge.offsetWidth, gap = 10;
+    const top = place.top - bh - gap >= 0 ? place.top - bh - gap : place.top + place.height + gap + bh <= innerHeight ? place.top + place.height + gap : place.top + gap + (view.classList.contains('inset') ? 28 : 0);
+    badge.style.top = top + 'px'; badge.style.left = Math.max(0, Math.min(innerWidth - bw, place.left + (top > place.top && top < place.top + place.height ? 40 : 0))) + 'px';
+  });
+  api.onRecording(() => {
+    const began = performance.now();
+    document.body.classList.add('recording');
+    const tick = () => { time.textContent = clock(Math.min(maxMs, performance.now() - began)) + ' / ' + clock(maxMs); };
+    tick(); setInterval(tick, 250);
+  });
+  stop.addEventListener('mouseenter', () => api.hover(true));
+  stop.addEventListener('mouseleave', () => api.hover(false));
+  stop.addEventListener('click', () => { stop.disabled = true; time.textContent = 'Saving'; api.stop(); });
+</script>
+</body>
+</html>

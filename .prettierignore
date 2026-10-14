@@ -1,0 +1,21 @@
+# What `node tools/format-code.js` (and Prettier itself) leaves exactly as it is.
+
+# Installed and built things
+node_modules/
+dist/
+package-lock.json
+
+# Code that is not ours: kept byte for byte with its licence
+**/vendor/
+*.min.js
+
+# Docs, notes and records: prose, not code
+docs/
+bench-records/
+*.md
+
+# Pictures the checks write
+tools/browser-check/out/
+
+# Pages: their white space can change how they are drawn
+*.html

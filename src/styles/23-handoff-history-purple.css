@@ -1,0 +1,159 @@
+/* Technically Not · 23-handoff-history-purple.css — agent handoff (102-handoff-history.js): the Agent Tree status "Handing off → …" / "Taking over" (teal, --pg-handoff;
+   a failed one uses the Problem dot), the ↪ marker after a name (same box as the row's rename button), and the Handoff history dialog (the shared modal look of
+   01-base / 07, only taller with its own scrolling list). */
+.tnai-ho-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--pg-handoff);
+  font: 500 13px/1 var(--pg-sans);
+  cursor: pointer;
+}
+.tnai-ho-mark:hover {
+  background: color-mix(in srgb, var(--pg-handoff) 16%, transparent);
+}
+.tnai-ho-mark:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 1px;
+}
+
+/* Dialog: taller than a confirm, header and summary line fixed, the list scrolls */
+:root:not(#pg) .bw-file-modal.tnai-hoh {
+  display: flex;
+  flex-direction: column;
+  width: min(640px, calc(100vw - 48px));
+  max-height: min(760px, calc(100vh - 96px));
+  overflow: hidden;
+}
+.tnai-hoh > .tnai-hoh-top {
+  flex: none;
+  margin: 6px 0 12px;
+  color: var(--pg-text-2);
+  font: 12px/1.5 var(--pg-sans);
+}
+.tnai-hoh-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding-right: 4px;
+}
+.tnai-hoh-chain {
+  display: grid;
+  gap: 8px;
+}
+.tnai-hoh-chain > h3 {
+  margin: 0;
+  color: var(--pg-text);
+  font: 500 13px/1.4 var(--pg-sans);
+  overflow-wrap: anywhere;
+}
+.tnai-hoh-e {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+  font: 12px/1.5 var(--pg-sans);
+  min-width: 0;
+}
+.tnai-hoh-e .h {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.tnai-hoh-e .h b {
+  color: var(--pg-text);
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tnai-hoh-e .h .ok {
+  color: var(--pg-ready);
+  white-space: nowrap;
+}
+.tnai-hoh-e .h .fail,
+.tnai-hoh-e .m.err {
+  color: var(--pg-err);
+}
+.tnai-hoh-e .h time {
+  margin-left: auto;
+  flex: none;
+  color: var(--pg-text-3);
+  font: 11px var(--pg-mono);
+}
+.tnai-hoh-e .m {
+  color: var(--pg-text-3);
+  overflow-wrap: anywhere;
+}
+.tnai-hoh-e .t {
+  color: var(--pg-text-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.tnai-hoh-e details summary {
+  cursor: pointer;
+  color: var(--pg-text-2);
+}
+.tnai-hoh-e details summary:focus-visible,
+.tnai-hoh-res:focus-visible,
+.tnai-hoh-all:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.tnai-hoh-e details b {
+  display: block;
+  margin-top: 6px;
+  color: var(--pg-text);
+  font-weight: 500;
+}
+.tnai-hoh-e details ul {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
+.tnai-hoh-res,
+.tnai-hoh-all {
+  justify-self: start;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--pg-accent);
+  font: 500 12px var(--pg-sans);
+  cursor: pointer;
+}
+.tnai-hoh-res:hover,
+.tnai-hoh-all:hover {
+  text-decoration: underline;
+}
+.tnai-hoh-raw {
+  max-height: 260px;
+  margin: 0;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel-2);
+  color: var(--pg-text-2);
+  font: 11px/1.5 var(--pg-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

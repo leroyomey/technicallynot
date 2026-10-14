@@ -1,0 +1,83 @@
+/* Technically Not · 37-code-colors.css — The colors of code in the Files column's reader (134
+   splits the words, highlight.js names them `hljs-…`). They are the colors most editors use, the
+   ones of Visual Studio Code's own dark and light looks: blue keywords, orange-brown strings (red
+   in Light), green comments, pale green numbers, yellow function names, teal types. */
+.tnt-fileview-text {
+  --code-keyword: #569cd6;
+  --code-string: #ce9178;
+  --code-comment: #6a9955;
+  --code-number: #b5cea8;
+  --code-function: #dcdcaa;
+  --code-type: #4ec9b0;
+  --code-name: #9cdcfe;
+  --code-tag: #569cd6;
+  --code-meta: #c586c0;
+  --code-regexp: #d16969;
+  --code-added: #b5cea8;
+  --code-removed: #ce9178;
+}
+html[data-theme='light'] .tnt-fileview-text {
+  --code-keyword: #0000ff;
+  --code-string: #a31515;
+  --code-comment: #008000;
+  --code-number: #098658;
+  --code-function: #795e26;
+  --code-type: #267f99;
+  --code-name: #001080;
+  --code-tag: #800000;
+  --code-meta: #af00db;
+  --code-regexp: #811f3f;
+  --code-added: #098658;
+  --code-removed: #a31515;
+}
+.tnt-fileview-text :is(.hljs-keyword, .hljs-literal, .hljs-selector-tag, .hljs-doctag) {
+  color: var(--code-keyword);
+}
+.tnt-fileview-text :is(.hljs-string, .hljs-char, .hljs-template-string, .hljs-quote) {
+  color: var(--code-string);
+}
+.tnt-fileview-text .hljs-comment {
+  color: var(--code-comment);
+  font-style: italic;
+}
+.tnt-fileview-text :is(.hljs-number, .hljs-symbol, .hljs-bullet) {
+  color: var(--code-number);
+}
+.tnt-fileview-text :is(.hljs-title.function_, .hljs-title.function, .hljs-section) {
+  color: var(--code-function);
+}
+.tnt-fileview-text :is(.hljs-title.class_, .hljs-type, .hljs-built_in, .hljs-selector-class) {
+  color: var(--code-type);
+}
+.tnt-fileview-text
+  :is(
+    .hljs-attr,
+    .hljs-attribute,
+    .hljs-variable,
+    .hljs-property,
+    .hljs-params,
+    .hljs-selector-id
+  ) {
+  color: var(--code-name);
+}
+.tnt-fileview-text :is(.hljs-tag, .hljs-name) {
+  color: var(--code-tag);
+}
+.tnt-fileview-text :is(.hljs-meta, .hljs-selector-pseudo, .hljs-selector-attr, .hljs-link) {
+  color: var(--code-meta);
+}
+.tnt-fileview-text :is(.hljs-regexp, .hljs-template-variable, .hljs-subst) {
+  color: var(--code-regexp);
+}
+.tnt-fileview-text .hljs-addition {
+  color: var(--code-added);
+}
+.tnt-fileview-text .hljs-deletion {
+  color: var(--code-removed);
+}
+.tnt-fileview-text .hljs-emphasis {
+  font-style: italic;
+}
+.tnt-fileview-text .hljs-strong {
+  font-weight: 700;
+}

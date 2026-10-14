@@ -1,0 +1,98 @@
+/* Technically Not · the thread layout under touch: a tablet, or any screen where a finger is the
+   first way of pointing (`pointer: coarse`). With a mouse nothing in this file applies.
+
+   A finger needs 44 by 44 to press. The thread layout's own controls are 24 to 38 px for a
+   pointer, so here each one grows to 44 in its own place: the same button, icon and color, with
+   more room around the icon. Rows that hold them grow with them; nothing moves to another place.
+   The doubled lift (:not(#lp)) puts these rules over each control's own size rule. */
+@media (pointer: coarse) {
+  /* ------------------------------------------------------------ the top bar */
+  /* Show or hide the thread list, and the three-dots menu: the bar is 44 high, so they fill it. */
+  html.tnt-on:not(#tnt):not(#pg) .top :is(.tnt-fold, .tnt-menu-btn):not(#lp) {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* ------------------------------------------------------------ the three-dots menu */
+  /* Every row and the search field are one height (--row). */
+  .tnt-menu.tnt-menu-full {
+    --row: 44px;
+  }
+
+  /* the whole field takes the finger, not only the line of text in it */
+  .tnt-menu-full .tnt-menu-search input {
+    align-self: stretch;
+    height: auto;
+  }
+
+  /* ------------------------------------------------------------ the thread list */
+  html.tnt-on:not(#tnt):not(#pg) .tnt-lst .tnt-new:not(#lp) {
+    height: 44px;
+  }
+
+  /* a sub-agent's small row */
+  html.tnt-on:not(#tnt):not(#pg) .tnt-lst .tnt-th.tnt-sub:not(#lp) {
+    min-height: 44px;
+  }
+
+  /* ------------------------------------------------------------ the open thread's top row */
+  html.tnt-on:not(#tnt):not(#pg) .tnt-view :is(.tnt-icon-btn, .tnt-fold):not(#lp) {
+    width: 44px;
+    height: 44px;
+  }
+  html.tnt-on:not(#tnt):not(#pg) .tnt-fileview-head button:not(#lp) {
+    width: 44px;
+    height: 44px;
+  }
+  html.tnt-on:not(#tnt):not(#pg) .tnt-view .tnt-helpers-btn:not(#lp) {
+    height: 44px;
+  }
+
+  /* Keep or Release on a helper's line. */
+  html.tnt-on:not(#tnt):not(#pg) .tnt-helper-line .tnai-graph-keep:not(#lp) {
+    min-width: 44px;
+    height: 44px;
+  }
+
+  /* The side column's tabs: each one is finger high. */
+  html.tnt-on:not(#tnt):not(#pg) .tnt-sidebox-tabs button:not(#lp) {
+    min-width: 44px;
+    height: 44px;
+  }
+
+  /* ------------------------------------------------------------ the side column */
+  html.tnt-on:not(#tnt):not(#pg) .tnt-sidebox-close:not(#lp) {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* ------------------------------------------------------------ the prompt box */
+  /* The buttons in the box. The row of small choices under it (which agent, model, effort) is a
+     line of text by design and is not changed here. */
+  html.tnt-on:not(#tnt):not(#pg)
+    .composebox
+    :is(.attach, .tnai-voice-btn, .tnai-composer-pop, .tnai-new-agent, .send):not(#lp) {
+    min-width: 44px;
+    height: 44px;
+  }
+
+  /* ------------------------------------------------------------ the Terminal page */
+  /* The preview's show and hide button in the top row. */
+  html.tnt-on:not(#tnt):not(#pg) #terminalView .tnt-fold:not(#lp) {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* the preview's button carries a word in a wide window (33): it keeps its own width there */
+  @media (min-width: 1141px) {
+    html.tnt-on:not(#tnt):not(#pg) #terminalView .tnt-fold-preview:not(#lp) {
+      width: auto;
+      min-width: 44px;
+    }
+  }
+
+  /* The room the threads of All threads keep for an arrow, wide enough for a finger (38). */
+  html.tnt-on:not(#tnt):not(#pg) #terminalView {
+    --tat-arrow-room: 54px;
+  }
+}

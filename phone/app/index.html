@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Technically Not</title>
+<meta name="theme-color" content="#0f0a1f"><meta name="robots" content="noindex">
+<!-- Add to Home screen: the page opens as its own app, without the browser's bars. No service worker: nothing of the app is kept or
+     run in the background, and its code is still fetched from its own address each time it opens. -->
+<link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-apple-180.png">
+<meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Technically Not"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- Own address, own files only: no script, style or picture from anywhere else. Connections may go to any https or wss address, because the relay is one the user runs and its address is not known here; only this app's own script makes them. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; media-src 'self' blob:; connect-src 'self' https: wss:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<!-- The phone app's first pages: welcome, needs you, computers, add a computer (scan), almost paired (digits), paired.
+     Logic: app.mjs. One screen is shown
+     at a time. The tab bar has the mock's four tabs; Agents and Activity are off until a computer sends what they would show. -->
+
+<section class="screen" data-s="welcome" hidden>
+  <div class="top"><div class="eyebrow">Test build</div><h1>Technically Not</h1></div>
+  <div class="bd">
+    <div class="surf"><span class="lbl">Sign in</span>
+      <div class="field off"><input placeholder="Email" disabled aria-label="Email"></div>
+      <div class="field off"><input placeholder="Password" type="password" disabled aria-label="Password"></div>
+      <button class="btn" disabled>Sign in</button>
+      <p class="note">Signing in is not connected yet. This test build pairs as a test device and talks through a test relay, not through your account.</p></div>
+  </div>
+  <div class="foot"><button class="btn pri" id="start">Continue as a test device</button></div>
+</section>
+
+<section class="screen" data-s="needs" hidden>
+  <div class="top"><div class="eyebrow">All computers · test build</div><h1>Needs you</h1>
+    <div class="kpis"><div><b class="c-wait" id="kWait">0</b><span>waiting for you</span></div><div><b id="kPcs">0 of 0</b><span>computers connected</span></div></div></div>
+  <div class="bd" id="needsList"></div>
+  <div class="clear" id="needsClear" hidden><h2 id="clearTitle">Nothing needs you</h2><p id="clearText"></p><button class="btn" data-go="computers" id="clearGo">Computers</button></div>
+  <nav class="tabs"></nav>
+</section>
+
+<section class="screen" data-s="nostore" hidden>
+  <div class="top"><div class="eyebrow">Test build</div><h1>Storage is not available</h1></div>
+  <div class="bd"><div class="surf"><p>This browser did not let the app open its storage, so it cannot keep its key or the computers it is paired with.</p><p class="note">A private window, a full phone or a browser setting can cause this. Close other copies of this page and open it again.</p></div></div>
+</section>
+
+<section class="screen" data-s="computers" hidden>
+  <div class="top"><div class="eyebrow">Test build</div><h1>Computers</h1></div>
+  <div class="bd">
+    <div id="list"></div>
+    <div class="surf slotd"><div><b>Add a computer</b><span class="meta">Scan the code on its Add a phone screen</span></div><button class="btn" id="add">Scan a code</button></div>
+    <div class="surf slotd" id="installRow" hidden><div><b>Add to Home screen</b><span class="meta">Opens like an app, without the browser's bars</span></div><button class="btn" id="install">Install</button></div>
+    <div class="surf" id="relayBox"><span class="lbl">Your own relay</span>
+      <b id="relayLine" hidden></b><span class="meta" id="relayMeta" hidden></span>
+      <button class="btn" id="relayChange" hidden>Change</button><button class="btn danger" id="relayRemove" hidden>Remove</button>
+      <div class="field" id="relayUrlBox"><input id="relayUrl" placeholder="Relay address, https://…" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Relay address"></div>
+      <div class="field" id="relaySecretBox"><input id="relaySecret" type="password" placeholder="Secret" autocomplete="off" aria-label="Relay secret"></div>
+      <button class="btn" id="relaySave">Save</button>
+      <p class="note bad" id="relayErr"></p>
+      <p class="note">A relay you run yourself, on your own Cloudflare account. The secret is kept in this browser as a key that cannot be read back, not as text, but anyone who can use this phone's browser can still use the relay. Pairing a computer works as before.</p></div>
+    <div class="surf"><span class="lbl">What the relay can see</span>
+      <dl class="see"><dt>Sees</dt><dd>Which devices are connected, and how large each message is.</dd><dt>Never</dt><dd>The keys, the digits, or anything sent after pairing.</dd></dl></div>
+  </div>
+  <nav class="tabs"></nav>
+</section>
+
+<section class="screen" data-s="scan" hidden>
+  <div class="top row"><button class="btn small" data-go="computers">Back</button><h1>Add a computer</h1></div>
+  <div class="bd">
+    <div class="view" id="view"><video id="cam" playsinline muted></video><i></i><span id="camNote">Starting the camera…</span></div>
+    <div class="surf"><span class="lbl">On the computer</span>
+      <ol class="steps"><li>Open Add a phone. A code appears.</li><li>Scan it here. The code works once, for two minutes.</li><li>This phone then shows six digits. Type them into the computer.</li></ol></div>
+    <div class="surf" id="pasteBox" hidden><span class="lbl">No camera here</span>
+      <p class="note">This browser cannot read a code with the camera. For a test, copy the code's text from the computer and paste it.</p>
+      <div class="field"><input id="paste" placeholder="Paste the code text" autocomplete="off" aria-label="Code text"></div><button class="btn" id="usePaste">Use this code</button></div>
+    <p class="note" id="scanErr"></p>
+    <p class="note">The camera is used only for this scan. Nothing is recorded or sent.</p>
+  </div>
+</section>
+
+<section class="screen" data-s="digits" hidden>
+  <div class="top"><div class="eyebrow" id="digitsFor">Code scanned</div><h1>Almost paired</h1></div>
+  <div class="bd">
+    <div class="surf digits"><span class="lbl">Type these into the computer</span><b id="digitsText">······</b><span class="note" id="digitsNote">Making the secure connection…</span></div>
+    <div class="surf"><span class="lbl">Why</span><p class="note">It proves the phone the computer is about to pair with is this one, and not someone who saw the code on its screen. Until the digits are typed, the computer sends this phone nothing.</p></div>
+    <p class="note">The digits work for two minutes. Three wrong tries end the pairing.</p>
+  </div>
+  <div class="foot"><button class="btn" id="cancel">Cancel</button></div>
+</section>
+
+<section class="screen" data-s="paired" hidden>
+  <div class="top"><div class="eyebrow">Added</div><h1 id="pairedTitle">Paired</h1></div>
+  <div class="bd">
+    <div class="surf me"><div><b id="pairedName">Computer</b><span class="meta" id="pairedMeta"></span></div>
+      <p class="note">A new phone starts at see and answer. More is switched on at that computer.</p></div>
+    <p class="note">This test build pairs, keeps an encrypted session with the computer while it is open, shows what needs you there and sends your answer back. Agents, activity and notifications come with later builds.</p>
+  </div>
+  <div class="foot"><button class="btn pri" data-go="needs">Done</button></div>
+</section>
+
+<section class="screen" data-s="failed" hidden>
+  <div class="top"><div class="eyebrow">Not paired</div><h1>That did not work</h1></div>
+  <div class="bd"><div class="surf"><p id="failText"></p><p class="note">Nothing was stored. Ask the computer for a new code and scan again.</p></div></div>
+  <div class="foot"><button class="btn pri" data-go="scan">Scan again</button><button class="btn" data-go="computers">Back to computers</button></div>
+</section>
+
+<script type="module" src="app.mjs"></script>
+</body></html>
