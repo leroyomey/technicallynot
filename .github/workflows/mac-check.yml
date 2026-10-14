@@ -7,6 +7,11 @@ name: Mac check
 
 on:
   workflow_dispatch:
+    inputs:
+      voice:
+        description: 'Build the voice engine into the app, as a release does'
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -29,6 +34,12 @@ jobs:
           npm ci
           node node_modules/electron/install.js
           chmod 755 node_modules/node-pty/prebuilds/darwin-*/spawn-helper
+
+      # A release builds the voice engine into the app; the first run without it started fine, so
+      # this is the step to try when the start hangs.
+      - name: Build the voice engine (Apple Silicon)
+        if: inputs.voice
+        run: bash tools/build-whisper.sh
 
       - name: Release mark and open-source notices
         run: node tools/prebuild.js
