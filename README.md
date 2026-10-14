@@ -2,7 +2,7 @@
 
 Technically Not is a desktop app for working with several AI coding agents at once. It runs the agent programs you already have (Claude Code, Codex, OpenCode, Cursor Agent and others) in real terminals and shows each agent as a thread: a list of all of them on the left, the one you opened in the middle, and a mark on the one that is waiting for you.
 
-It is built for Windows first. The same code also builds for Linux. A Mac version is coming soon.
+It is built for Windows first. There are also builds for Linux and the Mac.
 
 **[Download](https://github.com/leroyomey/technicallynot/releases/latest)** · [Before you install](#before-you-install) · [What leaves your computer](#what-leaves-your-computer) · [Status](#status) · [Contributing](#contributing)
 
@@ -52,11 +52,25 @@ Download the installer from the [Releases page](https://github.com/leroyomey/tec
 
 - **Windows:** `TechnicallyNot.ai-Setup-<version>.exe`. The installer is not signed yet, so Windows shows a blue "Windows protected your PC" box: press "More info", then "Run anyway".
 - **Linux:** the `.AppImage` or the `.deb`, for x64 or arm64.
-- **Mac:** coming soon.
+- **Mac:** `TechnicallyNot.ai-mac-arm64-<version>.dmg` for Apple Silicon (M1 and newer) or `TechnicallyNot.ai-mac-x64-<version>.dmg` for Intel. See [Opening the Mac app](#opening-the-mac-app).
 
-The app updates itself from the releases of this repository. You can turn that off in Settings.
+The app updates itself from the releases of this repository. You can turn that off in Settings. The Mac app is the exception: it cannot update itself yet, so download each new version from the Releases page.
 
-**To uninstall:** on Windows, Settings, Apps, Installed apps, "TechnicallyNot.ai", Uninstall. On Linux, delete the AppImage or remove the package with your package manager. Your settings stay in `%APPDATA%\TechnicallyNot.ai` (Windows) or `~/.config/TechnicallyNot.ai` (Linux) until you delete that folder.
+**To uninstall:** on Windows, Settings, Apps, Installed apps, "TechnicallyNot.ai", Uninstall. On Linux, delete the AppImage or remove the package with your package manager. On the Mac, move the app from Applications to the Trash. Your settings stay in `%APPDATA%\TechnicallyNot.ai` (Windows), `~/.config/TechnicallyNot.ai` (Linux) or `~/Library/Application Support/TechnicallyNot.ai` (Mac) until you delete that folder.
+
+### Opening the Mac app
+
+The Mac app is not signed by Apple yet, so macOS stops it the first time. Open the dmg and drag the app into Applications. Then do one of these:
+
+- **Terminal:** run this once. It removes the "downloaded from the internet" mark that makes macOS block the app:
+
+  ```sh
+  xattr -dr com.apple.quarantine /Applications/TechnicallyNot.ai.app
+  ```
+
+- **System Settings:** start the app once and close the warning. Then open System Settings, Privacy & Security, scroll down to the line about TechnicallyNot.ai and press "Open Anyway".
+
+If macOS says the app "is damaged and can't be opened", it is not damaged: that is how macOS describes an app with no Apple signature. The Terminal line above fixes it.
 
 ## Run from source
 
@@ -111,7 +125,7 @@ No other usage statistics were found in the code. If you find a request that is 
 
 ## Status
 
-- Used daily on Windows. Linux builds exist and are tried less. A Mac release is coming soon; there is none yet.
+- Used daily on Windows. Linux builds exist and are tried less. The Mac build is new (first released in 0.3.72), not signed by Apple and tried least.
 - The thread layout is new. It is made for a desktop window; a layout of its own for tablet-sized windows is not built yet.
 - The several-computers feature is new and has been tried on few machines.
 - The tree still holds code for an account system and a plan check. They are switched off (`tnaiAccountsUrl` is empty and `tnaiEnforcePlan` is `false` in `package.json`): the app asks for no sign-in, shows no sign-in control and calls no accounts server.
