@@ -12,6 +12,10 @@ on:
         description: 'Build the voice engine into the app, as a release does'
         type: boolean
         default: true
+      both_chips:
+        description: 'Build Apple Silicon and Intel together as dmg and zip, exactly as a release does'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -45,14 +49,25 @@ jobs:
         run: node tools/prebuild.js
 
       - name: Node runtime for the app (checked against its SHA-256)
-        run: node tools/fetch-node-runtime.js mac-arm64
+        run: |
+          if [ "${{ inputs.both_chips }}" = true ]; then
+            node tools/fetch-node-runtime.js mac-x64 mac-arm64
+          else
+            node tools/fetch-node-runtime.js mac-arm64
+          fi
 
-      # The app folder only (no dmg): it is all the start check needs.
+      # The app folder only (no dmg) is all the start check needs; both_chips builds what a release
+      # builds, to see whether that is what hangs the start.
       - name: Build the app (unsigned)
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
-          npx electron-builder --mac dir --arm64 --publish never \
+          if [ "${{ inputs.both_chips }}" = true ]; then
+            TARGETS=(dmg zip --x64 --arm64)
+          else
+            TARGETS=(dir --arm64)
+          fi
+          npx electron-builder --mac "${TARGETS[@]}" --publish never \
             "-c.mac.identity=-" "-c.mac.notarize=false" \
             "-c.extraMetadata.tnaiPublicRepo=$GITHUB_REPOSITORY" \
             "-c.extraMetadata.tnaiMacUnsigned=true"
