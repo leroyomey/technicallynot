@@ -204,8 +204,17 @@ async function moveComments(text, options) {
         for (const l of wrap(paragraph, indent)) out.push(star + ' ' + l.slice(indent.length + 3));
         paragraph = '';
       };
-      for (const textLine of c.value.split('\n')) {
-        const t = textLine.trim();
+
+      // A comment written with a star at the start of each line: that star is taken off first, so
+      // it is not read as a list item (which turned a whole header into `* * text` lines).
+      const valueLines = c.value.split('\n');
+      const starred = valueLines
+        .slice(1)
+        .filter(l => l.trim())
+        .every(l => /^\s*\*(\s|$)/.test(l));
+      for (const textLine of valueLines) {
+        let t = textLine.trim();
+        if (starred) t = t.replace(/^\*(\s+|$)/, '');
         if (!t) {
           flush();
           if (out.length > 1 && out[out.length - 1] !== star) out.push(star);

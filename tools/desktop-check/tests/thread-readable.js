@@ -130,7 +130,7 @@ const TRANSCRIPT = [
       content: [
         {
           type: 'text',
-          text: 'Test received.\n\nDone:\n- read the brief\n- ran the tests\n\nWhere we stopped:\n- two tests fail\n\nStill open:\n- the footer\n\nYour turn:\n1. Reload the dev copy.\n\nHeads up: the old build stops working tomorrow.\n\n**1 · the cart total**\n- Outcome: Fixed\n- How we know: the test passes\n\n**2 · the footer**\n- Outcome: Still failing\n- How we know: seen\n\n**3 · the header**\n- Outcome: Partly\n\n**4 · the menu**\n- Outcome: Not started\n\nTechnically Not report\n- Did: answered the test message; checked the morning brief\n- Found: two tests fail\n- Changed: src/cart.js\n- Decided: left the three idle agents open\n- Remains: the footer\n- Untested: the header on a phone\n- Blockers: none of the checks ran\n- Next: fix the two tests\n- Ideas: a test for the footer',
+          text: 'Test received.\n\nDone:\n- read the brief\n- ran the tests\n\nWhere we stopped:\n- two tests fail\n\nStill open:\n- the footer\n\nYour turn:\n1. Reload the dev copy.\n\nHeads up: the old build stops working tomorrow.\n\n**1 · the cart total**\n- Outcome: Fixed\n- How we know: the test passes\n\n**2 · the footer**\n- Outcome: Still failing\n- How we know: seen\n\n**3 · the header**\n- Outcome: Partly\n\n**4 · the menu**\n- Outcome: Not started\n\nTechnically Not report\n- Did: answered the test message; checked the morning brief\n- Found: two tests fail\n- Changed: src/cart.js\n- Decided: left the three idle agents open\n- Remains: the footer\n- Untested: the header on a phone\n- Blockers: none of the checks ran\n- Next: fix the two tests\n- Ideas: a test for the footer\n\n- Decide: Which way should the test go? | 1. Left (recommended) | 2. Right',
         },
       ],
     },
@@ -443,6 +443,162 @@ try {
 
   await colors('dark');
   fits('1440 by 900');
+
+  // A decision's buttons look the same in the thread and in a column of All threads (they were
+  // once bare gray blocks there). The same probe button is put into each conversation and its look
+  // is read.
+  const decideLook = listEl => {
+    const options = document.createElement('div');
+    options.className = 'tnt-decide-options';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = 'Probe option';
+    options.append(button);
+    listEl.append(options);
+    const css = getComputedStyle(button);
+    const look = [css.borderTopStyle, css.borderTopColor, css.borderRadius, css.backgroundColor];
+    options.remove();
+    return look.join(' / ');
+  };
+  const threadDecideLook = decideLook(list());
+
+  // A decision stays pressable however old, with nothing saved about it; pressing an option puts
+  // the answer into the prompt box for this agent, and the option then shows as the user's choice.
+  const decideAsk = [...list().querySelectorAll('.tnt-decide')].pop();
+  const optionButtons = decideAsk ? [...decideAsk.querySelectorAll('button')] : [];
+  check(
+    optionButtons.length === 2 && optionButtons.every(button => !button.disabled),
+    "a report's decision is pressable (" + optionButtons.length + ' options)'
+  );
+
+  // The answer goes straight to the agent while it runs (held while it works), else into the
+  // prompt box; what is sent is caught here, not typed into the test's terminal.
+  const promptBox = document.getElementById('prompt');
+  const promptBefore = promptBox.value;
+  const realSend = window.TnaiAgents.send;
+  const sentTexts = [];
+  window.TnaiAgents.send = (paneId, text) => {
+    sentTexts.push(paneId + ': ' + text);
+    return true;
+  };
+  try {
+    optionButtons[0]?.click();
+    await wait(150);
+  } finally {
+    window.TnaiAgents.send = realSend;
+  }
+  const answer = /Decision on "Which way should the test go\?": go with Left/;
+  check(
+    sentTexts.some(text => text.startsWith(pane + ': ') && answer.test(text)) ||
+      answer.test(promptBox.value),
+    'pressing an option answers it: sent to this agent (' +
+      sentTexts.length +
+      ' sent) or put in the prompt box'
+  );
+  check(
+    optionButtons[0]?.classList.contains('tnt-decide-chosen') &&
+      optionButtons[0].getAttribute('aria-pressed') === 'true' &&
+      optionButtons.every(button => button.disabled),
+    'the pressed option shows as "your choice", and the decision is answered'
+  );
+  promptBox.value = promptBefore;
+  promptBox.dispatchEvent(new Event('input', { bubbles: true }));
+
+  // Getting around: "Last report" and "Latest" float at the bottom right while
+  // the reader is away from where they lead; sending a prompt brings the thread to its newest line;
+  // a prompt waiting for the agent shows at the end of the conversation.
+  const frames = () =>
+    new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+  const jumpButton = kind => island.querySelector('.tnt-jump-btn[data-jump="' + kind + '"]');
+  const inView = el => {
+    const b = el.getBoundingClientRect(),
+      t = talk.getBoundingClientRect();
+    return b.bottom > t.top && b.top < t.bottom;
+  };
+  talk.scrollTop = 0;
+  await frames();
+  check(
+    talk.scrollHeight <= talk.clientHeight + 48 || shown(jumpButton('latest')),
+    'scrolled to the top of a long conversation: "Latest" shows'
+  );
+  const reportCard = [...list().querySelectorAll('.tnt-report')].pop();
+  if (reportCard && !inView(reportCard)) {
+    check(shown(jumpButton('report')), 'the last report is out of view: "Last report" shows');
+    jumpButton('report').click();
+    await frames();
+    check(inView(reportCard), '"Last report" brings the newest report card into view');
+  }
+  if (shown(jumpButton('latest'))) {
+    jumpButton('latest').click();
+    await frames();
+    check(
+      talk.scrollHeight - talk.scrollTop - talk.clientHeight < 48 && !shown(jumpButton('latest')),
+      '"Latest" goes to the newest line, and then it hides'
+    );
+  }
+  const room = jumpButton('latest').closest('.tnt-jump').getBoundingClientRect().height;
+  check(room === 0, 'the buttons take no room in the conversation (bar height ' + room + ')');
+  talk.scrollTop = 0;
+  await frames();
+  window.dispatchEvent(new CustomEvent('tnai:prompt-sent', { detail: { paneId: pane } }));
+  await frames();
+  check(
+    talk.scrollHeight - talk.scrollTop - talk.clientHeight < 48,
+    'a prompt sent to the thread brings it to its newest line'
+  );
+  window.TnaiNeedsYou?.held?.({
+    paneId: pane,
+    heldId: 'thread-readable-test-held',
+    reason: 'busy',
+    detail: '',
+    userText: 'A prompt that waits for the task',
+  });
+  window.dispatchEvent(new CustomEvent('tnai:held'));
+  await frames();
+  const waiting = island.querySelector('.tnt-you-queued');
+  check(
+    shown(waiting) && /waits for the task/.test(waiting.textContent),
+    'a prompt held for the busy agent shows at the end of its conversation'
+  );
+  check(
+    /when its task ends/.test(waiting?.querySelector('.tnt-queued-note')?.textContent || ''),
+    'and it says it is given to the agent when its task ends'
+  );
+
+  // Send now, Edit and Remove on the waiting prompt work as in the Details tab;
+  // the queueCalls are caught here, so the test's prompt stays for the pictures below
+  const queueLabels = [...(waiting?.querySelectorAll('.tnt-queued-act') || [])].map(
+    b => b.textContent
+  );
+  check(
+    queueLabels.join('|') === 'Send now|Edit|Remove',
+    'the waiting prompt has Send now, Edit and Remove (' + queueLabels.join(', ') + ')'
+  );
+  const queueNeeds = window.TnaiNeedsYou;
+  const queueSend = queueNeeds.sendHeld,
+    queueTake = queueNeeds.takeHeld;
+  const queueCalls = [];
+  queueNeeds.sendHeld = id => queueCalls.push('send ' + id);
+  queueNeeds.takeHeld = (id, edit) => queueCalls.push((edit ? 'edit ' : 'remove ') + id);
+  for (const name of ['send', 'edit', 'remove'])
+    waiting?.querySelector('.tnt-queued-act[data-q="' + name + '"]')?.click();
+  queueNeeds.sendHeld = queueSend;
+  queueNeeds.takeHeld = queueTake;
+  check(
+    queueCalls.join('|') ===
+      'send thread-readable-test-held|edit thread-readable-test-held|remove thread-readable-test-held',
+    'each button acts on that prompt (' + queueCalls.join(', ') + ')'
+  );
+  const queueActsBox = waiting?.querySelector('.tnt-queued-acts')?.getBoundingClientRect();
+  const queueBubbleBox = waiting?.getBoundingClientRect();
+  check(
+    !!queueActsBox &&
+      queueActsBox.right <= queueBubbleBox.right &&
+      queueActsBox.left >= queueBubbleBox.left &&
+      queueActsBox.bottom <= queueBubbleBox.bottom,
+    'the buttons stay inside the waiting bubble'
+  );
+  await shot('thread-readable-queued');
   talk.scrollTop = 0;
   await shot('thread-readable-dark');
   talk.scrollTop = talk.scrollHeight;
@@ -474,6 +630,65 @@ try {
   window.TnaiTheme.set('dark');
   await main('size', start[0], start[1]);
   await main('setMinimum', was[0], was[1]);
+
+  // Between two replies: the turn has ended but the agent still works in the background, or waits
+  // on its helpers. The live line stays, with its dot breathing, so the thread never looks
+  // finished a few seconds before it picks up again. A status read only from output ("working"
+  // with no reported turn) still shows nothing. The list's reading of the thread is stood in for.
+  const threadList = window.TnaiThreadList;
+  const realThread = threadList.thread;
+  const liveFor = async (status, tone, label) => {
+    threadList.thread = id => {
+      const thread = realThread(id);
+      return thread && id === pane ? { ...thread, status, tone, label, now: '' } : thread;
+    };
+    window.dispatchEvent(new CustomEvent('tnai:threads-painted'));
+    await frame();
+    await frame();
+    return list().querySelector('.tnt-live');
+  };
+  try {
+    let live = await liveFor('background', 'work', 'Working in background');
+    check(
+      shown(live) && live.textContent.includes('Working in background'),
+      'between replies, background tasks: the live line says "Working in background"'
+    );
+    const pulse = live && getComputedStyle(live.querySelector('i')).animationName;
+    check(pulse === 'stPulse', 'the live line dot breathes while it works (' + pulse + ')');
+    live = await liveFor('waiting-agents', 'agents', 'Waiting on agents');
+    check(
+      shown(live) && live.textContent.includes('Waiting on agents'),
+      'between replies, helpers running: the live line says "Waiting on agents"'
+    );
+    const still = live && getComputedStyle(live.querySelector('i')).animationName;
+    check(still === 'none', 'the violet waiting-on-agents dot stays still (' + still + ')');
+    live = await liveFor('working', 'work', 'Working');
+    check(!shown(live), 'output-only "working" with no reported turn shows no live line');
+    live = await liveFor('waiting', 'ready', 'Ready');
+    check(!shown(live), 'a finished thread shows no live line');
+  } finally {
+    threadList.thread = realThread;
+    window.dispatchEvent(new CustomEvent('tnai:threads-painted'));
+  }
+
+  await window.TnaiTest.openAllThreads();
+  const columnList = await until(() =>
+    [...document.querySelectorAll('.tnt-talk-list')].find(
+      each => shown(each) && !island.contains(each)
+    )
+  );
+  if (columnList) {
+    const columnLook = decideLook(columnList);
+    check(
+      columnLook === threadDecideLook,
+      "All threads: a decision's buttons look as they do in the thread (" +
+        columnLook +
+        ' against ' +
+        threadDecideLook +
+        ')'
+    );
+    await shot('thread-readable-all-threads');
+  } else check(false, 'All threads shows the conversation in a column');
 } catch (error) {
   check(false, 'the test threw: ' + (error?.stack || error));
 }

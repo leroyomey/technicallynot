@@ -1,4 +1,4 @@
-// Connect → lazy tree → open → edit → Save → byte-exact reread; view-only files; reload restore.
+// Connect → lazy tree → a file click shows the desktop-only viewer toast; filter; reload restore.
 // Run: .\tools\browser-check\check.ps1 -Test project-folder -Phases 1,2
 (async () => {
   const { log, wait, q, until } = check;
@@ -35,48 +35,25 @@
         row('big-folder').nextElementSibling.querySelector('.repo-info-row')?.textContent
       );
       row('big-folder').click();
+
+      // Since 2026-10-01 a file click opens the file in its own viewer window (desktop only);
+      // the browser build shows a toast saying so and opens no editor in the center.
+      const toastBox = q('#toast');
+      toastBox.textContent = '';
       file.click();
-      const area = await until(() => q('.repo-editor-text'));
+      await until(() => toastBox.textContent);
       log(
-        'editor in center:',
-        q('.dock-scroll').classList.contains('repo-editor-open'),
-        '| path:',
-        q('.repo-editor-path').textContent,
-        '| state:',
-        q('.repo-editor-state').textContent,
-        '| save disabled:',
-        q('.repo-editor-save').disabled
+        'file click in browser:',
+        toastBox.textContent,
+        '| editor opened:',
+        q('.dock-scroll')?.classList.contains('repo-editor-open') || Boolean(q('.repo-editor-text'))
       );
-      area.value = area.value.replace('a = 1', 'a = 42');
-      area.dispatchEvent(new Event('input'));
-      log(
-        'after edit:',
-        q('.repo-editor-state').textContent,
-        '| save disabled:',
-        q('.repo-editor-save').disabled,
-        '| row dirty:',
-        row('src/app.ts').classList.contains('repo-dirty')
-      );
-      q('.repo-editor-save').click();
-      await until(() => q('.repo-editor-message').dataset.tone);
-      log('save:', q('.repo-editor-message').dataset.tone, q('.repo-editor-message').textContent);
       const disk = await (
         await (
           await (await (await window.__seed).getDirectoryHandle('src')).getFileHandle('app.ts')
         ).getFile()
       ).text();
-      log('independent disk read:', JSON.stringify(disk));
-      row('logo.png').click();
-      await until(() => q('.repo-editor-state').textContent === 'View only');
-      log(
-        'binary:',
-        q('.repo-editor-state').textContent,
-        '| textarea shown:',
-        Boolean(q('.repo-editor-text'))
-      );
-      row('latin1.txt').click();
-      await wait(300);
-      log('non-utf8:', q('.repo-editor-state').textContent);
+      log('disk untouched:', JSON.stringify(disk));
       const search = q('#repoRailSearch');
       search.value = 'app';
       search.dispatchEvent(new Event('input'));

@@ -62,6 +62,13 @@
 .tnt-talk::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* The pane can reach its island's rounded corner (an All threads card ends in it). The track
+   stops one corner radius short at each end, so the thumb at the very top or bottom stays
+   inside the curve instead of hanging past it. */
+.tnt-talk::-webkit-scrollbar-track {
+  margin-block: var(--pg-r);
+}
 .tnt-talk::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
   border-radius: 5px;
@@ -153,6 +160,13 @@
 .tnt-say ul,
 .tnt-say ol {
   padding-left: 20px;
+}
+/* two- and three-digit numbers ("19.", "105.") need more room, or the first digit is clipped */
+.tnt-say ol[data-digits='2'] {
+  padding-left: calc(20px + 0.65em);
+}
+.tnt-say ol[data-digits='3'] {
+  padding-left: calc(20px + 1.3em);
 }
 .tnt-say li {
   margin: 2px 0;
@@ -428,11 +442,14 @@ code.tnt-act-what {
 .tnt-act-result:empty {
   display: none;
 }
-.tnt-view u {
+/* every conversation (open thread, helper beside it, All threads cards), so on .tnt-talk-list */
+.tnt-view u,
+.tnt-talk-list u {
   color: var(--pg-work);
   text-decoration: none;
 }
-.tnt-view s {
+.tnt-view s,
+.tnt-talk-list s {
   margin-left: 6px;
   color: var(--pg-err);
   text-decoration: none;
@@ -474,7 +491,7 @@ code.tnt-act-what {
 }
 .tnt-askbox .tnt-ask-go.tnt-ask-go,
 .tnt-askbox .tnt-ask-option.tnt-ask-option,
-.tnt-view .tnt-decide-options button {
+.tnt-talk-list .tnt-decide-options button {
   height: 30px;
   margin: 0;
   padding: 0 12px;
@@ -510,13 +527,13 @@ code.tnt-act-what {
 }
 .tnt-askbox .tnt-ask-go.tnt-ask-go:hover,
 .tnt-askbox .tnt-ask-option.tnt-ask-option:hover:not(:disabled),
-.tnt-view .tnt-decide-options button:hover:not(:disabled) {
+.tnt-talk-list .tnt-decide-options button:hover:not(:disabled) {
   border-color: var(--pg-accent);
   background: var(--pg-accent-soft);
 }
 .tnt-askbox .tnt-ask-go.tnt-ask-go:focus-visible,
 .tnt-askbox .tnt-ask-option.tnt-ask-option:focus-visible,
-.tnt-view .tnt-decide-options button:focus-visible {
+.tnt-talk-list .tnt-decide-options button:focus-visible {
   outline: var(--pg-ring) solid var(--pg-accent);
   outline-offset: -2px;
 }
@@ -644,7 +661,7 @@ code.tnt-act-what {
   flex-wrap: wrap;
   gap: 8px;
 }
-.tnt-view .tnt-decide-options button {
+.tnt-talk-list .tnt-decide-options button {
   height: auto;
   min-height: 30px;
   padding: 6px 12px;
@@ -652,10 +669,23 @@ code.tnt-act-what {
   text-align: left;
   white-space: normal;
 }
-.tnt-view .tnt-decide-options button:disabled {
+.tnt-talk-list .tnt-decide-options button:disabled {
   border-color: transparent;
   color: var(--pg-text-2);
   cursor: default;
+}
+
+/* the option the user pressed (122 paintDecisions): the colored line and soft fill that mark
+   "this one", and the words, so it does not rest on color alone */
+.tnt-talk-list .tnt-decide-options button.tnt-decide-chosen {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+  color: var(--pg-text);
+}
+.tnt-talk-list .tnt-decide-options button.tnt-decide-chosen::after {
+  content: ' · your choice';
+  color: var(--pg-text-3);
+  font-size: 11.5px;
 }
 
 /* small facts in the middle: a command, an interrupt, where a long conversation starts */
@@ -682,6 +712,9 @@ code.tnt-act-what {
 }
 .tnt-live[data-tone='needs'] {
   --tone: var(--pg-wait);
+}
+.tnt-live[data-tone='agents'] {
+  --tone: var(--pg-agents);
 }
 .tnt-live i {
   flex: none;
@@ -954,6 +987,44 @@ code.tnt-act-what {
   outline: var(--pg-ring) solid var(--pg-accent);
   outline-offset: -2px;
 }
+
+/* A thread's helpers as bubbles in its head (123 in the single thread's top row, 135 in each card
+   of All threads), the chips above. One line only: a bubble that has no room wraps onto a second
+   line, which is out of sight, so a bubble shows whole or not at all. The row never takes more
+   than its share of the head; the name beside it shortens first. */
+:is(.tnt-head-helpers, .tat-helpers) {
+  flex: 0 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 45%;
+  height: 28px;
+  overflow: hidden;
+}
+:is(.tnt-head-helpers, .tat-helpers)[hidden] {
+  display: none;
+}
+:is(.tnt-head-helpers, .tat-helpers) .tnt-side-chip {
+  flex: none;
+  max-width: 120px;
+}
+:is(.tnt-head-helpers, .tat-helpers) .tnt-side-chip[aria-pressed='true'] {
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+}
+.tat-helpers .tat-back svg {
+  flex: none;
+  display: block;
+}
+/* a helper whose tool keeps no conversation to read: one line in the card's place */
+.tat-helper-note {
+  margin: 0;
+  padding: 12px var(--inset);
+  color: var(--pg-text-3);
+  font: 13px/1.5 var(--pg-sans);
+}
 .tnt-side-note {
   margin: 0;
   padding: 4px var(--inset) 0;
@@ -1014,19 +1085,116 @@ code.tnt-act-what {
 .tnt-side-panel .tnt-side-talk {
   padding: 4px var(--inset) 0;
 }
-.tnt-side-panel .tnt-talk-list u {
-  color: var(--pg-work);
-  text-decoration: none;
-}
-.tnt-side-panel .tnt-talk-list s {
-  margin-left: 6px;
-  color: var(--pg-err);
-  text-decoration: none;
-}
 
 /* who was refused a held file and waits for it: amber, after the holder */
 .tnt-shared-file b {
   flex: none;
   color: var(--pg-wait);
   font-weight: 400;
+}
+
+/* Prompts waiting for a busy agent (122 `paintQueued`): at the end of the conversation, each in the
+   prompt's own bubble with a dashed edge, the mark of a waiting slot, and a line saying what it
+   waits for. They go when the agent gets them, and the prompt then shows in its place. */
+.tnt-queued {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(100%, var(--tnt-read-w, 780px));
+  margin: 0 auto;
+  padding-bottom: 18px;
+  color: var(--pg-text);
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.tnt-queued[hidden] {
+  display: none;
+}
+.tnt-you.tnt-you-queued {
+  border: 1px dashed var(--pg-line-2);
+}
+.tnt-queued-note {
+  display: block;
+  margin-top: 4px;
+  color: var(--pg-text-3);
+  font-size: 11.5px;
+  white-space: normal;
+}
+
+/* "Last report" and "Latest" (122 `jumpBar`): they float over the conversation's bottom right
+   edge, at the reading column's edge. The bar has no height, so it takes no room; each button shows
+   only while the reader is away from where it leads. */
+.tnt-jump {
+  position: sticky;
+  bottom: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 8px;
+  width: min(100%, var(--tnt-read-w, 780px));
+  height: 0;
+  margin: 0 auto;
+  pointer-events: none;
+}
+.tnt-jump-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r-sm);
+  background: var(--tnt-over);
+  color: var(--pg-text-2);
+  font: 500 12.5px/1 var(--pg-sans);
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.tnt-jump-btn[hidden] {
+  display: none;
+}
+.tnt-jump-btn:hover {
+  border-color: var(--pg-line-2);
+  color: var(--pg-text);
+}
+.tnt-jump-btn:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+
+/* Send now, Edit and Remove on a waiting prompt at the end of a conversation: the Details tab's
+   queue buttons (41-thread-details.css .ttd-q-acts), so the queue looks the same in both places */
+.tnt-queued-acts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-queued-act:not(#lp),
+.tnt-queued-act {
+  width: auto;
+  min-width: 0;
+  height: 24px;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--pg-text-2);
+  font: 500 12px/1 var(--pg-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-queued-act:not(#lp):hover,
+.tnt-queued-act:hover {
+  border-color: var(--pg-accent);
+  color: var(--pg-text);
+}
+.tnt-queued-act:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
 }

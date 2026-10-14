@@ -117,7 +117,20 @@ function pastTheEdge() {
   return [...root.querySelectorAll('*')].filter(node => {
     if (!shown(node)) return false;
     const box = node.getBoundingClientRect();
-    return box.right > edge.right + 0.5 || box.left < edge.left - 0.5;
+    if (!(box.right > edge.right + 0.5 || box.left < edge.left - 0.5)) return false;
+
+    // the cut-off end of a one-line text (a long command in its colors) is not on screen: a box
+    // between it and the host that clips its content and itself fits is what is seen
+    for (let up = node.parentElement; up && up !== root; up = up.parentElement) {
+      const upBox = up.getBoundingClientRect();
+      if (
+        getComputedStyle(up).overflowX !== 'visible' &&
+        upBox.right <= edge.right + 0.5 &&
+        upBox.left >= edge.left - 0.5
+      )
+        return false;
+    }
+    return true;
   });
 }
 
@@ -125,6 +138,8 @@ function pastTheEdge() {
 function overlaps() {
   const found = [];
   [root, ...root.querySelectorAll('*')].forEach(parent => {
+    // the lines of one drawn icon lie over each other by design
+    if (parent.closest('svg')) return;
     const boxes = [...parent.children]
       .filter(shown)
       .map(child => [child, child.getBoundingClientRect()])
@@ -289,6 +304,9 @@ const contrastCheck = label => {
 
 try {
   await agents.detect(true);
+
+  // drawn while covered by other windows, or the part waits to draw until shown (.main.js awake)
+  await main('awake');
   await main('size', 1440, 900);
   for (let count = 0; count < 2; count++) {
     const made = await window.TnaiTest.open('Terminal');
@@ -355,13 +373,13 @@ try {
   let total = root.querySelector('.ttd-total');
   const before = total.textContent;
   check(
-    !total.hidden && /^Total (<1m|\d+m)$/.test(before) && details().state().mounted[0].totalMs > 0,
+    !total.hidden && /^(<1m|\d+m)$/.test(before) && details().state().mounted[0].totalMs > 0,
     'the total running time is shown (' + before + ')'
   );
   check((total.dataset.age || '') === '', 'a plain terminal has no color step');
   Date.now = () => realNow() + 7 * 60000;
   window.dispatchEvent(new CustomEvent('tnai:target-changed'));
-  const grown = await until(() => /^Total (7|8)m$/.test(total.textContent), 3000);
+  const grown = await until(() => /^(7|8)m$/.test(total.textContent), 3000);
   Date.now = realNow;
   check(!!grown, 'it grows with the clock (' + before + ' to ' + total.textContent + ')');
 
@@ -708,6 +726,59 @@ try {
     'a long step is one line ending in "…"'
   );
 
+  // Readable steps (the approved mock, details-readability.html): a command without its
+  // "cd <folder>;" in code colors, a run of edits of one file as one row that says how many.
+  await hook({
+    hook_event_name: 'PreToolUse',
+    tool_name: 'Bash',
+    tool_use_id: 'b1',
+    tool_input: { command: 'cd "/c/some/folder"; node tools/format-code.js src/app.js' },
+  });
+  for (const id of ['w1', 'w2', 'w3'])
+    await hook({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Edit',
+      tool_use_id: id,
+      tool_input: { file_path: 'src/styles/app.css' },
+    });
+  const editRow = await until(
+    () =>
+      [...body('timeline').querySelectorAll('li[data-step="edit"]')].find(
+        row =>
+          row.querySelector('span').textContent === 'src/styles/app.css' &&
+          row.querySelector('.ttd-times')?.textContent === '3 times'
+      ),
+    6000
+  );
+  const runRow = [...body('timeline').querySelectorAll('li[data-step="run"]')].find(row =>
+    /format-code\.js/.test(row.querySelector('span').textContent)
+  );
+  check(
+    !!runRow &&
+      !/^cd /.test(runRow.querySelector('span').textContent) &&
+      runRow.querySelector('.ttd-c-cmd')?.textContent === 'node' &&
+      !!runRow.querySelector('.ttd-step svg'),
+    'a command reads without its "cd …;", in code colors, with its kind icon (' +
+      (runRow?.querySelector('span').textContent || 'no row') +
+      ')'
+  );
+  check(
+    editRow?.querySelector('.ttd-times')?.textContent === '3 times' &&
+      editRow.querySelector('.ttd-file-name')?.textContent === 'app.css' &&
+      getComputedStyle(editRow.querySelector('.ttd-step')).color !==
+        getComputedStyle(editRow).color,
+    'three edits of one file are one row that says "3 times", the name first, the kind in color (' +
+      [...body('timeline').querySelectorAll('li[data-step="edit"]')]
+        .map(
+          row =>
+            row.querySelector('span').textContent +
+            ' ' +
+            (row.querySelector('.ttd-times')?.textContent || '1')
+        )
+        .join(', ') +
+      ')'
+  );
+
   const withRows = [...body('with').querySelectorAll('.ttd-link')].map(row => [
     row.tagName,
     row.querySelector('span').textContent,
@@ -797,8 +868,12 @@ try {
       ')'
   );
   check(
-    /^(Using |Editing src\/app\.js|2 sub-agents running)/.test(fact('now', 'Doing now') || ''),
-    'Now: what it does comes from the freshest signal (' + fact('now', 'Doing now') + ')'
+    /^(Using |Editing src\/app\.js|2 sub-agents running)/.test(
+      root.querySelector('.ttd-doing')?.textContent || ''
+    ),
+    'Now: what it does, in the card at the top, comes from the freshest signal (' +
+      root.querySelector('.ttd-doing')?.textContent +
+      ')'
   );
   check(
     fact('now', 'Task') === 'Add a dark mode toggle',

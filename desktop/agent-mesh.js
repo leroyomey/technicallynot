@@ -243,6 +243,17 @@ const renamed = new Map(); // paneId -> { from, to }: a rename its agent has not
 const renamedAt = new Map(),
   RENAME_GAP_MS = 60000; // paneId -> when its agent last sent a `tnai rename` (the limit there)
 
+// Renames, so the whole app follows a new name (the whole system should know the new
+// name at once). An old name keeps reaching the renamed agent (find),
+// and every other agent is told once, with its next prompt (renamedNote).
+const formerNames = new Map(); // old name, lower case -> { paneId, from, to }
+const renameLog = []; // { paneId, from, to, at }, oldest first, the last RENAME_LOG_MAX
+const RENAME_LOG_MAX = 50;
+
+// paneId -> the number of the last rename it was told of (renameCount)
+const toldRenames = new Map();
+let renameCount = 0; // counts every rename, so "after" never depends on two clocks agreeing
+
 // paneId -> { name, task, agent, offline, idle, kept, cwd } published by the UI (37)
 const names = new Map();
 let server = null,
@@ -908,7 +919,78 @@ async function find(list, key, project, self) {
         named.map(m => m.name + ' (agent id ' + idOf(m) + ')').join(', ') +
         '. Use the agent id.',
     };
-  return named[0] || null;
+  if (named[0]) return named[0];
+
+  // An old name of an agent the user renamed still reaches it, while no agent here carries that
+  // name now. The copy says which name was used, so the reply can tell the sender the new one.
+  const was = formerNames.get(k);
+  const renamedOne = was && here.find(m => m.paneId === was.paneId);
+  return renamedOne ? { ...renamedOne, renamedFrom: was.from } : null;
+}
+
+// ---------- renames ----------
+const sameFolder = (a, b) =>
+  !!a && !!b && path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
+
+// A panel's name changed from `from` to `to`: its old name points at it from now on, and the
+// rename waits in the log for every other agent of its project.
+function noteRename(paneId, from, to) {
+  formerNames.delete(to.toLowerCase());
+  formerNames.set(from.toLowerCase(), { paneId, from, to });
+  renameLog.push({
+    paneId,
+    from,
+    to,
+    seq: ++renameCount,
+    at: Date.now(),
+    cwd: names.get(paneId)?.cwd || '',
+  });
+  if (renameLog.length > RENAME_LOG_MAX) renameLog.splice(0, renameLog.length - RENAME_LOG_MAX);
+}
+
+// The renamed agent itself: one line, once.
+function ownRenameNote(paneId) {
+  const r = renamed.get(paneId);
+  if (!r) return '';
+  renamed.delete(paneId);
+  if (r.from === r.to) return '';
+  return (
+    'Technically Not: the user renamed you from "' +
+    r.from +
+    '" to "' +
+    r.to +
+    '". You are ' +
+    r.to +
+    ' from now on: use that name whenever you name yourself (messages to other agents, hand-offs, reports), and never sign as ' +
+    r.from +
+    ' again.'
+  );
+}
+
+// Every other agent of the same project: the renames since it was last told, one line, once.
+// A name renamed twice is told as its first old name and its newest name.
+function othersRenamedNote(paneId) {
+  const since = toldRenames.get(paneId);
+  toldRenames.set(paneId, renameCount);
+  const cwd = names.get(paneId)?.cwd || '';
+  if (since === undefined || !cwd) return '';
+  const byPane = new Map();
+  for (const r of renameLog) {
+    if (r.seq <= since || r.paneId === paneId || !sameFolder(r.cwd, cwd)) continue;
+    const seen = byPane.get(r.paneId);
+    byPane.set(r.paneId, { from: seen ? seen.from : r.from, to: r.to });
+  }
+  const changes = [...byPane.values()].filter(r => r.from.toLowerCase() !== r.to.toLowerCase());
+  if (!changes.length) return '';
+  return (
+    'Technically Not: the user renamed ' +
+    (changes.length > 1 ? 'agents' : 'an agent') +
+    ' in this project: ' +
+    changes.map(r => '"' + r.from + '" is now "' + r.to + '"').join(', ') +
+    '. Use the new ' +
+    (changes.length > 1 ? 'names' : 'name') +
+    ' from now on (in `tnai send`, hand-offs, reports and replies to the user); an old name still reaches the same agent.'
+  );
 }
 
 // `tnai send` to an agent whose pane was closed (or whose process ended): Technically Not revives
@@ -1899,7 +1981,11 @@ async function request(paneId, pane, msg, socket) {
       }
       if (retired) from += ', to ' + retired + ', which handed its work to you';
     }
-    const via = retired ? ', which took over from ' + retired + ' when it retired' : '';
+    const via = retired
+      ? ', which took over from ' + retired + ' when it retired'
+      : target?.renamedFrom
+        ? ', which the user renamed from ' + target.renamedFrom + ': use its new name'
+        : '';
     if (!target) {
       if (
         hit &&
@@ -2194,10 +2280,23 @@ async function request(paneId, pane, msg, socket) {
     };
     const got = [],
       refused = [],
-      outside = [];
+      outside = [],
+      folders = [];
     for (const f of files) {
       if (!deps.locks.rel(project, f)) {
         outside.push(f);
+        continue;
+      }
+
+      // A lock is matched against the edited file's own path, so one on a folder guards nothing.
+      let isFolder = false;
+
+      try {
+        isFolder = fs.statSync(f).isDirectory();
+      } catch {}
+
+      if (isFolder) {
+        folders.push(deps.locks.rel(project, f));
         continue;
       }
       const r = deps.locks.acquire(project, f, me);
@@ -2207,8 +2306,12 @@ async function request(paneId, pane, msg, socket) {
     const text =
       (got.length ? 'Locked: ' + got.join(', ') + '. `tnai unlock` when done.\n' : '') +
       (refused.length ? 'Refused:\n  ' + refused.join('\n  ') + '\n' : '') +
-      (outside.length ? 'Not in this project (not locked): ' + outside.join(', ') + '\n' : '');
-    return refused.length ? { ok: false, error: text.trim() } : { ok: true, text: text.trim() };
+      (outside.length ? 'Not in this project (not locked): ' + outside.join(', ') + '\n' : '') +
+      (folders.length
+        ? 'A folder (not locked, lock the files in it): ' + folders.join(', ') + '\n'
+        : '');
+    const failed = refused.length || (folders.length && !got.length);
+    return failed ? { ok: false, error: text.trim() } : { ok: true, text: text.trim() };
   }
 
   // Team mode (agent-teams.js): `tnai team` shows the caller's team. Only the user changes teams:
@@ -2423,20 +2526,20 @@ module.exports = {
   // names. Hook (agent-hooks.js, each prompt): one line for an agent whose panel was renamed since
   // it was last told, then forgotten.
   renamedNote(paneId) {
-    const r = renamed.get(paneId);
-    if (!r) return '';
-    renamed.delete(paneId);
-    return r.from === r.to
-      ? ''
-      : 'Technically Not: the user renamed you from "' +
-          r.from +
-          '" to "' +
-          r.to +
-          '". You are ' +
-          r.to +
-          ' from now on: use that name whenever you name yourself (messages to other agents, hand-offs, reports), and never sign as ' +
-          r.from +
-          ' again.';
+    return [ownRenameNote(paneId), othersRenamedNote(paneId)].filter(Boolean).join('\n');
+  },
+
+  // The panes renamedNote may still have a line for (cheap, nothing is cleared): main.js asks it
+  // after every name list, so a CLI without the prompt hook (Codex, OpenCode, Cursor Agent) gets
+  // the line typed in like a team notice.
+  renamesPending() {
+    const out = [];
+    for (const id of names.keys()) {
+      const since = toldRenames.get(id);
+      const others = since !== undefined && renameLog.some(r => r.seq > since && r.paneId !== id);
+      if (renamed.has(id) || others) out.push(id);
+    }
+    return out;
   },
   setNames(list) {
     const before = new Map([...names].map(([id, n]) => [id, n.name]));
@@ -2458,14 +2561,19 @@ module.exports = {
     }
 
     // A panel the user renamed: its agent is told once, with its next prompt (renamedNote), so its
-    // messages and reports use the new name.
+    // messages and reports use the new name. A new panel is told only of renames after it came.
     for (const [id, n] of names) {
       const old = before.get(id);
-      if (old && old !== id && old !== n.name)
+      if (!before.has(id)) toldRenames.set(id, renameCount);
+      if (old && old !== id && old !== n.name) {
         renamed.set(id, { from: renamed.get(id)?.from || old, to: n.name });
+        noteRename(id, old, n.name);
+      }
     }
     return true;
   },
+  // The renames other agents are told about, for the desktop check (newest last).
+  renames: () => renameLog.map(r => ({ ...r })),
   // Who a pane is, for a file lock taken by Claude Code's edit hook (file-locks.js): its name, CLI
   // and project; null when it is not an agent in an open project. Live agents of a project with
   // status and task, as `tnai agents` shows them (agent-peers.js).
@@ -2485,6 +2593,12 @@ module.exports = {
   forget(paneId) {
     lastShot.delete(paneId);
     renamedAt.delete(paneId);
+    toldRenames.delete(paneId);
+
+    // a closed panel is never interrupted or told of its rename again
+    intervened.delete(paneId);
+    renamed.delete(paneId);
+    for (const [old, was] of formerNames) if (was.paneId === paneId) formerNames.delete(old);
     const pane = panes.get(paneId);
     if (!pane) return;
     tokens.delete(pane.token);

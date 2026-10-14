@@ -56,6 +56,9 @@ const valid = url => {
 };
 
 function unavailable() {
+  // macOS always has its keychain, and asking reads it (a keychain item of another build raises a
+  // prompt that blocks the main process while Settings asks for this state).
+  if (process.platform === 'darwin') return '';
   try {
     const backend = process.platform === 'linux' ? safeStorage.getSelectedStorageBackend?.() : '';
     if (safeStorage.isEncryptionAvailable() && backend !== 'basic_text') return '';

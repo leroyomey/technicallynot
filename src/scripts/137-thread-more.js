@@ -11,7 +11,13 @@
  *                 row reads "Back to the conversation". Only for a tool with a conversation.
  *   Stop / Start  Stop while the session runs (it asks first, as the old page does), Start while
  *                 it is stopped (10 `TnaiAgents.stop` / `start`)
+ *   Hand off to a fresh agent   54 `TnaiContextUpkeep.handOff`, shown only while the agent is
+ *                 idle and can be handed off
  *   Close thread  11 `TnaiLiveTasks.close`, which asks first while the session runs
+ *
+ * Two quicker ways in: the on/off button just before "..." on the top row does Stop / Start in one
+ * press (`.tnt-head-power`), and a right press on a thread in the list (119) opens that thread
+ * with this menu at its row.
  *
  * The menu is the app's three-dots menu in small: the same panel and rows (`.tnt-menu`,
  * `.tnt-menu-row`, 27-thread-frame.css), a press outside or Escape closes it, the arrow keys move
@@ -88,10 +94,11 @@
     renaming?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
   }
 
-  // The question is asked over the thread it is about, in the words of the old page.
-  function stop(paneId) {
+  // The question is asked over the thread it is about, in the words of the old page: the open
+  // thread's island, or the All threads card the menu was opened from.
+  function stop(paneId, over) {
     const ask = window.TnaiPanelConfirm;
-    const host = island();
+    const host = over || hostOf(paneId);
     if (!ask || !host) return;
     ask(host, {
       title: 'Stop this agent session?',
@@ -104,9 +111,48 @@
   }
 
   const start = paneId => window.TnaiAgents?.start?.(paneId);
-  const closeThread = paneId => window.TnaiLiveTasks?.close?.(paneId, island());
+  const closeThread = paneId => window.TnaiLiveTasks?.close?.(paneId, hostOf(paneId));
+
+  // Stop while the session runs (it asks first), Start while it is stopped: the on/off button of
+  // the top row and of every All threads card (135).
+  function stopOrStart(paneId, over) {
+    const session = sessionOf(paneId);
+    if (!session) return;
+    if (session.running) stop(paneId, over);
+    else start(paneId);
+  }
   const team = paneId => window.TnaiAgentTeams?.open?.(paneId);
-  const showScreen = () => window.TnaiThreadView?.setMode?.('term');
+
+  // The old agent writes a hand-off letter, a fresh one takes over with it, and the old one stays
+  // open for its questions until the user confirms the new one's summary (54).
+  const handOff = paneId => window.TnaiContextUpkeep?.handOff?.(paneId);
+
+  // Shown while the agent is idle and can be handed off. A working agent's row would only refuse.
+  function canHandOff(paneId) {
+    const why = window.TnaiContextUpkeep?.handOffWhy?.(paneId);
+    return why === '';
+  }
+
+  // From an All threads card the CLI screen is shown where it lives: the thread opens on Threads.
+  function showScreen(paneId) {
+    const setTerm = () => window.TnaiThreadView?.setMode?.('term');
+    if (card) {
+      if (!window.TnaiThreads?.show?.(paneId)) return;
+
+      // the thread view may draw the thread a moment later: the screen follows when it does
+      if (window.TnaiThreadView?.shown?.() !== paneId) {
+        const onView = event => {
+          if (event.detail?.paneId !== paneId) return;
+          window.removeEventListener('tnai:thread-view', onView);
+          setTerm();
+        };
+        window.addEventListener('tnai:thread-view', onView);
+        setTimeout(() => window.removeEventListener('tnai:thread-view', onView), 2000);
+        return;
+      }
+    }
+    setTerm();
+  }
   const showConversation = () => window.TnaiThreadView?.setMode?.('read');
 
   function teamLabel(paneId) {
@@ -119,11 +165,14 @@
   function rowsFor(paneId) {
     const session = sessionOf(paneId);
     if (!session) return [];
-    const rows = [{ id: 'rename', label: 'Rename', icon: 'pencil', go: rename, keepFocus: true }];
+    const renameRow = card?.rename || rename;
+    const rows = [
+      { id: 'rename', label: 'Rename', icon: 'pencil', go: renameRow, keepFocus: true },
+    ];
     if (canTeam(paneId))
       rows.push({ id: 'team', label: teamLabel(paneId), icon: 'users', go: team });
     if (hasConversation(paneId)) {
-      if (screenShown())
+      if (!card && screenShown())
         rows.push({
           id: 'conversation',
           label: 'Back to the conversation',
@@ -135,6 +184,15 @@
     }
     if (session.running) rows.push({ id: 'stop', label: 'Stop', icon: 'square-stop', go: stop });
     else rows.push({ id: 'start', label: 'Start', icon: 'play', go: start });
+
+    // under Stop / Start: only where a hand-off can happen now
+    if (canHandOff(paneId))
+      rows.push({
+        id: 'handoff',
+        label: 'Hand off to a fresh agent',
+        icon: 'rotate-cw',
+        go: handOff,
+      });
     rows.push({ id: 'close', label: 'Close thread', icon: 'x', go: closeThread });
     return rows;
   }
@@ -144,6 +202,12 @@
   let button = null;
   let pane = '';
   let shownRows = [];
+
+  // Set while the menu was opened from an All threads card (135): { host, rename(paneId) }.
+  let card = null;
+
+  // Where a question about the thread is asked: its card, or the open thread's island.
+  const hostOf = paneId => (card && pane === paneId ? card.host : island());
 
   function build() {
     if (menu) return;
@@ -219,11 +283,14 @@
 
   const isOpen = () => !!menu && !menu.hidden;
 
-  function open(anchor) {
-    const paneId = openPane();
+  // `forPane` and `fromCard` are given by an All threads card: the menu is then about that card's
+  // thread, not the open one.
+  function open(anchor, forPane, fromCard) {
+    const paneId = forPane || openPane();
     const from = anchor || menuButton();
     if (!paneId || !from || isOpen()) return;
     build();
+    card = forPane && fromCard ? fromCard : null;
     pane = paneId;
     button = from;
     paint();
@@ -254,20 +321,65 @@
     else open(pressed);
   });
 
+  // ---------- the on/off button, beside the "..." ----------
+  // The menu's Stop / Start row, one press away on the top row: a square while the session runs
+  // (it asks first, as the row does), a play mark while it is stopped.
+  const power = document.createElement('button');
+  power.type = 'button';
+  power.className = 'tnt-icon-btn tnt-head-power';
+  power.hidden = true;
+  let powerShows = '';
+
+  function paintPower() {
+    const session = sessionOf(openPane());
+    power.hidden = !session;
+    if (!session) return;
+    const shows = session.running ? 'stop' : 'start';
+    if (shows === powerShows) return;
+    powerShows = shows;
+    const label = shows === 'stop' ? 'Stop this agent' : 'Start this agent again';
+    power.innerHTML = icon(shows === 'stop' ? 'square-stop' : 'play', 16);
+    power.title = label;
+    power.setAttribute('aria-label', label);
+  }
+
+  power.addEventListener('click', () => stopOrStart(openPane(), island()));
+
   // Other files put their own buttons into the top row after 120 built it (123 at the start, 131
-  // at the end). The "..." stays the last one, where a menu of more is looked for.
+  // at the end). The "..." stays the last one, where a menu of more is looked for, with the on/off
+  // button just before it.
   function keepLast() {
     const more = menuButton();
     const acts = more?.parentNode;
-    if (acts && acts.lastElementChild !== more) acts.append(more);
+    if (!acts) return;
+    if (acts.lastElementChild !== more) acts.append(more);
+    if (more.previousElementSibling !== power) more.before(power);
+    paintPower();
   }
+  window.TnaiAgents?.onChange?.(paintPower);
+
+  // ---------- a right press on a thread in the list ----------
+  // Opens that thread and its menu at the row, so a thread can be stopped, started, renamed or
+  // closed without opening it first. Another computer's agent has no such menu.
+  document.addEventListener('contextmenu', event => {
+    const row = event.target.closest?.('.tnt-lst .tnt-th');
+    if (!row || row.dataset.remote || !row.dataset.pane) return;
+    event.preventDefault();
+    close();
+    row.click();
+
+    // A short timer, not an animation frame: a window that is covered draws no frames.
+    setTimeout(() => {
+      if (openPane() === row.dataset.pane && row.isConnected) open(row);
+    }, 30);
+  });
 
   // Another thread was opened, or none: the menu and a name being edited belong to the one before.
   let lastPane = openPane();
   window.addEventListener('tnai:thread-view', event => {
     keepLast();
     const now = event.detail?.paneId || '';
-    if (isOpen() && now !== pane) close();
+    if (isOpen() && !card && now !== pane) close();
     if (renaming && now !== lastPane) cancelRename();
     lastPane = now;
   });
@@ -283,6 +395,12 @@
     open,
     close,
     isOpen,
+
+    // the name becomes a field where it stands (the pencil beside the name, 120, calls it too)
+    rename: paneId => rename(paneId || openPane()),
+
+    // the on/off button of an All threads card (135): asks over that card before a stop
+    stopOrStart,
 
     // the rows the menu has for a thread now (the open one when none is named): [{ id, label }]
     rows: paneId => rowsFor(paneId || openPane()).map(row => ({ id: row.id, label: row.label })),

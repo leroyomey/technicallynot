@@ -1,0 +1,101 @@
+{
+  "about": "Claude Code models offered in Technically Not. The app reads this file at most once an hour, so a new model shows up without an app update. Only ids that start with claude- are taken; at most 80 rows.",
+  "version": 1,
+  "models": [
+    {
+      "id": "claude-fable-5-1",
+      "label": "Fable 5.1",
+      "group": "Fable"
+    },
+    {
+      "id": "claude-fable-5",
+      "label": "Fable 5",
+      "group": "Fable"
+    },
+    {
+      "id": "claude-mythos-5-1",
+      "label": "Mythos 5.1",
+      "group": "Mythos"
+    },
+    {
+      "id": "claude-mythos-5",
+      "label": "Mythos 5",
+      "group": "Mythos"
+    },
+    {
+      "id": "claude-opus-5-5",
+      "label": "Opus 5.5",
+      "group": "Opus"
+    },
+    {
+      "id": "claude-opus-5",
+      "label": "Opus 5",
+      "group": "Opus"
+    },
+    {
+      "id": "claude-opus-4-8",
+      "label": "Opus 4.8",
+      "group": "Opus"
+    },
+    {
+      "id": "claude-opus-4-7",
+      "label": "Opus 4.7",
+      "group": "Opus"
+    },
+    {
+      "id": "claude-opus-4-6",
+      "label": "Opus 4.6",
+      "group": "Opus"
+    },
+    {
+      "id": "claude-opus-4-5-20251101",
+      "label": "Opus 4.5",
+      "group": "Opus"
+    },
+    {
+      "id": "claude-opus-4-1-20250805",
+      "label": "Opus 4.1",
+      "group": "Opus"
+    },
+    {
+      "id": "claude-opus-4-20250514",
+      "label": "Opus 4",
+      "group": "Opus"
+    },
+    {
+      "id": "claude-sonnet-5-5",
+      "label": "Sonnet 5.5",
+      "group": "Sonnet"
+    },
+    {
+      "id": "claude-sonnet-5",
+      "label": "Sonnet 5",
+      "group": "Sonnet"
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "label": "Sonnet 4.6",
+      "group": "Sonnet"
+    },
+    {
+      "id": "claude-sonnet-4-5-20250929",
+      "label": "Sonnet 4.5",
+      "group": "Sonnet"
+    },
+    {
+      "id": "claude-sonnet-4-20250514",
+      "label": "Sonnet 4",
+      "group": "Sonnet"
+    },
+    {
+      "id": "claude-haiku-5-5",
+      "label": "Haiku 5.5",
+      "group": "Haiku"
+    },
+    {
+      "id": "claude-haiku-4-5-20251001",
+      "label": "Haiku 4.5",
+      "group": "Haiku"
+    }
+  ]
+}

@@ -634,8 +634,19 @@
           st.heldFrom = Math.round(st.heldFrom * k);
         }
       },
-      () => {}
-    ); // no mic left: stop() still returns what was recorded
+      () => {
+        // No mic left: the stream is already dead, so nothing more can be recorded. 70 ends the
+        // recording on this event (stop() still returns what was recorded) and says why; without
+        // it the button stayed on "Listening" over a dead stream.
+        if (g !== st.gen || !st.recording) return;
+
+        // openMic's releaseMic() cleared the rate, and stop() returns nothing without it
+        st.nativeRate = rate;
+        try {
+          window.dispatchEvent(new Event('tnai:voice-mic-gone'));
+        } catch (_e) {}
+      }
+    );
   }
 
   // Open the mic ahead of a likely press (hover/focus on the mic button); released after ms unless

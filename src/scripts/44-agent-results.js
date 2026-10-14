@@ -201,11 +201,15 @@
       para = [];
     };
     const flushList = () => {
+      // Numbers of two or more digits need a wider left gutter, or "19." is clipped at the edge
+      const lastNumber = list ? list.start + list.items.length - 1 : 0;
+      const digits = String(lastNumber).length;
       if (list)
         out.push(
           '<' +
             list.tag +
             (list.start > 1 ? ' start="' + list.start + '"' : '') +
+            (list.tag === 'ol' && digits > 1 ? ' data-digits="' + Math.min(digits, 3) + '"' : '') +
             '>' +
             list.items.map(i => '<li>' + inline(i) + '</li>').join('') +
             '</' +

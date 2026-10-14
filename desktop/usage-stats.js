@@ -1,22 +1,25 @@
 /*
- * Technically Not desktop · usage-stats.js — Settings › Usage: aggregates REAL token usage from the
- * agent CLIs' own local session logs (never from a network call). Claude Code:
- * ~/.claude/projects/<project>/<session>.jsonl (assistant lines carry message.id, message.usage,
- * model, timestamp, sessionId, cwd; the same message is written several times while streaming, so
- * lines are deduped by message id + requestId — last write wins, same shape agent-turns.js reads).
- * Codex: ~/.codex/sessions/<y>/<m>/<d>/rollout-<id>.jsonl (session_meta gives sessionId/cwd,
+ * Technically Not desktop · usage-stats.js — Settings › Usage: aggregates REAL token usage
+ * from the agent CLIs' own local session logs (never from a network call). Claude Code:
+ * ~/.claude/projects/<project>/<session>.jsonl, and the transcripts of that session's helpers
+ * (sub-agents) in <project>/<session>/subagents/. Assistant lines carry message.id,
+ * message.usage, model, timestamp, sessionId, cwd; the same message is written several times
+ * while streaming, so lines are deduped by message id + requestId — last write wins, same
+ * shape agent-turns.js reads. A resumed session copies earlier messages into its new file, so
+ * that key is also kept once over all files. Codex:
+ * ~/.codex/sessions/<y>/<m>/<d>/rollout-<id>.jsonl (session_meta gives sessionId/cwd,
  * turn_context gives the model, token_count gives cumulative totals; one "turn" record per
  * task_started..task_complete/turn_aborted span, same reading agent-turns.js does for its live
- * turn). OpenCode: its own database (opencode-store.js usage(): one record per answer, with its
- * cost; read-only, kept in memory only, and left out when test roots name no "opencode"). Roots can
- * be overridden with TNAI_USAGE_ROOTS (JSON {"claude":"<dir>","codex":"<dir>"}) for tests; read
- * fresh on every call. The result also carries plan-limits.js limits (Settings › Usage "Plan
- * limits"). Files are streamed line by line (never loaded whole), skipped past 95 days old, and
- * cached per path+size+mtime so repeat calls are cheap; only one computation runs at a time, shared
- * by concurrent callers. The per-file cache is also kept on disk (userData/usage-cache.jsonl:
- * per-message token counts, model, session id and folder, never message text), so an app start does
- * not read every transcript again, and a transcript that only grew is read from where the last
- * reading stopped.
+ * turn). OpenCode: its own database (opencode-store.js usage(): one record per answer, with
+ * its cost; read-only, kept in memory only, and left out when test roots name no "opencode").
+ * Roots can be overridden with TNAI_USAGE_ROOTS (JSON {"claude":"<dir>","codex":"<dir>"}) for
+ * tests; read fresh on every call. The result also carries plan-limits.js limits (Settings ›
+ * Usage "Plan limits"). Files are streamed line by line (never loaded whole), skipped past 95
+ * days old, and cached per path+size+mtime so repeat calls are cheap; only one computation
+ * runs at a time, shared by concurrent callers. The per-file cache is also kept on disk
+ * (userData/usage-cache.jsonl: per-message token counts, model, session id and folder, never
+ * message text), so an app start does not read every transcript again, and a transcript that
+ * only grew is read from where the last reading stopped.
  */
 'use strict';
 const crypto = require('crypto');
@@ -42,14 +45,53 @@ async function listClaudeFiles(root) {
     if (!d.isDirectory()) continue;
     let inner;
     try {
-      inner = await fsp.readdir(path.join(root, d.name));
+      inner = await fsp.readdir(path.join(root, d.name), { withFileTypes: true });
     } catch {
       continue;
     }
-    for (const f of inner)
-      if (f.toLowerCase().endsWith('.jsonl')) files.push(path.join(root, d.name, f));
+    for (const f of inner) {
+      const full = path.join(root, d.name, f.name);
+
+      // A session's helpers (sub-agents) write their own transcripts in
+      // <session>/subagents/agent-*.jsonl; their tokens are the session's too.
+      if (f.isDirectory()) await listSubagentFiles(path.join(full, 'subagents'), files);
+      else if (f.name.toLowerCase().endsWith('.jsonl')) files.push(full);
+    }
   }
   return { found: true, files };
+}
+
+async function listSubagentFiles(dir, files) {
+  let names;
+  try {
+    names = await fsp.readdir(dir);
+  } catch {
+    return;
+  }
+  for (const name of names)
+    if (name.toLowerCase().endsWith('.jsonl')) files.push(path.join(dir, name));
+}
+
+// The same message can be in several transcripts (a resumed or forked session copies the earlier
+// conversation into its new file), so Claude Code records are kept once per message id +
+// requestId over all files, not only within one. The first file that has it keeps it.
+function uniqueClaudeRecords(files, recordLists) {
+  const seen = new Set();
+  const out = [];
+  files.forEach((filePath, i) => {
+    const records = recordLists[i];
+    const entry = fileCache.get(filePath);
+    if (!entry || entry.records !== records || !entry.keys) {
+      out.push(...records);
+      return;
+    }
+    for (const [key, index] of entry.keys) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(records[index]);
+    }
+  });
+  return out;
 }
 
 async function listCodexFiles(root) {
@@ -107,16 +149,13 @@ async function readLines(filePath, start, end, onLine) {
   return consumed;
 }
 
-// The text lines readline gave for one newline-ended line (this file read with readline before): it
-// also breaks a line at a lone \r, U+2028 and U+2029, so a JSON line holding one of those was never
-// counted. Kept the same, so the numbers do not change with the way of reading.
-const LINE_BREAK = /[\r\u2028\u2029]/;
-
+// One newline-ended line as text, without a Windows \r at its end. Only \n ends a line: JSON may
+// hold U+2028 and U+2029 unescaped inside a string, and splitting there (as readline did) dropped
+// that message's usage.
 function textLines(buf, fn) {
   let line = buf.toString('utf8');
   if (line.charCodeAt(line.length - 1) === 13) line = line.slice(0, -1);
-  if (LINE_BREAK.test(line)) line.split(LINE_BREAK).forEach(fn);
-  else fn(line);
+  fn(line);
 }
 
 // ---------- Claude Code transcript → per-message usage records ----------
@@ -800,7 +839,11 @@ async function collectNow() {
     try {
       oc = openCodeRecords(openCodeFile);
     } catch {}
-  const allRecords = [].concat(...claudeRecords, ...codexRecords, oc.records);
+  const allRecords = [].concat(
+    uniqueClaudeRecords(claudeList.files, claudeRecords),
+    ...codexRecords,
+    oc.records
+  );
   saveCache();
 
   const sources = [

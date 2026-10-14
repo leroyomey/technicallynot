@@ -120,6 +120,31 @@
     return [...kept, ...added];
   }
 
+  // One icon button of a card's head, in the look of the "open on its own" button beside it.
+  function headButton(className, iconName, label) {
+    const button = make('button', 'tat-act ' + className);
+    button.type = 'button';
+    button.innerHTML = icon(iconName, 14);
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    return button;
+  }
+
+  // The on/off button follows the session: a square while it runs, a play mark while it is
+  // stopped, hidden while there is no session.
+  function paintPower(paneId, card) {
+    const session = (window.TnaiAgents?.sessions?.() || []).find(one => one.paneId === paneId);
+    card.power.hidden = !session;
+    if (!session) return;
+    const shows = session.running ? 'stop' : 'start';
+    if (shows === card.powerShows) return;
+    card.powerShows = shows;
+    const label = shows === 'stop' ? 'Stop this agent' : 'Start this agent again';
+    card.power.innerHTML = icon(shows === 'stop' ? 'square-stop' : 'play', 14);
+    card.power.title = label;
+    card.power.setAttribute('aria-label', label);
+  }
+
   function makeCard(paneId) {
     const el = make('section', 'tat-card');
     el.dataset.pane = paneId;
@@ -129,15 +154,54 @@
     const text = make('div', 'tat-head-text');
     const name = make('b');
     const sub = make('small');
-    text.append(name, sub);
+
+    // the name and the pencil beside it, which turns the name into a field where it stands
+    const nameLine = make('div', 'tat-name-line');
+    const pencil = make('button', 'tat-rename');
+    pencil.type = 'button';
+    pencil.innerHTML = icon('pencil', 12);
+    pencil.title = 'Rename this agent';
+    pencil.setAttribute('aria-label', 'Rename this agent');
+    pencil.addEventListener('click', () => renameCard(paneId, name));
+
+    // how long the session has been open, colored as it runs long (120 paints it)
+    const age = make('span', 'tnt-head-age tat-age');
+    age.hidden = true;
+    nameLine.append(name, pencil, age);
+    text.append(nameLine, sub);
     const open = make('button', 'tat-open');
     open.type = 'button';
     open.innerHTML = icon('maximize-2', 13);
     open.title = 'Open this thread on its own';
     open.setAttribute('aria-label', 'Open this thread on its own');
-    head.append(dot, text, open);
+
+    // the thread's helpers as bubbles, in the head's spare room (filled by paintHelpers)
+    const chips = make('div', 'tat-helpers');
+    chips.hidden = true;
+    chips.setAttribute('aria-label', 'Helpers of this thread');
+
+    // The open thread's own top-row controls, for this card's thread: handoff
+    // history, the side column, Stop / Start and the "..." menu. The strip's click handler below
+    // does what each one says.
+    const handoff = headButton('tat-act-handoff', 'clock', 'Handoff history');
+    const side = headButton('tat-act-side', 'panel-right', 'Open with Files, Helpers and Details');
+    const power = headButton('tat-act-power', 'square-stop', 'Stop this agent');
+    power.hidden = true;
+    const more = headButton('tat-act-more', 'ellipsis', 'More for this thread');
+    more.setAttribute('aria-haspopup', 'menu');
+    more.setAttribute('aria-expanded', 'false');
+    head.append(dot, text, chips, handoff, side, power, more, open);
     const body = make('div', 'tnt-talk tat-body');
     body.setAttribute('role', 'log');
+
+    // A helper's conversation, shown in the card's place while its bubble is pressed. The lead's
+    // own conversation is only put aside meanwhile, never let go of, so the way back finds it as
+    // it was, at the same place.
+    const helperBody = make('div', 'tnt-talk tat-body');
+    helperBody.setAttribute('role', 'log');
+    helperBody.hidden = true;
+    const helperNote = make('p', 'tat-helper-note');
+    helperNote.hidden = true;
 
     // A thread whose tool keeps no conversation to read (a PowerShell thread): one line of words
     // and one button to its screen.
@@ -151,8 +215,153 @@
     // the thread's questions for the user, under its conversation (121 fills it)
     const asks = make('div', 'tnt-asks tat-asks');
     asks.hidden = true;
-    el.append(head, body, plain, asks);
-    return { el, dot, name, sub, body, plain, asks, mounted: false, asking: false };
+    el.append(head, body, helperBody, helperNote, plain, asks);
+    return {
+      el,
+      dot,
+      name,
+      sub,
+      age,
+      power,
+      powerShows: '',
+      body,
+      plain,
+      asks,
+      chips,
+      helperBody,
+      helperNote,
+      mounted: false,
+      asking: false,
+      viewing: '',
+      leadScroll: 0,
+    };
+  }
+
+  // ---------- a thread's helpers ----------
+  // Bubbles in the card's head, one per helper (123 knows them and draws the bubble). A press
+  // shows that helper's conversation in the card; while one is shown, a "← lead" bubble comes
+  // first and is the way back, as is Escape. A second press on a helper that has a panel of its
+  // own opens it as its own thread, as in the side island.
+  const helpers = () => window.TnaiThreadHelpers;
+  const CARD_CHIPS = 3;
+
+  function helpersOf(paneId) {
+    try {
+      return helpers()?.list?.(paneId) || [];
+    } catch {
+      return [];
+    }
+  }
+
+  function paintHelpers(paneId, card) {
+    const list = helpersOf(paneId);
+
+    // a helper the app no longer knows: back to the lead
+    if (card.viewing && !list.some(helper => helper.key === card.viewing))
+      leaveHelper(paneId, card);
+    card.chips.hidden = !list.length || !helpers()?.chip;
+    if (card.chips.hidden) return;
+    const key =
+      list.map(helper => helper.key + '\n' + helper.name + '\n' + helper.tone).join('\n\n') +
+      '|' +
+      card.viewing +
+      '|' +
+      card.name.textContent;
+    if (card.chips.dataset.key === key) return;
+    if (window.TnaiPress?.defer(card.chips, () => paintHelpers(paneId, card))) return;
+    card.chips.dataset.key = key;
+    const bubbles = [];
+    if (card.viewing) {
+      const lead = card.name.textContent || 'the thread';
+      const back = make('button', 'tnt-side-chip tat-back');
+      back.type = 'button';
+      back.dataset.back = '1';
+      back.title = 'Back to ' + lead + ' (Esc)';
+      back.setAttribute('aria-label', 'Back to ' + lead);
+      back.innerHTML = icon('arrow-left', 12);
+      back.append(make('span', '', lead));
+      bubbles.push(back);
+    }
+    list
+      .slice(0, CARD_CHIPS)
+      .forEach(helper => bubbles.push(helpers().chip(helper, helper.key === card.viewing)));
+    if (list.length > CARD_CHIPS) bubbles.push(helpers().moreChip(list.slice(CARD_CHIPS)));
+    card.chips.replaceChildren(...bubbles);
+  }
+
+  function viewHelper(paneId, card, key) {
+    const helper = helpersOf(paneId).find(one => one.key === key);
+    const reader = readable();
+    if (!helper || !reader) return;
+    if (card.viewing) reader.unmount?.(card.helperBody);
+    else card.leadScroll = card.body.scrollTop;
+    card.viewing = key;
+    card.helperBody.hidden = false;
+    card.helperNote.hidden = true;
+    if (helper.sub) reader.mount?.(card.helperBody, paneId, helper.sub);
+    else if (reader.can?.(helper.tool)) reader.mount?.(card.helperBody, helper.paneId);
+    else {
+      card.helperBody.hidden = true;
+      card.helperNote.hidden = false;
+      card.helperNote.textContent =
+        helpers().shortName(helper.name) +
+        ' runs ' +
+        helper.tool +
+        ', which keeps no conversation this app can read. Press its bubble again to open its thread.';
+    }
+    card.body.hidden = true;
+    card.plain.hidden = true;
+    card.el.classList.add('tat-viewing');
+    paintHelpers(paneId, card);
+  }
+
+  function leaveHelper(paneId, card) {
+    if (!card.viewing) return;
+    readable()?.unmount?.(card.helperBody);
+    card.viewing = '';
+    card.helperBody.hidden = true;
+    card.helperNote.hidden = true;
+    card.el.classList.remove('tat-viewing');
+    card.body.hidden = !card.can;
+    card.plain.hidden = !!card.can;
+
+    // the lead's conversation where the user left it
+    card.body.scrollTop = card.leadScroll;
+    paintHelpers(paneId, card);
+  }
+
+  function pressHelper(paneId, card, chip) {
+    if (chip.dataset.back) {
+      leaveHelper(paneId, card);
+      return;
+    }
+    const key = chip.dataset.key;
+    const helper = helpersOf(paneId).find(one => one.key === key);
+    if (!chip.dataset.more && key === card.viewing && helper?.paneId) {
+      window.TnaiThreads?.show?.(helper.paneId);
+      return;
+    }
+    viewHelper(paneId, card, key);
+  }
+
+  // The card's name becomes a field where it stands (21's inlineEdit): Enter or leaving the field
+  // saves, Escape or the × cancels. The panel's own rename saves it, so the list, the open thread
+  // and the agents follow the new name.
+  let renaming = null;
+
+  function renameCard(paneId, nameEl) {
+    const edit = window.TnaiTerminalPage?.inlineEdit;
+    if (!edit || renaming || nameEl.hidden) return;
+    renaming = edit(
+      nameEl,
+      nameEl.textContent,
+      'Rename this agent',
+      text => window.TnaiPaneNames?.rename(paneId, text),
+      () => {
+        renaming = null;
+      },
+      true
+    );
   }
 
   // A card's words and its state, from the thread list's own reading of the session.
@@ -164,9 +373,14 @@
     if (card.dot.dataset.tone !== (thread.tone || '')) card.dot.dataset.tone = thread.tone || '';
     card.el.setAttribute('aria-label', (thread.name || 'Thread') + ', ' + (thread.tool || ''));
     const can = !!readable()?.can?.(thread.tool);
-    card.plain.hidden = can;
-    card.body.hidden = !can;
+
+    // while a helper is shown, the lead's own parts stay put aside
+    card.plain.hidden = can || !!card.viewing;
+    card.body.hidden = !can || !!card.viewing;
     card.can = can;
+    paintHelpers(paneId, card);
+    paintPower(paneId, card);
+    window.TnaiThreadView?.paintAge?.(card.age, paneId);
   }
 
   // Only the threads on screen and one to each side are read; the others let go of their
@@ -174,6 +388,9 @@
   function mountNear() {
     order.forEach((paneId, index) => {
       const card = cards.get(paneId);
+
+      // The page can be lined up (show) before render has built a new thread's card.
+      if (!card) return;
       const near = index >= first - 1 && index <= first + per;
       if (near && card.can && !card.mounted) {
         readable()?.mount?.(card.body, paneId);
@@ -182,6 +399,9 @@
         readable()?.unmount?.(card.body);
         card.mounted = false;
       }
+
+      // a card out of reach lets go of a helper it showed, too
+      if (!near && card.viewing) leaveHelper(paneId, card);
 
       // Questions only for the threads in sight: for one that is not, the app's own floating card
       // still asks (121 puts that card away for a question that stands in a thread here).
@@ -328,6 +548,7 @@
     askRoom();
     const at = order.indexOf(target());
     if (at >= 0) first = at;
+    chooseInList(target());
     return on;
   }
 
@@ -339,6 +560,7 @@
     for (const [paneId, card] of cards)
       if (!order.includes(paneId)) {
         if (card.mounted) readable()?.unmount?.(card.body);
+        if (card.viewing) readable()?.unmount?.(card.helperBody);
         letGoOfAsks(card);
         card.el.remove();
         cards.delete(paneId);
@@ -433,22 +655,99 @@
     { passive: false }
   );
 
+  // The head's own controls, each through the function the open thread's top row uses. True when
+  // the press was one of them.
+  function pressCardButton(target, paneId, card) {
+    const pressed = target.closest(
+      '.tat-act-handoff, .tat-act-side, .tat-act-power, .tat-act-more'
+    );
+    if (!pressed || !card) return false;
+    const more = window.TnaiThreadMore;
+    if (pressed.classList.contains('tat-act-handoff')) {
+      window.TnaiHandoffHistory?.open?.(paneId);
+    } else if (pressed.classList.contains('tat-act-side')) {
+      // the side column stands on Threads: the thread opens there with it shown
+      if (window.TnaiThreads?.show?.(paneId)) window.TnaiThreadSide?.open?.();
+    } else if (pressed.classList.contains('tat-act-power')) {
+      more?.stopOrStart?.(paneId, card.el);
+    } else if (more?.isOpen?.()) {
+      more.close(true);
+    } else {
+      more?.open?.(pressed, paneId, {
+        host: card.el,
+        rename: () => renameCard(paneId, card.name),
+      });
+    }
+    return true;
+  }
+
   strip.addEventListener('click', event => {
     const cardEl = event.target.closest('.tat-card');
     if (!cardEl) return;
     const paneId = cardEl.dataset.pane;
+    const card = cards.get(paneId);
+    if (pressCardButton(event.target, paneId, card)) return;
     if (event.target.closest('.tat-open, .tat-screen')) {
       window.TnaiThreads?.show?.(paneId);
       return;
     }
+
+    // a helper's bubble: the prompt box still follows the card (the lead), so no return here
+    const chip = event.target.closest('.tat-helpers .tnt-side-chip');
+    if (chip && card) pressHelper(paneId, card, chip);
     window.TnaiLiveTasks?.setTarget?.(paneId);
   });
 
+  // Escape in a card that shows a helper goes back to the lead (a name being edited keeps its own
+  // Escape).
+  strip.addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || renaming) return;
+    const cardEl = event.target.closest('.tat-card');
+    const card = cardEl && cards.get(cardEl.dataset.pane);
+    if (!card?.viewing) return;
+    event.preventDefault();
+    leaveHelper(cardEl.dataset.pane, card);
+  });
+
+  // a helper started, ended or changed its state: the bubbles follow
+  window.addEventListener('tnai:team-changed', soon);
+
+  // a session stopped or started: only the on/off buttons follow, nothing else is drawn again
+  window.TnaiAgents?.onChange?.(() => {
+    for (const [paneId, card] of cards) paintPower(paneId, card);
+  });
+
+  // the session clocks move on 120's tick, only while this page is shown
+  window.addEventListener('tnai:thread-age-tick', () => {
+    if (!isOn()) return;
+    for (const [paneId, card] of cards) window.TnaiThreadView?.paintAge?.(card.age, paneId);
+  });
+
   // ---------- following the app ----------
+  // One choice, shown in two places: the card the prompt box sends to is also the thread list's
+  // chosen row (found 2026-10-14: the list kept the thread last opened on Threads). Only a thread
+  // with a card is chosen in the list; anything else leaves the list as it is.
+  function chooseInList(paneId) {
+    const frame = window.TnaiThreads;
+    if (!paneId || !order.includes(paneId) || frame?.selected?.() === paneId) return;
+    frame?.select?.(paneId);
+  }
+
   window.addEventListener('tnai:target-changed', event => {
     markTarget();
     const paneId = event.detail?.paneId;
-    if (paneId && isOn()) show(paneId);
+    if (paneId && isOn()) {
+      show(paneId);
+      chooseInList(paneId);
+    }
+  });
+
+  // A row pressed in the thread list while this page shows: its card becomes the chosen one and
+  // comes on screen. A row with no card here (a helper's own row) changes nothing on this page.
+  window.addEventListener('tnai:threads-select', event => {
+    const paneId = event.detail?.paneId;
+    if (!paneId || !isOn() || !order.includes(paneId) || paneId === target()) return;
+    window.TnaiLiveTasks?.setTarget?.(paneId);
   });
 
   // a change of the page turns at once; the cards are painted in the next frame

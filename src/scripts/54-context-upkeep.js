@@ -25,7 +25,12 @@
  * Technically Not starts a fresh agent of the same CLI and account on the retired one's model (46
  * TnaiLaunchPrefs.once), sends it a handoff (task + that entry + where to read more; it confirms
  * and waits), moves the composer's selection to it, then closes the old pane (its results stay in
- * `tnai context`). If the new agent can't start, the old one stays. Each step is pushed as
+ * `tnai context`). If the new agent can't start, the old one stays. SINCE 2026-10-14 (user: "Yes,
+ * build all four"): every hand-off starts with a hand-off LETTER (the old agent is asked to write
+ * one; that reply's entry is what the successor gets), the old agent STAYS OPEN and idle so the
+ * successor can `tnai ask` it, and it closes only when the successor finishes a task after its
+ * hand-off summary (the user answered it). The thread's "..." menu has "Hand off to a fresh agent"
+ * (137 → handOff), at any size. Each step is pushed as
  * `tnai:handoff` (102 shows it on the Agent Tree row and keeps the Handoff history). Not offered
  * for delegated sub-agents (their lead manages them) or custom agents (a fresh one would lose its
  * setup). "Without asking: Compact" runs the command itself once the gate holds. SUMMARY FIRST
@@ -33,8 +38,10 @@
  * agent gets one prompt to write down what must survive (what it is doing, decisions, changed
  * files, what is left, the next step); the command is typed when that reply has ended and its
  * result reached Project Context (or 15 s later). Typing into the panel, an interrupted reply or a
- * queued prompt cancels it. Costs one extra reply. Not used when the user answers the bell item
- * (Run), and not before Retire (the hand-off has its own summary). THRESHOLDS: defaults suit Claude
+ * queued prompt cancels it. Costs one extra reply. Since 2026-10-14 it is also used for Run on the
+ * bell and for a /compact typed in the prompt box (11 → compactNow), and once the command has run
+ * the agent is sent that summary back (restoreLater/giveBack). A finished task with nothing left
+ * to do, past half the compact size, is offered a hand-off (SOFT). THRESHOLDS: defaults suit Claude
  * Max-size (1M-token) windows: compact 400k, clear 600k, "never clear" on. Until the user sets a
  * threshold, its default is scaled to the pane's context window: 75% (compact) / 90% (clear) of it,
  * never above the default. Window = Codex's reported model_context_window; else 1M once the context
@@ -90,6 +97,10 @@
   // Claude Code: 150+ model requests since the last compact with 100k+ context also suggests
   // /compact
   const LONG = { calls: 150, tokens: 100000 };
+
+  // A finished task with nothing left to do, past this share of the compact size, is offered a
+  // hand-off: the cheapest moment to switch.
+  const SOFT = 0.5;
   const SCALE = { compact: 0.75, clear: 0.9 },
     BIG_PLAN = /max|team|enterprise/i;
   const clamp = (v, lo, hi, d) => {
@@ -151,6 +162,14 @@
   // command runs when that reply ends
   const briefing = new Map();
   const snoozed = new Map(); // paneId -> time until which a hand-off-only offer is not repeated
+
+  // paneId -> { b, entry, timer }: a command ran after a summary; the summary goes back to the
+  // agent once the command has finished
+  const restoring = new Map();
+
+  // retired paneId -> { to, toName, name, since, summaryAt }: its successor took over; it stays
+  // open for questions until the user answers the successor's hand-off summary
+  const handingOver = new Map();
   let entries = [],
     marks = {},
     syncSettings = () => {};
@@ -197,6 +216,7 @@
     const cmds = COMMANDS[t.agent];
     if (!cmds) return { why: t.agent + ' has no compact/clear command' };
     if (prefs.skip.includes(t.agent)) return { why: 'off for ' + t.agent };
+    if (handingOver.has(paneId)) return { why: 'it is handing its work over' };
     if (!t.endedAt || t.endedBy !== 'stop') return { why: 'the agent is working' };
     if (handled.has(keyOf(t))) return { why: 'already handled this turn' };
     if (t.queued?.length) return { why: 'prompts are queued' };
@@ -213,12 +233,17 @@
       (prefs.age > 0 && ageMs >= prefs.age * 3600000) ||
       (prefs.handoff > 0 && tokens >= prefs.handoff);
     const due = tokens >= lim.compact || long || (!prefs.never && tokens >= lim.clear);
-    if (!due && !handoff) return { why: '' };
+
+    // the best moment: past half the compact size, at a natural end (checked below, once its
+    // result is known)
+    const soft = tokens >= Math.round(lim.compact * SOFT);
+    if (!due && !handoff && !soft) return { why: '' };
     if (!due && (snoozed.get(paneId) || 0) > now) return { why: '' };
     const e = entries
       .filter(x => x.paneId === paneId && +x.at >= t.endedAt)
       .sort((a, b) => b.at - a.at)[0];
     if (!e) return { why: 'Project Context has no entry for its last turn yet' };
+    if (!due && !handoff && open(e, 'next').length + open(e, 'remains').length) return { why: '' };
     if (open(e, 'blockers').length) return { why: 'its last result has open blockers' };
     if (window.TnaiContext?.openChoice?.(e, key => marks[key]))
       return { why: 'a decision is waiting on you' };
@@ -316,8 +341,9 @@
     if (!b) return;
     clearTimeout(b.timer);
     briefing.delete(paneId);
-    if (why) say('Automatic ' + b.cmd + ' for ' + b.name + ' cancelled: ' + why + '.');
+    if (why) say(jobName(b) + ' cancelled: ' + why + '.');
   }
+  const jobName = b => (b.then === 'retire' ? 'Hand-off of ' + b.name : b.cmd + ' for ' + b.name);
 
   function brief(paneId) {
     const cur = pending.get(paneId);
@@ -329,29 +355,54 @@
       say('Context upkeep for ' + cur.name + ' skipped: ' + (p.why || 'a new turn started') + '.');
       return false;
     }
-    const b = {
-      at: Date.now(),
+    return ask(paneId, {
+      then: 'command',
       cmd: p.cmd,
       kind: p.kind,
       name: p.name,
       agent: p.agent,
       tokens: p.tokens,
-      turn: null,
-      timer: 0,
-    };
-    const sent = agents.send(
-      paneId,
-      '[TN.ai] Your context is at ' +
-        k(p.tokens) +
-        ' tokens, so Technically Not will run ' +
-        p.cmd +
-        ' in this session right after this reply. ' +
-        'Before that, write down what must survive it: what you are working on and why, the decisions and user instructions still in force, the files you changed, what is finished, what is left, and the exact next step. ' +
-        'If anything important exists only in this conversation (open work, findings, a plan), save it now to the project file where it belongs. ' +
-        'Start no new work and ask nothing. Keep it short and end with your Technically Not report.'
+    });
+  }
+
+  // What must survive, in the agent's own words. `then` is what follows the reply: 'command' types
+  // the CLI's command, 'retire' starts the successor (the reply is its hand-off letter).
+  const WHAT_TO_WRITE =
+    'what you are working on and why, the decisions and user instructions still in force, the files you changed, what is finished, what is left, and the exact next step. ' +
+    'If anything important exists only in this conversation (open work, findings, a plan), save it now to the project file where it belongs. ' +
+    'Start no new work and ask nothing. Keep it short and end with your Technically Not report.';
+
+  function askText(job) {
+    const size = job.tokens > 0 ? 'Your context is at ' + k(job.tokens) + ' tokens, so ' : '';
+    if (job.then === 'retire')
+      return (
+        '[TN.ai] ' +
+        size +
+        'Technically Not hands your work to a fresh ' +
+        job.agent +
+        ' agent right after this reply. Write a hand-off letter for it: ' +
+        WHAT_TO_WRITE +
+        ' After this reply your successor may ask you questions with `tnai ask`: answer each with one `tnai send` to it, and start no other work.'
+      );
+    return (
+      '[TN.ai] ' +
+      (size || 'You asked for ' + job.cmd + ', so ') +
+      'Technically Not will run ' +
+      job.cmd +
+      ' in this session right after this reply, and give you your summary back once it has run. ' +
+      'Before that, write down what must survive it: ' +
+      WHAT_TO_WRITE
     );
-    if (!sent) {
-      say('Automatic ' + p.cmd + ' for ' + p.name + ' skipped: it is not running.');
+  }
+
+  function ask(paneId, job) {
+    const b = { ...job, at: Date.now(), turn: null, timer: 0 };
+    if (!agents.send(paneId, askText(job))) {
+      say(
+        (job.then === 'retire' ? 'Hand-off of ' : job.cmd + ' for ') +
+          job.name +
+          ' skipped: it is not running.'
+      );
       return false;
     }
     b.timer = setTimeout(() => {
@@ -359,15 +410,36 @@
     }, BRIEF_START);
     briefing.set(paneId, b);
     say(
-      p.name +
-        ' is at ' +
-        k(p.tokens) +
-        ' tokens · asked it to write its summary, then ' +
-        p.cmd +
-        ' runs.'
+      job.then === 'retire'
+        ? 'Asked ' + job.name + ' to write its hand-off letter; a fresh agent takes over after it.'
+        : 'Asked ' + job.name + ' to write its summary, then ' + job.cmd + ' runs.'
     );
     return true;
   }
+
+  // A /compact the user typed in the prompt box: the same summary first, and the summary back after
+  // it. false = not taken (the prompt is sent as typed).
+  function compactNow(paneId, typed) {
+    const s = session(paneId),
+      t = turns.get(paneId);
+    if (!prefs.brief || !s?.running || !COMMANDS[agentOf(t, s)]) return false;
+    if (busy(paneId) || s.status === 'working' || s.status === 'starting') return false;
+    if (t && !t.endedAt) return false;
+    stop(paneId);
+    if (t?.endedAt) handled.add(keyOf(t));
+    return ask(paneId, {
+      then: 'command',
+      cmd: typed,
+      kind: 'compact',
+      name: s.name,
+      agent: agentOf(t, s),
+      tokens: t?.context?.tokens || 0,
+    });
+  }
+
+  // the CLI as its turns report it, else as the session names it
+  const agentOf = (t, s) => t?.agent || s?.agent || '';
+  const busy = paneId => briefing.has(paneId) || retiring.has(paneId) || handingOver.has(paneId);
 
   // The summary reply for a pane ended (or its Project Context entry arrived): type the command
   // once the summary is saved, or after BRIEF_SAVED.
@@ -375,7 +447,10 @@
     const b = briefing.get(paneId),
       t = b?.turn;
     if (!t?.endedAt) return;
-    const saved = entries.some(x => x.paneId === paneId && +x.at >= t.endedAt),
+    const entry = entries
+        .filter(x => x.paneId === paneId && +x.at >= t.endedAt)
+        .sort((x, y) => y.at - x.at)[0],
+      saved = !!entry,
       left = t.endedAt + BRIEF_SAVED - Date.now();
     clearTimeout(b.timer);
     if (!saved && left > 0) {
@@ -392,10 +467,19 @@
             ? 'a new turn started'
             : '';
     if (why) {
-      say('Automatic ' + b.cmd + ' for ' + b.name + ' cancelled: ' + why + '.');
+      say(jobName(b) + ' cancelled: ' + why + '.');
+      return;
+    }
+
+    // the letter is written: the successor starts with it (an older result when it was not saved)
+    if (b.then === 'retire') {
+      const letter =
+        entry || entries.filter(x => x.paneId === paneId).sort((x, y) => y.at - x.at)[0] || null;
+      takeOver(paneId, b, letter).catch(() => {});
       return;
     }
     native.pty.submit(paneId, b.cmd, { paste: false }).catch(() => {});
+    if (entry) restoreLater(paneId, b, entry);
     const msg =
       (b.kind === 'clear' ? 'Cleared ' : 'Compacted ') +
       b.name +
@@ -405,6 +489,74 @@
       (saved ? ' (saved in Project Context)' : '');
     say(msg);
     window.TnaiLiveTasks?.record?.(paneId, msg + ' · ' + b.cmd, b.name + ' (' + b.agent + ')');
+  }
+
+  // After the command: the summary goes back to the agent once its context has shrunk (Claude Code
+  // reports the size after a /compact), or after RESTORE_WAIT for a CLI that does not report it
+  // (a /clear or /new is done at once).
+  const RESTORE_WAIT = 120000,
+    RESTORE_CLEAR = 3000;
+
+  function restoreLater(paneId, b, entry) {
+    const r = { b, entry, timer: 0 };
+    r.timer = setTimeout(() => giveBack(paneId), b.kind === 'clear' ? RESTORE_CLEAR : RESTORE_WAIT);
+    restoring.set(paneId, r);
+  }
+
+  // A pushed turn shows the command has run: the size dropped well below what it was.
+  function restoreTurn(t) {
+    const r = restoring.get(t.paneId);
+    if (!r) return;
+    const now = t.context?.tokens || 0;
+    if (t.cleared || (r.b.tokens > 0 && now > 0 && now < r.b.tokens * 0.6)) giveBack(t.paneId);
+  }
+
+  function giveBack(paneId) {
+    const r = restoring.get(paneId);
+    if (!r) return;
+    clearTimeout(r.timer);
+    restoring.delete(paneId);
+    if (!session(paneId)?.running) return;
+    const sum = summaryOf(r.entry);
+    agents.send(
+      paneId,
+      '[TN.ai] ' +
+        r.b.cmd +
+        ' has run in this session. Before it you wrote down what must survive; here it is again so it stays in your context. ' +
+        (sum ? sum + '. ' : '') +
+        'Your full note: `tnai context show ' +
+        r.entry.id +
+        '`; read it now if you need more detail. Then reply with one short line saying where you stand, and start no new work.'
+    );
+    const msg = 'Gave ' + r.b.name + ' its summary back after ' + r.b.cmd;
+    say(msg);
+    window.TnaiLiveTasks?.record?.(paneId, msg, r.b.name + ' (' + r.b.agent + ')');
+  }
+  window.addEventListener('tnai:terminal-pane-closed', e => {
+    const r = restoring.get(e.detail?.paneId);
+    if (!r) return;
+    clearTimeout(r.timer);
+    restoring.delete(e.detail.paneId);
+  });
+
+  // A result's summary in one line: what it did, what is left, the next steps, what blocks it.
+  const clip = (text, n) => (text.length > n ? text.slice(0, n - 1) + '…' : text);
+
+  function summaryOf(entry) {
+    const s = entry?.summary || {};
+    return ['did', 'remains', 'next', 'blockers']
+      .filter(x => s[x]?.length)
+      .map(
+        x =>
+          x[0].toUpperCase() +
+          x.slice(1) +
+          ': ' +
+          s[x]
+            .slice(0, 3)
+            .map(v => clip(String(v), 200))
+            .join(' / ')
+      )
+      .join(' · ');
   }
 
   // A pushed turn while a summary is awaited: true = it was the summary reply and is dealt with
@@ -430,8 +582,9 @@
   }
   window.addEventListener('tnai:terminal-pane-closed', e => dropBrief(e.detail?.paneId, ''));
 
-  // Retires the agent: a fresh one of the same CLI/account takes over with its Project Context
-  // summary, then its pane closes.
+  // Retires the agent: it writes a hand-off letter first, a fresh one of the same CLI/account takes
+  // over with it, and the old one stays open for the successor's questions until the user answers
+  // the successor's hand-off summary; then it closes.
   const retiring = new Set();
 
   // Each real step is also pushed as `tnai:handoff` { phase: start | started | done | failed,
@@ -442,9 +595,10 @@
     } catch {}
   };
 
-  async function retire(paneId, how) {
+  // From the bell (Retire & hand off) or "Without asking: Retire".
+  function retire(paneId, how) {
     const cur = pending.get(paneId);
-    if (!cur || retiring.has(paneId)) return false;
+    if (!cur || busy(paneId)) return false;
     stop(paneId);
     const p = plan(paneId); // before marking it handled, which the plan would refuse
     handled.add(cur.key);
@@ -458,9 +612,7 @@
       );
       return false;
     }
-    const old = session(paneId),
-      e = entries.find(x => x.id === p.entryId);
-    const lim = limits(turns.get(paneId), old),
+    const lim = limits(turns.get(paneId), session(paneId)),
       calls = turns.get(paneId)?.context?.calls || 0;
     const reason =
       how !== 'auto'
@@ -472,24 +624,87 @@
             : prefs.handoff > 0 && p.tokens >= prefs.handoff
               ? { kind: 'context', n: prefs.handoff }
               : { kind: 'age', n: prefs.age };
-    const pick0 = window.TnaiLaunchPrefs?.pane(paneId, p.agent);
-    tell('start', {
-      paneId,
+    return letterFirst(paneId, {
       name: p.name,
       agent: p.agent,
+      tokens: p.tokens,
+      task: p.task,
+      reason,
+    });
+  }
+
+  // Why this thread cannot be handed off now ('' = it can): the "..." menu's "Hand off to a fresh
+  // agent" (137), at any size.
+  function handOffWhy(paneId) {
+    const s = session(paneId),
+      t = turns.get(paneId);
+    if (!s?.running) return 'it is not running';
+    if (!agentOf(t, s) || agentOf(t, s) === 'Terminal')
+      return 'a plain terminal has no agent to hand off';
+    if (!window.TnaiTeam) return 'agents cannot be started here';
+    if (s.customAgentId) return 'a fresh custom agent would lose its setup';
+    if (window.TnaiGraph?.node?.(paneId)?.parentId) return 'its lead manages this sub-agent';
+    if (busy(paneId)) return 'a hand-off or summary is already under way';
+    if (s.status === 'working' || s.status === 'starting' || (t && !t.endedAt))
+      return 'it is working; hand it off when its task ends';
+    return '';
+  }
+
+  function handOff(paneId) {
+    const why = handOffWhy(paneId);
+    if (why) {
+      say('Not handing off: ' + why + '.');
+      return false;
+    }
+    const s = session(paneId),
+      t = turns.get(paneId);
+    stop(paneId);
+    if (t?.endedAt) handled.add(keyOf(t));
+    return letterFirst(paneId, {
+      name: s.name,
+      agent: agentOf(t, s),
+      tokens: t?.context?.tokens || 0,
+      task: t?.task || '',
+      reason: { kind: 'manual' },
+    });
+  }
+
+  // The letter is asked for only when there is room for a successor, so no reply is spent on a
+  // hand-off that cannot happen.
+  function letterFirst(paneId, job) {
+    if (window.TnaiPaneLimit?.full?.()) {
+      say(
+        'Not handing off ' +
+          job.name +
+          ': this workspace is full, so there is no room for its successor. Close a thread, or use /compact.'
+      );
+      return false;
+    }
+    return ask(paneId, { ...job, then: 'retire' });
+  }
+
+  // The letter is written (or `letter` is its latest older result): start the successor.
+  async function takeOver(paneId, b, letter) {
+    if (retiring.has(paneId)) return false;
+    const old = session(paneId);
+    const pick0 = window.TnaiLaunchPrefs?.pane(paneId, b.agent);
+    tell('start', {
+      paneId,
+      name: b.name,
+      agent: b.agent,
       accountId: old?.accountId ?? '',
       sessionStartedAt: old?.startedAt || 0,
       model: pick0?.model || turns.get(paneId)?.model || '',
-      tokens: p.tokens,
-      task: p.task,
-      entryId: p.entryId,
-      entry: e || null,
-      reason,
+      tokens: b.tokens,
+      task: b.task,
+      entryId: letter?.id || '',
+      entry: letter,
+      reason: b.reason,
     });
     if (window.TnaiPaneLimit?.full?.()) {
       say(
         'Retiring ' +
-          p.name +
+          b.name +
           ' skipped: this workspace is full, so there is no room for its successor. Close a thread, or use /compact.'
       );
       tell('failed', {
@@ -501,28 +716,21 @@
     retiring.add(paneId);
     let told = false;
     try {
-      say(
-        p.name +
-          ' is at ' +
-          k(p.tokens) +
-          ' tokens · starting a fresh ' +
-          p.agent +
-          ' to take over…'
-      );
-      const pick = window.TnaiLaunchPrefs?.pane(paneId, p.agent);
-      window.TnaiLaunchPrefs?.once(p.agent, {
+      say('Starting a fresh ' + b.agent + ' to take over from ' + b.name + '…');
+      const pick = window.TnaiLaunchPrefs?.pane(paneId, b.agent);
+      window.TnaiLaunchPrefs?.once(b.agent, {
         model: pick?.model || turns.get(paneId)?.model || '',
         effort: pick?.effort || '',
       });
       const next = await window.TnaiTeam.startLead({
-        agent: p.agent,
+        agent: b.agent,
         accountId: old?.accountId ?? undefined,
       });
-      window.TnaiLaunchPrefs?.once(p.agent, null);
+      window.TnaiLaunchPrefs?.once(b.agent, null);
       if (!next?.paneId) {
         say(
-          'Could not retire ' +
-            p.name +
+          'Could not hand off ' +
+            b.name +
             ': ' +
             (next?.error || 'its successor could not start') +
             '. It keeps working as before.'
@@ -532,65 +740,54 @@
         return false;
       }
       tell('started', { paneId, to: { paneId: next.paneId, name: next.name || '' } });
-      const s = e?.summary || {},
-        clip = (t, n) => (t.length > n ? t.slice(0, n - 1) + '…' : t);
-      const sum = ['did', 'remains', 'next', 'blockers']
-        .filter(x => s[x]?.length)
-        .map(
-          x =>
-            x[0].toUpperCase() +
-            x.slice(1) +
-            ': ' +
-            s[x]
-              .slice(0, 3)
-              .map(v => clip(String(v), 200))
-              .join(' / ')
-        )
-        .join(' · ');
+      const sum = summaryOf(letter);
+      const why =
+        b.reason?.kind === 'manual'
+          ? ', which the user handed off'
+          : ', which Technically Not retired at ' + k(b.tokens) + ' tokens of context';
       agents.send(
         next.paneId,
         '[TN.ai handoff: you take over from ' +
-          p.name +
+          b.name +
           ' (' +
-          p.agent +
-          '), which Technically Not retired at ' +
-          k(p.tokens) +
-          ' tokens of context so the work continues in a fresh context. ' +
-          (p.task ? 'Its last task: "' + clip(p.task, 240) + '". ' : '') +
-          (sum ? 'Its latest result: ' + sum + '. ' : '') +
-          'Full result: `tnai context show ' +
-          p.entryId +
-          '`; its terminal history: `tnai read ' +
-          p.name +
+          b.agent +
+          ')' +
+          why +
+          ' so the work continues in a fresh context. ' +
+          (b.task ? 'Its last task: "' + clip(b.task, 240) + '". ' : '') +
+          (sum ? 'Its hand-off letter: ' + sum + '. ' : '') +
+          (letter ? 'Full letter: `tnai context show ' + letter.id + '`; ' : '') +
+          'its terminal history: `tnai read ' +
+          b.name +
           '`. ' +
+          // the two talk: the old one stays open and idle until the user answers below
+          b.name +
+          ' stays open until the user confirms your summary: when its letter leaves out something you need, ask it with `tnai ask ' +
+          b.name +
+          ' QUESTION` (only what the letter does not say, at most a few questions). ' +
           // The successor tells the user what it took over and waits for a yes:
           // the report's Decide line shows as a decision.
-          'Read that full result now. Then reply with a short summary of what you took over under the headings "Done:", "Where we stopped:" and "Still open:", and end with a Technically Not report whose last line is "- Decide: Is this hand-off summary right? | 1. Yes, carry on (recommended) | 2. No, I will correct it". Start no work until the user answers.]'
+          'Read the full letter now. Then reply with a short summary of what you took over under the headings "Done:", "Where we stopped:" and "Still open:", and end with a Technically Not report whose last line is "- Decide: Is this hand-off summary right? | 1. Yes, carry on (recommended) | 2. No, I will correct it". Start no work until the user answers.]'
       );
-
-      // `tnai send` to the retired one now goes to its successor
-      native.lifecycle?.retire?.(paneId, next.paneId)?.catch?.(() => {});
+      handingOver.set(paneId, {
+        to: next.paneId,
+        toName: next.name || '',
+        name: b.name,
+        since: Date.now(),
+        summaryAt: 0,
+      });
       if (window.TnaiLiveTasks?.target?.() === paneId) window.TnaiLiveTasks.setTarget(next.paneId);
       const msg =
-        'Retired ' +
-        p.name +
-        ' at ' +
-        k(p.tokens) +
-        ' tokens · ' +
         next.name +
-        ' took over with its summary (result ' +
-        p.entryId +
-        ')';
-      window.TnaiLiveTasks?.record?.(next.paneId, msg, next.name + ' (' + p.agent + ')');
+        ' took over from ' +
+        b.name +
+        (letter ? ' with its hand-off letter (result ' + letter.id + ')' : '') +
+        '; ' +
+        b.name +
+        ' stays open for its questions until you confirm the summary';
+      window.TnaiLiveTasks?.record?.(next.paneId, msg, next.name + ' (' + b.agent + ')');
       told = true;
       tell('done', { paneId, to: { paneId: next.paneId, name: next.name || '' } });
-      document
-        .querySelector(
-          '.terminal-pane[data-pane-id="' +
-            CSS.escape(paneId) +
-            '"] .terminal-pane-tools button[title="Close terminal"]'
-        )
-        ?.click();
       say(msg);
       return true;
     } catch (err) {
@@ -606,6 +803,54 @@
       retiring.delete(paneId);
     }
   }
+
+  // The successor wrote its summary (its first result) and then finished another task: the user has
+  // answered it, so the old agent's part is over. `tnai send` to it now goes to its successor, and
+  // its thread closes (its results stay in `tnai context`).
+  function handOverTurn(t) {
+    for (const [oldPane, h] of handingOver) {
+      if (h.to !== t.paneId || !t.endedAt || !h.summaryAt || t.startedAt <= h.summaryAt) continue;
+      finishHandOver(oldPane);
+    }
+  }
+
+  function noteSummaries() {
+    for (const h of handingOver.values()) {
+      if (h.summaryAt) continue;
+      const first = entries
+        .filter(x => x.paneId === h.to && +x.at >= h.since)
+        .sort((x, y) => x.at - y.at)[0];
+      if (first) h.summaryAt = +first.at;
+    }
+  }
+
+  function finishHandOver(oldPane) {
+    const h = handingOver.get(oldPane);
+    if (!h) return;
+    handingOver.delete(oldPane);
+    native.lifecycle?.retire?.(oldPane, h.to)?.catch?.(() => {});
+    document
+      .querySelector(
+        '.terminal-pane[data-pane-id="' +
+          CSS.escape(oldPane) +
+          '"] .terminal-pane-tools button[title="Close terminal"]'
+      )
+      ?.click();
+    say('Closed ' + h.name + ': ' + (h.toName || 'its successor') + ' has taken over.');
+  }
+
+  // Either thread closed by hand: a closed old one still sends its messages on; a closed successor
+  // leaves the old one as it is, open, and no longer handing over.
+  window.addEventListener('tnai:terminal-pane-closed', e => {
+    const id = e.detail?.paneId;
+    if (!id) return;
+    const h = handingOver.get(id);
+    if (h) {
+      handingOver.delete(id);
+      native.lifecycle?.retire?.(id, h.to)?.catch?.(() => {});
+    }
+    for (const [oldPane, other] of handingOver) if (other.to === id) handingOver.delete(oldPane);
+  });
 
   function cancel(paneId) {
     const cur = pending.get(paneId);
@@ -649,7 +894,14 @@
         title: RETIRE_TIP,
         run: () => retire(paneId),
       };
-      const nowAct = { id: 'now', label: 'Run ' + p.cmd, run: () => run(paneId) };
+
+      // with Summarize first on, the agent writes its summary before the command and gets it back
+      // after
+      const nowAct = {
+        id: 'now',
+        label: 'Run ' + p.cmd,
+        run: () => (prefs.brief ? brief : run)(paneId),
+      };
       bell.notify({
         key,
         source: p.agent,
@@ -726,7 +978,7 @@ ${row('or at', '0 = off. Whichever comes first.', num('handoff', 0, 2000000, 100
           `<label><input type="radio" name="u-auto" data-k="auto" value="${v}">${l}</label>`
       )
       .join('')}</span></div>
-${row('Summarize first', 'Before it runs without asking, the agent writes down what matters and what is left. One extra reply.', '<input type="checkbox" class="set-switch" data-k="brief">', 'Used with Without asking: Compact. The agent is asked to write what it is doing, its decisions, changed files, what is left and the next step, and to save open work to the project. The command runs when that reply has ended. Typing in its thread cancels it.')}
+${row('Summarize first', 'Before every compact, the agent writes down what matters and gets it back after. Two short extra replies.', '<input type="checkbox" class="set-switch" data-k="brief">', 'For Run on the bell, Without asking: Compact, and a /compact typed in the prompt box. The agent is asked to write what it is doing, its decisions, changed files, what is left and the next step, and to save open work to the project. The command runs when that reply has ended, and once it has run the agent is given that summary back. Typing in its thread cancels it. A hand-off always starts with a letter like this.')}
 <div class="set-row u-clis"><span class="set-text"><b>Use it for</b><small>Only these CLIs support it.</small></span><span class="set-chips">${Object.keys(
       COMMANDS
     )
@@ -742,8 +994,7 @@ ${row('Summarize first', 'Before it runs without asking, the agent writes down w
       {
         const b = set.querySelector('[data-k=brief]');
         b.checked = !!prefs.brief;
-        b.disabled = prefs.auto !== 'compact';
-        b.closest('.set-row').classList.toggle('off', prefs.auto !== 'compact');
+        b.disabled = !prefs.on;
       }
       for (const key of ['compact', 'clear', 'idle', 'age', 'handoff'])
         set.querySelector(`[data-k=${key}]`).value = prefs[key];
@@ -787,6 +1038,8 @@ ${row('Summarize first', 'Before it runs without asking, the agent writes down w
   // Pushed inputs.
   function onTurn(t) {
     if (!t?.paneId) return;
+    restoreTurn(t);
+    handOverTurn(t);
     if (t.cleared) {
       turns.delete(t.paneId);
       stop(t.paneId);
@@ -809,6 +1062,7 @@ ${row('Summarize first', 'Before it runs without asking, the agent writes down w
     } catch {
       return;
     }
+    noteSummaries();
     for (const paneId of [...briefing.keys()]) afterBrief(paneId);
     checkAll();
   }
@@ -858,6 +1112,15 @@ ${row('Summarize first', 'Before it runs without asking, the agent writes down w
     run,
     retire,
     cancel,
+    handOff,
+    handOffWhy,
+    compactNow,
+    handingOver: () =>
+      [...handingOver.entries()].map(([paneId, h]) => ({
+        paneId,
+        to: h.to,
+        summaryAt: h.summaryAt,
+      })),
     briefing: () =>
       [...briefing.entries()].map(([paneId, b]) => ({
         paneId,

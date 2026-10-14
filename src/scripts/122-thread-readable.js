@@ -109,6 +109,8 @@
       first: true,
       live: make('div', 'tnt-live'),
       empty: make('div', 'tnt-talk-empty'),
+      queued: make('div', 'tnt-queued'),
+      jump: jumpBar(),
     };
     state.live.hidden = true;
     state.live.innerHTML = '<i></i><span></span><em hidden>· inferred</em>';
@@ -155,9 +157,173 @@
     });
   };
 
+  // ---------- getting around a long conversation ----------
+  // Two buttons float at the conversation's bottom right, each only while the reader is away from
+  // where it leads: "Last report" while the newest report card is out of view, "Latest" while the
+  // newest line is. A reader at the end sees neither.
+  function jumpBar() {
+    const bar = make('div', 'tnt-jump');
+    for (const [kind, label] of [
+      ['report', 'Last report'],
+      ['latest', 'Latest'],
+    ]) {
+      const button = make('button', 'tnt-jump-btn', label);
+      button.type = 'button';
+      button.dataset.jump = kind;
+      button.hidden = true;
+      bar.append(button);
+    }
+    bar.addEventListener('click', event => {
+      const kind = event.target.closest('[data-jump]')?.dataset.jump;
+      const state = [...shown].find(each => each.jump === bar);
+      if (!kind || !state?.host) return;
+      if (kind === 'latest') {
+        atEnd.set(state.host, true);
+        toBottom(state);
+      } else lastReport(state)?.scrollIntoView({ block: 'start' });
+      paintJump(state);
+    });
+    return bar;
+  }
+
+  const lastReport = state => {
+    const cards = state.list.querySelectorAll('.tnt-report');
+    return cards[cards.length - 1] || null;
+  };
+
+  // Which of the two buttons the reader needs now. Read on scroll, at most once a frame.
+  function paintJump(state) {
+    const host = state.host;
+    if (!host) return;
+    const card = lastReport(state);
+    let reportAway = false;
+    if (card) {
+      const box = card.getBoundingClientRect();
+      const view = host.getBoundingClientRect();
+      reportAway = box.bottom < view.top || box.top > view.bottom;
+    }
+    const [toReport, toLatest] = state.jump.children;
+    toReport.hidden = !reportAway;
+    toLatest.hidden = nearBottom(state);
+  }
+
+  const jumpFrames = new WeakMap();
+
+  function jumpLater(state) {
+    if (!state.host || jumpFrames.get(state)) return;
+    jumpFrames.set(
+      state,
+      requestAnimationFrame(() => {
+        jumpFrames.delete(state);
+        paintJump(state);
+      })
+    );
+  }
+
+  // ---------- prompts waiting for a busy agent ----------
+  // A prompt sent while the agent works is held by the app and given to it when its task ends
+  // (71 `heldFor`, desktop/attention-service.js). Until then it stands at the end of the
+  // conversation, marked as waiting, with the same Send now, Edit and Remove as the thread's
+  // Details tab, so the queue is seen where the user looks. Prompts the
+  // CLI already took into its own queue come first, marked "With the agent", without buttons:
+  // nothing can change them any more (the same rule as Details).
+  const WAIT_WORDS = {
+    busy: 'Waiting · it gets this when its task ends',
+    queue: 'Waiting · after the prompts before it',
+    question: 'Waiting · until its question is answered',
+    draft: 'Waiting · until its input is empty',
+  };
+
+  // the prompts the CLI took while its turn runs (42 `TnaiTurns`), as Details lists them
+  function takenFor(paneId) {
+    const turn = safe(() => window.TnaiTurns?.get?.(paneId), null);
+    const running = safe(
+      () => window.TnaiAgents.sessions().some(s => s.paneId === paneId && s.running),
+      false
+    );
+    return turn && !turn.endedAt && running ? turn.queued || [] : [];
+  }
+
+  function queuedButton(name, label, title) {
+    const button = make('button', 'tnt-queued-act', label);
+    button.type = 'button';
+    button.dataset.q = name;
+    button.title = title;
+    return button;
+  }
+
+  function heldBubble(entry) {
+    const bubble = make('div', 'tnt-you tnt-you-queued', entry.text);
+    bubble.dataset.held = entry.id;
+    bubble.append(make('small', 'tnt-queued-note', WAIT_WORDS[entry.why] || WAIT_WORDS.busy));
+    const actions = make('span', 'tnt-queued-acts');
+    actions.append(
+      queuedButton(
+        'send',
+        'Send now',
+        'Send it to the agent now, while it works: it takes it between steps or right after its task'
+      )
+    );
+
+    // a message from another agent or computer is not the user's own words to edit
+    if (!entry.from && !entry.remote)
+      actions.append(
+        queuedButton(
+          'edit',
+          'Edit',
+          'Take it out of the queue and put it back in the prompt box to change it'
+        )
+      );
+    actions.append(
+      queuedButton(
+        'remove',
+        'Remove',
+        entry.from
+          ? 'Remove this message: it is not delivered, and its sender is told'
+          : 'Remove this message: it is not sent'
+      )
+    );
+    bubble.append(actions);
+    return bubble;
+  }
+
+  function takenBubble(prompt) {
+    const bubble = make('div', 'tnt-you tnt-you-queued', prompt.text);
+    const note = make('small', 'tnt-queued-note', 'With the agent · it takes this next');
+    note.title = 'Already handed to the agent: it takes it next. It can no longer be changed here.';
+    bubble.append(note);
+    return bubble;
+  }
+
+  function paintQueued(state) {
+    const held = state.sub ? [] : safe(() => window.TnaiNeedsYou?.heldFor?.(state.paneId), []);
+    const taken = state.sub ? [] : takenFor(state.paneId);
+    state.queued.replaceChildren(...taken.map(takenBubble), ...held.map(heldBubble));
+    state.queued.hidden = !held.length && !taken.length;
+
+    // one listener per box: Send now, Edit and Remove work as in the Details tab (139 queuePress)
+    if (state.queued.dataset.wired) return;
+    state.queued.dataset.wired = '1';
+    state.queued.addEventListener('click', event => {
+      const button = event.target.closest('button[data-q]');
+      const id = button?.closest('[data-held]')?.dataset.held;
+      if (!id) return;
+      const needsYou = window.TnaiNeedsYou;
+      if (button.dataset.q === 'send') {
+        needsYou?.sendHeld?.(id);
+        return;
+      }
+
+      // Edit puts the user's own words back in the prompt box, aimed at this agent
+      if (button.dataset.q === 'edit') window.TnaiLiveTasks?.setTarget?.(state.paneId);
+      needsYou?.takeHeld?.(id, button.dataset.q === 'edit');
+    });
+  }
+
   // Blocks stand in order above the live line, which is always last.
   function addBlock(state, node) {
     state.list.insertBefore(node, state.live);
+    jumpLater(state);
     const blocks = state.list.children;
 
     // the cap: the oldest blocks leave, and the pane says that it shows the end only
@@ -702,33 +868,34 @@
   }
 
   // ---------- the report's decisions, through the app's own flow (49) ----------
-  // Only the newest report can still be answered, and only the decision the app holds open for it;
-  // every other option is shown as text.
+  // Every decision stays pressable until it is answered, however old, and whether the agent works
+  // or not: pressing one sends the answer by itself (49 `decideInThread`, 149): to the agent the
+  // option hands the work to, else to this agent, held while it works (paintQueued); the prompt
+  // box only when nobody can take it. Once answered, its options are text, and the one the user
+  // pressed stays marked as chosen.
   function paintDecisions(state) {
     // a helper's report is its lead's to read: its options are never buttons here
     if (state.sub) return;
-    const cards = state.list.querySelectorAll('.tnt-report');
-    const newest = cards[cards.length - 1];
     const context = window.TnaiContext;
-    const turn = safe(() => window.TnaiTurns?.get?.(state.paneId), null);
-    const report = turn?.endedAt
-      ? safe(() => context?.entryFor(state.paneId, turn.startedAt), null)
-      : null;
-    const openChoice = report ? safe(() => context.openChoice(report), null) : null;
-    cards.forEach(card => {
-      card.querySelectorAll('.tnt-decide').forEach(ask => {
-        const live =
-          card === newest && !!openChoice && String(openChoice.n) === ask.dataset.decision;
-        ask.dataset.open = String(live);
-        ask.querySelectorAll('button').forEach(button => {
-          button.disabled = !live;
-          button.onclick = live
-            ? () => {
-                context.decide(report.id + '#' + openChoice.n, Number(button.dataset.option));
-                paintDecisions(state);
-              }
-            : null;
-        });
+    state.list.querySelectorAll('.tnt-report .tnt-decide').forEach(ask => {
+      const question = ask.firstChild?.textContent || '';
+      const found = safe(() => context?.findDecision?.(state.paneId, question), null);
+      const chosen = safe(() => context?.choiceFor?.(state.paneId, question), '');
+      const live = !!context?.decideInThread && !(found && found.done) && !chosen;
+      ask.dataset.open = String(live);
+      ask.querySelectorAll('button').forEach(button => {
+        const label = button.textContent;
+        const picked = !!chosen && label === chosen;
+        button.disabled = !live;
+        button.classList.toggle('tnt-decide-chosen', picked);
+        button.setAttribute('aria-pressed', String(picked));
+        button.title = picked ? 'You chose this' : '';
+        button.onclick = live
+          ? () => {
+              context.decideInThread(state.paneId, question, Number(button.dataset.option), label);
+              paintDecisions(state);
+            }
+          : null;
       });
     });
   }
@@ -771,16 +938,42 @@
   }
 
   // The last line while the agent works: the list's own line for this thread (119).
-  function paintLive(state) {
+  // What the live line is made from, as one short text. The thread list repaints often with
+  // nothing changed; when this text is the same as at the last paint, the line is left alone.
+  function liveInputs(state) {
     const thread = safe(() => window.TnaiThreadList?.thread(state.paneId), null);
-
-    // Whether a task runs is a fact the tool reports (42); the status read from its output lags a
-    // few seconds behind and calls a fresh, idle session "working". So the line shows only while
-    // a reported task runs, or while the thread needs the user.
     const turn = safe(() => window.TnaiTurns?.get?.(state.paneId), null);
     const running = !!turn?.startedAt && !turn.endedAt;
+    const key = thread
+      ? [
+          state.sub ? 1 : 0,
+          thread.tone,
+          thread.status,
+          running ? 1 : 0,
+          thread.label,
+          thread.now,
+          thread.inferred ? 1 : 0,
+        ].join('|')
+      : '';
+    return { thread, turn, running, key };
+  }
+
+  function paintLive(state) {
+    // Whether a task runs is a fact the tool reports (42); the status read from its output lags a
+    // few seconds behind and calls a fresh, idle session "working". So the line shows only while
+    // a reported task runs, or while the thread needs the user. Between two replies the agent can
+    // still be busy: tasks it started in the background, or helpers it waits on (10 reads both from
+    // the tool's hooks, exact). The line stays then, so a thread that picks up again by itself a
+    // few seconds later never looked finished.
+    const { thread, running, key } = liveInputs(state);
+    state.liveKey = key;
+    const between = thread?.status === 'background' || thread?.status === 'waiting-agents';
     const show =
-      !state.sub && !!thread && (thread.tone === 'needs' || (running && thread.tone === 'work'));
+      !state.sub &&
+      !!thread &&
+      (thread.tone === 'needs' ||
+        thread.tone === 'agents' ||
+        (thread.tone === 'work' && (running || between)));
     state.live.hidden = !show;
     if (!show) return;
     state.live.dataset.tone = thread.tone;
@@ -876,6 +1069,9 @@
       const mine = [...shown].filter(state => state.paneId === paneId);
       if (!mine.length) return;
       mine.forEach(request);
+
+      // the CLI took a waiting prompt, or its turn ended: the queue at the end follows
+      mine.forEach(paintQueued);
       const ended = safe(() => window.TnaiTurns?.get?.(paneId)?.endedAt, 0);
       if (ended) mine.forEach(followEnd);
       if (open?.paneId === paneId) repaint(paintDecisions);
@@ -887,7 +1083,13 @@
         if (what?.paneId === state.paneId && (what.sub || '') === (state.sub || '')) request(state);
     });
     if (typeof offChange === 'function') stops.push(offChange);
-    const onPainted = () => repaint(paintLive);
+
+    // The thread list repaints for any small change; the live line is redrawn (and the conversation
+    // measured twice) only when what it shows has changed.
+    const onPainted = () => {
+      if (open && liveInputs(open).key === open.liveKey) return;
+      repaint(paintLive);
+    };
     window.addEventListener('tnai:turn', onTurn);
     window.addEventListener('tnai:threads-painted', onPainted);
     stops.push(
@@ -912,6 +1114,41 @@
     stops = [];
   }
 
+  // The jump buttons follow the reader's scrolling in each pane (one listener a pane, for whichever
+  // conversation it shows).
+  const jumpWatched = new WeakSet();
+
+  function watchJump(host) {
+    if (jumpWatched.has(host)) return;
+    jumpWatched.add(host);
+    host.addEventListener(
+      'scroll',
+      () => {
+        for (const state of shown) if (state.host === host) jumpLater(state);
+      },
+      { passive: true }
+    );
+  }
+
+  // A prompt held or delivered (71): the waiting prompts at the end of each conversation follow.
+  window.addEventListener('tnai:held', () => {
+    for (const state of shown) {
+      paintQueued(state);
+      if (nearBottom(state)) toBottom(state);
+    }
+  });
+
+  // The user sent a prompt to a thread (11): that conversation goes to its newest line, so the
+  // prompt and what follows are in view.
+  window.addEventListener('tnai:prompt-sent', event => {
+    for (const state of shown)
+      if (state.paneId === event.detail?.paneId && state.host) {
+        atEnd.set(state.host, true);
+        toBottom(state);
+        jumpLater(state);
+      }
+  });
+
   // Puts one conversation into a pane and starts reading it.
   function mount(host, paneId, sub = '') {
     const state = stateFor(paneId, sub);
@@ -920,12 +1157,16 @@
     watchEnd(host);
     shown.add(state);
     if (!state.live.parentNode) state.list.append(state.live);
-    if (host.firstElementChild !== state.empty || host.lastElementChild !== state.list)
-      host.replaceChildren(state.empty, state.list);
+    const parts = [state.empty, state.list, state.queued, state.jump];
+    if (parts.some((part, at) => host.children[at] !== part) || host.children.length !== 4)
+      host.replaceChildren(...parts);
+    watchJump(host);
     listen();
     paintFrame(state);
     paintLive(state);
+    paintQueued(state);
     toBottom(state);
+    jumpLater(state);
     request(state);
 
     // put on screen right after its task ended: the end's last lines may still be on their way

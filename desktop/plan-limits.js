@@ -19,10 +19,13 @@ const os = require('os');
 const path = require('path');
 const readline = require('readline');
 
+// A release build ignores the test variables below (it would send the Claude token to their URL).
+const { release } = require('./build-info');
+
 const CLAUDE_URL = 'https://api.anthropic.com/api/oauth/usage';
 const claudeUrl = () =>
-  // tests point it at a local server (only with test roots)
-  (process.env.TNAI_USAGE_ROOTS && process.env.TNAI_CLAUDE_USAGE_URL) || CLAUDE_URL;
+  // tests point it at a local server (only with test roots, only in a copy run from source)
+  (!release && process.env.TNAI_USAGE_ROOTS && process.env.TNAI_CLAUDE_USAGE_URL) || CLAUDE_URL;
 const CLAUDE_CACHE_MS = 60 * 1000; // automatic asks within a minute reuse the last answer
 
 // … within 5 min while a Claude Code agent works: the endpoint's per-account limit is shared with
@@ -224,7 +227,9 @@ async function claude(home, force, busy) {
 // Test roots (TNAI_USAGE_ROOTS, read fresh each call) or null for the real folders.
 function testRoots() {
   try {
-    return process.env.TNAI_USAGE_ROOTS ? JSON.parse(process.env.TNAI_USAGE_ROOTS) || {} : null;
+    return !release && process.env.TNAI_USAGE_ROOTS
+      ? JSON.parse(process.env.TNAI_USAGE_ROOTS) || {}
+      : null;
   } catch {
     return {};
   }

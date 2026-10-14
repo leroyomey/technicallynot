@@ -29,6 +29,14 @@ const bump = file => {
 
 function writeAtomic(file, text) {
   bump(file);
+
+  // Older text still queued behind an async write in flight would land after this one.
+  const pending = writing.get(file);
+
+  if (pending) {
+    pending.text = null;
+  }
+
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const temp = file + '.' + process.pid + '.tmp';
   fs.writeFileSync(temp, text);

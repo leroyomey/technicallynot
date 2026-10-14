@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld('tnaiNative', {
     models: (id, accountId) => invoke('agents:models', id, accountId),
     access: () => invoke('agents:access'),
     effortState: paneId => invoke('agents:effortState', paneId),
+    interrupt: paneId => invoke('agents:interrupt', String(paneId || '')),
   },
   accounts: {
     list: options => invoke('accounts:list', options),

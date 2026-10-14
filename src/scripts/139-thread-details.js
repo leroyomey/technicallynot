@@ -85,7 +85,9 @@
       clock(startedAt) +
       '.' +
       (age ? ' ' + UP_TIP[age] + ' (' + upHours() + ' h).' : '');
-    setText(line, 'Total ' + text);
+
+    // in the card it follows the state: "Working · 51m"
+    setText(line, text);
     if (line.title !== tip) line.title = tip;
   }
 
@@ -136,6 +138,135 @@
     const workspaces = window.TnaiTerminalWorkspaces?.list?.() || [];
     return workspaces.find(workspace => workspace.id === workspaceId) || null;
   };
+
+  // ---------------------------------------------------------------- readable text
+  // The project folder, so a file inside it is shown by its path from there, not the whole path.
+  // Asked once while a copy is mounted; until it is known, paths show as they came.
+  let projectRoot = '';
+
+  // A bridge that throws at once must not stop the listening that follows (startListening).
+  const askRoot = () =>
+    new Promise(resolve => resolve(native?.fs?.root?.()))
+      .then(root => {
+        if (root && root !== projectRoot) {
+          projectRoot = String(root);
+          schedule();
+        }
+      })
+      .catch(() => {});
+
+  // A path or command with the project folder taken off, in each way a tool writes it: C:\x\y,
+  // C:/x/y and /c/x/y.
+  function fromProject(text) {
+    let out = String(text || '');
+    if (!projectRoot) return out;
+    const forward = projectRoot.replace(/\\/g, '/').replace(/\/$/, '');
+    const back = forward.replace(/\//g, '\\');
+    const posix = forward.replace(/^([A-Za-z]):/, (_, drive) => '/' + drive.toLowerCase());
+    for (const prefix of [back + '\\', forward + '/', posix + '/'])
+      out = out.split(prefix).join('');
+    for (const prefix of [back, forward, posix]) out = out.split(prefix).join('.');
+    return out;
+  }
+
+  // A command as the user reads it: without the "cd <folder>;" it starts with, from the project.
+  const plainCommand = text =>
+    fromProject(String(text || '').replace(/^\s*cd\s+("[^"]*"|'[^']*'|\S+)\s*(;|&&)\s*/, ''));
+
+  // A file's kind by its name, for its color: code, style, docs, tests.
+  function fileKind(name) {
+    if (/(^|[\\/])tests?[\\/]|-test\.m?js$|\.test\.|check\.js$/i.test(name)) return 'test';
+    if (/\.(m?js|cjs|ts|tsx|jsx|py|ps1|sh)$/i.test(name)) return 'code';
+    if (/\.(css|html)$/i.test(name)) return 'style';
+    if (/\.(md|txt|json|ya?ml)$/i.test(name)) return 'doc';
+    return '';
+  }
+
+  // A command in the app's code colors: the program, its flags, quoted words, numbers, files.
+  function commandNodes(command) {
+    const nodes = [];
+    let program = true;
+    for (const token of command.match(/"[^"]*"?|'[^']*'?|\s+|[^\s"']+/g) || []) {
+      let kind = '';
+      if (/^\s+$/.test(token)) kind = '';
+      else if (/^(\||;|&&|\|\||>|>>|2>&1)$/.test(token)) {
+        kind = 'op';
+        program = true;
+      } else if (program) {
+        kind = 'cmd';
+        program = false;
+      } else if (/^-/.test(token)) kind = 'flag';
+      else if (/^["']/.test(token)) kind = 'str';
+      else if (/^\d[\d,.:]*p?$/.test(token)) kind = 'num';
+      else if (/[\\/]|\.\w{1,5}$/.test(token)) kind = 'file-' + (fileKind(token) || 'other');
+      nodes.push(kind ? make('i', 'ttd-c ttd-c-' + kind, token) : document.createTextNode(token));
+    }
+    return nodes;
+  }
+
+  // A file shown by its name first and its folder after, so a cut-off line never hides the name.
+  // The text reads as the path ("src/theme.js") for copying and for screen readers.
+  function fileNodes(path) {
+    const shown = fromProject(path);
+    const cut = Math.max(shown.lastIndexOf('/'), shown.lastIndexOf('\\'));
+    const folder = cut >= 0 ? shown.slice(0, cut + 1) : '';
+    const name = cut >= 0 ? shown.slice(cut + 1) : shown;
+    const holder = make('span', 'ttd-file');
+    holder.title = shown;
+    holder.append(make('i', 'ttd-file-dir', folder));
+    holder.append(make('i', 'ttd-file-name ttd-c-file-' + (fileKind(name) || 'other'), name));
+    return holder;
+  }
+
+  // The kinds of a step, each with the app's code color and a Lucide icon (41).
+  const STEP_KIND = [
+    [/^(Edit|Write|MultiEdit|NotebookEdit|edit|write|patch)$/, 'edit', 'pencil'],
+    [/^(Read|Grep|Glob|LS|read|grep|glob|list)$/, 'read', 'eye'],
+    [/^(Bash|PowerShell|bash|shell)$/, 'run', 'terminal'],
+  ];
+
+  function stepKind(event) {
+    if (event.kind !== 'tool') return ['', ''];
+    const tool = String(event.tool || '');
+    for (const [pattern, kind, icon] of STEP_KIND) {
+      if (!pattern.test(tool)) continue;
+      if (
+        kind === 'run' &&
+        /(-test\.m?js|check\.js|\bnpm (run )?test\b|\btest\b)/i.test(event.detail || '')
+      )
+        return ['test', 'check'];
+      return [kind, icon];
+    }
+    return ['', ''];
+  }
+
+  // A prompt the app sent, in plain words: a decision becomes "Decision 1 of 2: Yes, …" rows and
+  // the result it came from; the app's own marks, wrappers and "Full result:" lines go. Returns
+  // { answers: [{ lead, answer }], from, text }.
+  const DECISION =
+    /Decision on "([\s\S]*?)"(?= from |:)(?: from (.+?)(?= \(task:|:))?(?: \(task:[\s\S]*?\))?:\s*(?:go with\s+)?([\s\S]*?)(?=\s*Full result:|\s*Decision on "|\s*$)/g;
+
+  function plainPrompt(raw) {
+    let text = String(raw || '')
+      .replace(/<\/?pasted_content[^>]*>/g, '')
+      .replace(/^\s*\[(?:TN|TechnicallyNot)\.ai\]\s*/, '')
+      .replace(/\[(?:TN|TechnicallyNot)\.ai\][^\n]*\n?/g, '');
+    const answers = [];
+    let from = '';
+    for (const match of text.matchAll(DECISION)) {
+      const question = match[1].trim();
+      const lead = /^(Decision \d+ of \d+)/.exec(question)?.[1] || question.slice(0, 80);
+      answers.push({ lead, answer: match[3].trim().replace(/\.$/, '') });
+      if (!from && match[2]) from = match[2].trim();
+    }
+    text = text
+      .replace(/\s*Full result:\s*`[^`]*`/g, '')
+      .replace(/\s*\(task:[^)]*\)/g, '')
+      .trim();
+    return { answers, from, text };
+  }
+  const sameWords = (first, second) =>
+    plainPrompt(first).text.replace(/\s+/g, ' ') === plainPrompt(second).text.replace(/\s+/g, ' ');
 
   // A tool call in plain words: the agent's own description of a command when it gave one (the raw
   // command stays on hover).
@@ -411,16 +542,18 @@
   }
 
   // ---------------------------------------------------------------- the sections
+  // What it does now stands in the card at the top (paintHead); this section holds the task, in
+  // plain words, and the prompt the app last sent when that says something else.
   function paintNow(view, session, team) {
     const sent = window.TnaiLiveTasks?.get?.(session.paneId);
-    const doing = doingNow(session, team);
     const task = taskOf(session, team);
+    const plain = plainPrompt(task);
+    const sentDiffers = !!sent && !sameWords(sent.text, task);
     paint(
       view,
       'now',
       [
         session.paneId,
-        doing,
         task,
         sent,
         session.running,
@@ -428,16 +561,18 @@
         session.startedAt,
         session.exitText,
       ],
-      () =>
-        facts(
+      () => {
+        const list = facts(
           [
             [
-              'Doing now',
-              doing,
-              session.running && doing.startsWith('Using ') ? nowRaw(team?.lead) : '',
+              'Task',
+              plain.text || (session.agent === 'Terminal' ? 'Shell session' : 'No task yet'),
+              sent ? 'Sent ' + clock(sent.at) : '',
             ],
-            ['Task', task || (session.agent === 'Terminal' ? 'Shell session' : 'No task yet')],
-            ['Last sent from Technically Not', sent ? sent.text + ' · ' + clock(sent.at) : ''],
+            [
+              'Last sent from Technically Not',
+              sentDiffers ? plainPrompt(sent.text).text + ' · ' + clock(sent.at) : '',
+            ],
             [
               'Process',
               session.running
@@ -446,8 +581,48 @@
             ],
           ],
           session.paneId
-        )
+        );
+
+        // Decisions read as one row each ("Decision 1 of 2 · Yes, build all four"), the result
+        // they came from under them.
+        const cell = list.querySelector('dd[data-fact="Task"]');
+        if (cell && plain.answers.length) {
+          const rows = plain.answers.map(item => {
+            const row = make('span', 'ttd-answer');
+            row.append(make('em', '', item.lead), make('b', '', item.answer));
+            return row;
+          });
+          if (plain.from) rows.push(make('span', 'ttd-from', 'From ' + plain.from));
+          cell.classList.add('ttd-answers');
+          cell.firstChild.replaceChildren(...rows);
+        }
+        return list;
+      }
     );
+  }
+
+  // The card at the top: the state in its color, how long the agent has run, and what it does now
+  // (the answer first). Empty sections say so in one quiet line under it.
+  function paintHead(view, session, team) {
+    const doing = doingNow(session, team);
+    const word = STATUS_WORDS[session.status] || session.status || '';
+    if ((view.head.dataset.status || '') !== (session.status || ''))
+      view.head.dataset.status = session.status || '';
+    setText(view.state, word);
+    setText(view.doing, doing);
+    const raw = session.running && doing.startsWith('Using ') ? nowRaw(team?.lead) : '';
+    if (view.doing.title !== raw) view.doing.title = raw;
+    const empty = [
+      ['queue', 'no queued prompts'],
+      ['team', 'no helpers'],
+    ]
+      .filter(([name]) => view.sections[name].section.hasAttribute('data-empty'))
+      .map(([, words]) => words);
+    const summary = empty.length
+      ? empty.join(' · ').replace(/^./, letter => letter.toUpperCase())
+      : '';
+    setText(view.quiet, summary);
+    view.quiet.hidden = !summary;
   }
 
   // One sub-agent: its name and state, what it does now, and its task and output folded under it.
@@ -574,7 +749,25 @@
         const aliasOf = agentId =>
           team?.subs?.find(sub => sub.agentId === agentId)?.alias || 'Sub-agent';
         const list = make('ol', 'ttd-timeline');
+
+        // The same step on the same thing again and again (four edits of one file) is one row
+        // that says how many times, with the first and last time on hover.
+        const grouped = [];
         log.forEach(event => {
+          const last = grouped[grouped.length - 1];
+          const same =
+            last &&
+            event.kind === 'tool' &&
+            last.event.kind === 'tool' &&
+            last.event.tool === event.tool &&
+            last.event.agentId === event.agentId &&
+            (last.event.detail || '') === (event.detail || '');
+          if (same) {
+            last.times++;
+            last.first = event.at;
+          } else grouped.push({ event, times: 1, first: event.at });
+        });
+        grouped.forEach(({ event, times, first }) => {
           const [what, text] =
             event.kind === 'tool'
               ? [
@@ -582,11 +775,27 @@
                   event.detail || '',
                 ]
               : (EVENT_WORDS[event.kind] || (() => [event.kind, '']))(event);
+          const [kind, icon] = stepKind(event);
           const row = make('li');
           row.dataset.kind = event.kind;
-          const detail = make('span', '', text);
-          detail.title = text;
-          row.append(make('time', '', clock(event.at)), make('b', '', what), detail);
+          if (kind) row.dataset.step = kind;
+          const mark = make('i', 'ttd-step');
+          if (icon) mark.innerHTML = window.TnaiIcon?.(icon, { size: 12 }) || '';
+          const detail = make('span');
+          if (kind === 'edit' || kind === 'read') {
+            const path = /^[\w.:\\/~ -]+$/.test(text) && /[\\/.]/.test(text);
+            if (path) detail.append(fileNodes(text));
+            else detail.append(...commandNodes(fromProject(text)));
+          } else if (kind === 'run' || kind === 'test')
+            detail.append(...commandNodes(plainCommand(text)));
+          else detail.textContent = text;
+          detail.title = fromProject(text);
+          row.append(make('time', '', clock(event.at)), mark, make('b', '', what), detail);
+          if (times > 1) {
+            const count = make('small', 'ttd-times', times + ' times');
+            count.title = 'From ' + clock(first) + ' to ' + clock(event.at);
+            row.append(count);
+          }
           list.append(row);
         });
         return list;
@@ -838,7 +1047,9 @@
     view.root.toggleAttribute('data-gone', !session);
     view.gone.hidden = !!session;
     view.list.hidden = !session;
+    view.head.hidden = !session;
     if (!session) {
+      view.quiet.hidden = true;
       paintTotal(view, null);
       return;
     }
@@ -854,6 +1065,9 @@
     paintFiles(view, session, mine);
     paintSkills(view, session, customAgent);
     paintSetup(view, session, customAgent);
+
+    // last: it reads which sections came out empty
+    paintHead(view, session, team);
   }
 
   // Next frame, or 100 ms later if the window is not painting (a covered window gets no frames).
@@ -969,6 +1183,7 @@
   }
 
   function startListening() {
+    askRoot();
     const keepStop = stop => {
       if (typeof stop === 'function') stops.push(stop);
     };
@@ -1035,8 +1250,20 @@
   function build(paneId) {
     const root = make('div', 'ttd');
     root.dataset.pane = paneId;
-    const total = make('p', 'ttd-total');
+
+    // The card at the top: the state and how long it has run, then what it does now.
+    const head = make('div', 'ttd-now');
+    const words = make('div', 'ttd-now-words');
+    const line = make('p', 'ttd-now-line');
+    const state = make('b', 'ttd-state');
+    const total = make('span', 'ttd-total');
     total.hidden = true;
+    line.append(state, total);
+    const doing = make('p', 'ttd-doing');
+    words.append(line, doing);
+    head.append(make('i', 'ttd-now-dot'), words);
+    const quiet = make('p', 'ttd-note ttd-quiet');
+    quiet.hidden = true;
     const gone = make('p', 'ttd-note ttd-gone', 'This thread’s agent is not open any more.');
     gone.hidden = true;
     const list = make('div', 'ttd-list');
@@ -1056,8 +1283,21 @@
       list.append(section);
       sections[name] = { section, head, body, count, key: null };
     });
-    root.append(total, gone, list);
-    return { paneId, root, total, gone, list, sections, stale: false, totalMs: 0 };
+    root.append(head, quiet, gone, list);
+    return {
+      paneId,
+      root,
+      head,
+      state,
+      doing,
+      quiet,
+      total,
+      gone,
+      list,
+      sections,
+      stale: false,
+      totalMs: 0,
+    };
   }
 
   function mount(host, paneId) {

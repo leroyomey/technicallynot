@@ -47,6 +47,44 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* How long the agent's session has been open, beside its name (120 paints it; the All threads
+   cards, 135, use the same clock). The status colors carry the steps: under 2 hours quiet, 2 to
+   4 hours plain, 4 to 6 hours amber, from 6 hours red. */
+.tnt-head-age {
+  flex: none;
+  color: var(--pg-text-3);
+  font: 500 12px/1 var(--pg-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tnt-head-age[hidden] {
+  display: none;
+}
+.tnt-head-age[data-age='long'] {
+  color: var(--pg-text);
+}
+.tnt-head-age[data-age='longer'] {
+  color: var(--pg-wait);
+}
+.tnt-head-age[data-age='longest'] {
+  color: var(--pg-err);
+}
+.tnt-head-line .tnt-head-age {
+  margin-left: 2px;
+}
+
+/* With the clock beside it, the name is the part that gives way in a narrow thread (a 1024
+   window with the side column open): it ends in "…" so the pencil and the clock stay whole and
+   nothing runs past the top row's text box (test `thread-tablet`). */
+.tnt-head-line:has(.tnt-head-age:not([hidden])) h1 {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.tat-name-line .tnt-head-age {
+  margin-left: 4px;
+  font-size: 11px;
+}
 .tnt-head p {
   display: flex;
   align-items: center;
@@ -117,6 +155,9 @@
 .tnt-head-state[data-tone='ready'] {
   --tone: var(--pg-ready);
 }
+.tnt-head-state[data-tone='agents'] {
+  --tone: var(--pg-agents);
+}
 .tnt-head-state[data-tone='err'] {
   --tone: var(--pg-err);
 }
@@ -166,6 +207,20 @@
   display: block;
 }
 
+/* The pencil beside the name (120): a small icon button in the name's own line. Its box is 24px
+   with a negative margin of 1px above and below, so it takes no more height than the name and
+   the row does not move; 4px less room on its left keeps it beside the name, not apart from it.
+   Put away while the name is a field. */
+.tnt-view .tnt-head-line .tnt-icon-btn.tnt-head-rename {
+  align-self: center;
+  width: 24px;
+  height: 24px;
+  margin: -1px 0 -1px -4px;
+}
+.tnt-view .tnt-head-line:has(.tnai-rename-input) .tnt-head-rename {
+  display: none;
+}
+
 /* The thread's name while it is renamed (137, the field of 21's inlineEdit): a field where the
    name stood, as high as the name's own line, so nothing in the row moves. Its edge lights up
    in the accent; a ring would be cut by the row's own edge. */
@@ -195,6 +250,27 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .tnt-menu.tnt-menu-thread:not([hidden]) {
+    animation: none;
+  }
+}
+
+/* A working dot breathes, wherever a thread shows one: the list's rows and helpers, the top row,
+   the conversation's live line and the All threads cards. A still dot read as "finished" while the
+   agent worked in the background. The app's one working pulse (05, stPulse):
+   only the opacity moves, so it costs no layout. Still under reduced motion (modern-ui rule). */
+.tnt-th[data-tone='work'] .tnt-face::after,
+.tnt-th[data-tone='work'] .tnt-dot,
+.tnt-head-state[data-tone='work'] i,
+.tnt-live:not([data-tone='needs']):not([data-tone='agents']) i,
+.tat-dot[data-tone='work'] {
+  animation: stPulse 1.8s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tnt-th[data-tone='work'] .tnt-face::after,
+  .tnt-th[data-tone='work'] .tnt-dot,
+  .tnt-head-state[data-tone='work'] i,
+  .tnt-live:not([data-tone='needs']):not([data-tone='agents']) i,
+  .tat-dot[data-tone='work'] {
     animation: none;
   }
 }

@@ -239,7 +239,7 @@ const USAGE = [
   '  tnai agents [--all]          list the live agents in this project (and the latest closed ones that can be revived; --all: every closed one)',
   "  tnai send NAME|ID message... type a message into that agent's input (a closed agent is revived first)",
   '  tnai send NAME -             the message from a pipe, for text with <, > or double quotes (Windows cmd.exe breaks those as arguments):',
-  '                               \'text with <x> and "quotes"\' | tnai send NAME -   (tnai intervene NAME - too)',
+  '                               \'text with <x> and "quotes"\' | tnai send NAME -   (tnai intervene NAME - and tnai ask NAME - too)',
   '  tnai new claude|codex|opencode|cursor task...   start a fresh agent in a new panel (it can have its own sub-agents) and give it the task; use your own CLI unless the user named another',
   '    --model NAME --effort LEVEL   (before the task) start it on that model / effort when the user asked for one, e.g. --model "Opus 5.5" --effort high',
   '    --name NAME                (before the task) only when the user named the new agent: that exact name, e.g. --name "bug reporter"',
@@ -487,6 +487,23 @@ async function tnai() {
       return 2;
     }
     rest[1] = text;
+  }
+
+  // `tnai ask NAME [--wait SEC] -` the same way; --wait may also come after the dash.
+  if (sub === 'ask' && rest.indexOf('-') >= 1) {
+    const words = [...rest];
+    const waitAt = words.indexOf('--wait');
+    const wait = waitAt >= 0 ? words.splice(waitAt, 2)[1] : null;
+    if (words.length === 2 && words[1] === '-') {
+      const text = await pipedText();
+      if (text === null) {
+        process.stderr.write(
+          "tnai: `tnai ask NAME -` reads the question from a pipe: 'question' | tnai ask NAME -\n"
+        );
+        return 2;
+      }
+      rest.splice(0, rest.length, words[0], ...(wait === null ? [] : ['--wait', wait]), text);
+    }
   }
   let message;
   if (sub === 'agents' && (!rest.length || (rest.length === 1 && rest[0] === '--all')))

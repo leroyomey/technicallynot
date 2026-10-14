@@ -62,6 +62,10 @@ html {
      window, desktop/main.js), where 2px is less than two whole screen pixels and is
      drawn as one. 2.4px is two screen pixels at 0.85, at 0.95 and at 1. */
   --pg-ring: 2.4px;
+  /* The hover of a row or tab that has no fill at rest: the faint --pg-panel in Dark. In the
+     thread layout's Light the faint white is lost on the pale ground, so there it is the
+     --pg-panel-hover shade (31-thread-pages.css). */
+  --pg-panel-hover-soft: var(--pg-panel);
   --pg-sans: 'Outfit', system-ui, 'Segoe UI', sans-serif;
   --pg-mono: 'JetBrains Mono', Consolas, monospace;
   --pg-ease: cubic-bezier(0.22, 0.9, 0.24, 1);
@@ -85,6 +89,8 @@ html[data-theme='dark'] {
   --pg-ready: #7fa8ff;
   --pg-idle: #7d7596;
   --pg-err: #ff7d8e;
+  /* waiting on another agent: violet, never the blue of "free" */
+  --pg-agents: #c79bff;
   --pg-handoff: #5fd0c8;
   --pg-tel-cpu: #b3a3ff;
   --pg-tel-ram: #8fd3ff;
@@ -112,6 +118,7 @@ html:not([data-theme='dark']) {
   --pg-ready: #2f6fdc;
   --pg-idle: #8a83a0;
   --pg-err: #d9405a;
+  --pg-agents: #7a3fc0;
   --pg-handoff: #0f8a82;
   --pg-tel-cpu: #6f5ae8;
   --pg-tel-ram: #1f8fd0;
@@ -693,7 +700,7 @@ html:not([data-theme='dark']):not(#pg) {
 }
 :root:not(#pg) .sidebar .side-item:hover {
   color: var(--pg-text);
-  background: var(--pg-panel);
+  background: var(--pg-panel-hover-soft);
 }
 :root:not(#pg) .sidebar .side-item.active {
   color: var(--pg-text);
@@ -1415,13 +1422,28 @@ html[data-accent='purple'] {
 :root:not(#pg) .composer .tnai-pick[data-pick='agent'] {
   display: none !important;
 }
-:root:not(#pg) .composebox > .tnai-composer-pop {
+/* Stop (150) wears the pop-out button's look: a drawn icon centered in its box. */
+.composebox > .tnai-composer-stop {
+  box-sizing: border-box;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  line-height: 1;
+  flex: none;
+  cursor: pointer;
+}
+.composebox > .tnai-composer-stop[hidden] {
+  display: none;
+}
+:root:not(#pg) .composebox > :is(.tnai-composer-pop, .tnai-composer-stop) {
   width: 30px;
   height: 30px;
   color: var(--pg-text-3);
   border-radius: 8px;
 }
-:root:not(#pg) .composebox > .tnai-composer-pop:hover {
+:root:not(#pg) .composebox > :is(.tnai-composer-pop, .tnai-composer-stop):hover {
   background: var(--pg-panel-hover);
   color: var(--pg-text);
 }

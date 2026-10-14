@@ -95,6 +95,6 @@ html[data-theme='dark'] .browser-only-logo.on-dark {
 
 .browser-only-get:focus-visible,
 .browser-only-link:focus-visible {
-  outline: 2px solid rgb(var(--pg-acc));
+  outline: var(--pg-ring, 2px) solid rgb(var(--pg-acc));
   outline-offset: 3px;
 }

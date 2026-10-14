@@ -264,6 +264,14 @@ function createOwnRelay({
     // "another account".
     problem = '';
     try {
+      // No relay was ever saved: nothing to read, so the system's secure storage is not asked at
+      // all. On macOS that question reads the keychain, and a keychain item made by another build
+      // raises a prompt that blocks the app's start before its window (0.3.65 to 0.3.71 on the
+      // Mac release machine).
+      if (typeof backend.exists === 'function' && !backend.exists()) {
+        saved = null;
+        return saved;
+      }
       if (!backend.available()) {
         problem = 'unavailable';
         return null;

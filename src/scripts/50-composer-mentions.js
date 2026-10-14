@@ -368,6 +368,14 @@
     searched: new Map(),
     token: 0,
     timer: 0,
+
+    // Enter or Tab was pressed while the file search for the current "@" text still ran: the pick
+    // waits for its results (see onKey).
+    enterWaiting: false,
+
+    // The user moved the highlight with the arrows since the last keystroke: that row is their
+    // choice and Enter picks it at once.
+    arrowed: false,
   };
   const keyOf = it =>
     it
@@ -399,6 +407,8 @@
     state.files = [];
     state.searched.clear();
     state.token++;
+    state.enterWaiting = false;
+    state.arrowed = false;
     clearTimeout(state.timer);
   }
 
@@ -547,9 +557,23 @@
           name: f.name,
         }))
       );
-      if (state.query === q) update();
+      if (state.query !== q) return;
+      update();
+      if (state.enterWaiting) {
+        state.enterWaiting = false;
+
+        // nothing was chosen with the arrows: the top row of this query's list
+        if (state.el && state.items.length) pick(state.items[0]);
+        else close();
+      }
     }, 120);
   }
+
+  // The file search for the "@" text being typed has not answered yet.
+  const searchRunning = () => !!state.query && projectOpen() && !state.searched.has(state.query);
+
+  // A file or folder row kept from an earlier search while the new one runs (not the open file).
+  const fromSearch = it => !!it && (it.kind === 'file' || it.kind === 'folder') && !it.open;
 
   // The "@query" right before the caret, if any. Paths are allowed in it ("@src/sc").
   function update() {
@@ -671,10 +695,16 @@
     if (k === 'ArrowDown' || k === 'ArrowUp') {
       if (n) {
         state.index = (state.index + (k === 'ArrowDown' ? 1 : n - 1)) % n;
+        state.arrowed = true;
         render();
       }
     } else if ((k === 'Enter' || k === 'Tab') && !event.shiftKey) {
-      if (n) pick(state.items[state.index]);
+      // The highlighted row may be an earlier query's result (or there is none yet): pick once
+      // this query's search answers, so Enter never inserts a stale file.
+      const highlighted = state.items[state.index];
+      if (searchRunning() && !state.arrowed && (!n || fromSearch(highlighted)))
+        state.enterWaiting = true;
+      else if (n) pick(highlighted);
       else close();
     } else if (k === 'Escape') close();
     else return;
@@ -693,6 +723,10 @@
       );
     }
     pendingMarks = [];
+
+    // typing after Enter: the waiting pick is dropped, the picker follows the new text
+    state.enterWaiting = false;
+    state.arrowed = false;
     update();
     if (!paintQueued) {
       paintQueued = true;

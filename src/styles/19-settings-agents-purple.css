@@ -531,7 +531,7 @@ html.vt-sa::view-transition-new(sa-stage) {
 }
 :root:not(#pg) .sa-new:hover {
   border-color: color-mix(in srgb, var(--pg-accent) 50%, transparent);
-  background: var(--pg-panel);
+  background: var(--pg-panel-hover-soft);
   color: var(--pg-text-2);
 }
 :root:not(#pg) .sa-new:focus-visible {

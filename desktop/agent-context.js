@@ -140,12 +140,34 @@ const ago = ms => {
 };
 
 // ---------- Storage ----------
-function store(root) {
+// The folder a project's saved context lives in.
+const storeDir = root => path.join(app.getPath('userData'), 'agent-context', hashOf(root));
+
+// Reads a project's saved context ahead of the first question, without blocking the main process.
+// Without it, the first context:state after a start or a project switch read the whole file
+// synchronously (100 to 400 ms in the stall log, from a project in the OneDrive folder). A file
+// that cannot be read now is left for store() to read as before, so nothing is ever taken as empty
+// by mistake.
+async function warm(root) {
+  const key = norm(root);
+  if (!key || projects.has(key)) return;
+  let text;
+  try {
+    text = await fs.promises.readFile(path.join(storeDir(root), 'index.json'), 'utf8');
+  } catch (error) {
+    if (error?.code !== 'ENOENT') return;
+    text = '';
+  }
+  if (!projects.has(key)) store(root, text);
+}
+
+// text: the file's text when warm() already read it ('' for no file); otherwise it is read here.
+function store(root, text) {
   const key = norm(root);
   if (!key) return null;
   let p = projects.get(key);
   if (p) return p;
-  const dir = path.join(app.getPath('userData'), 'agent-context', hashOf(root));
+  const dir = storeDir(root);
   p = {
     root,
     dir,
@@ -160,7 +182,7 @@ function store(root) {
     notesAt: 0,
   };
   try {
-    const j = JSON.parse(fs.readFileSync(p.file, 'utf8'));
+    const j = JSON.parse(text ?? fs.readFileSync(p.file, 'utf8'));
     if (Array.isArray(j.entries)) p.entries = j.entries;
     if (j.marks && typeof j.marks === 'object') p.marks = j.marks;
     if (j.claims && typeof j.claims === 'object') p.claims = j.claims;
@@ -215,6 +237,24 @@ function write(p, sync) {
 function save(p) {
   clearTimeout(saveTimers.get(p.file)?.timer);
   saveTimers.set(p.file, { p, timer: setTimeout(() => write(p, false), 300) });
+}
+
+// The user renamed an agent (main.js, from lifecycle.setNames): its saved results carry the new
+// name, so `tnai context`, the brief and every later prompt show only the name it has now.
+function renamed(instanceId, name) {
+  if (!instanceId || !name) return 0;
+  let count = 0;
+  for (const p of projects.values()) {
+    let changed = false;
+    for (const e of p.entries || [])
+      if (e.instanceId === instanceId && e.name !== name) {
+        e.name = name;
+        changed = true;
+        count++;
+      }
+    if (changed) save(p);
+  }
+  return count;
 }
 
 // Technically Not is quitting: saves still waiting on their timers are written now.
@@ -2106,6 +2146,8 @@ module.exports = {
   },
   query,
   state,
+  warm,
+  renamed,
   raw,
   openLog,
   remove,

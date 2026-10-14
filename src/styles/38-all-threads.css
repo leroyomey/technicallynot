@@ -108,6 +108,9 @@
 .tat-dot[data-tone='ready'] {
   --tone: var(--pg-ready);
 }
+.tat-dot[data-tone='agents'] {
+  --tone: var(--pg-agents);
+}
 .tat-dot[data-tone='err'] {
   --tone: var(--pg-err);
 }
@@ -126,12 +129,78 @@
   color: var(--pg-text);
   font: 600 15px/1.25 var(--pg-sans);
 }
+/* The name and the pencil beside it (135). The line is as high as the name: the pencil's 20px box
+   and the field's × take back their extra height with negative margins, so the head never moves
+   between rest and renaming. */
+.tat-name-line {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  height: 19px;
+}
+.tat-name-line b {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.tat-rename {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin: -1px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pg-text-3);
+  cursor: pointer;
+}
+.tat-rename:hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+.tat-rename:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+.tat-rename svg {
+  display: block;
+}
+/* the name's own display:block above outranks the hidden attribute, so the field stood beside a
+   name that should have stepped aside */
+.tat-name-line:has(.tnai-rename-input) .tat-rename,
+.tat-name-line b[hidden] {
+  display: none;
+}
+.tat-name-line .tnai-rename-input {
+  flex: 0 1 220px;
+  min-width: 60px;
+  height: 21px;
+  margin: -1px 0;
+  padding: 0 6px;
+  border: 1px solid rgba(var(--pg-accent-rgb), 0.6);
+  border-radius: 6px;
+  outline: none;
+  background: var(--pg-panel);
+  box-shadow: none;
+  color: var(--pg-text);
+  font: 600 13.5px/1 var(--pg-sans);
+  letter-spacing: 0;
+}
+/* 11's rule for the × carries an id; the same lift here lets the card's smaller size win */
+:root:not(#pg) .tat-name-line .tnai-rename-cancel {
+  width: 21px;
+  height: 21px;
+  margin: -1px 0 -1px 2px;
+}
 .tat-head-text small {
   margin-top: 1px;
   color: var(--pg-text-3);
   font: 400 12px/1.35 var(--pg-sans);
 }
-.tat-open {
+:is(.tat-open, .tat-act) {
   flex: none;
   display: inline-grid;
   place-items: center;
@@ -144,16 +213,26 @@
   color: var(--pg-text-3);
   cursor: pointer;
 }
-.tat-open:hover {
+:is(.tat-open, .tat-act):hover {
   background: var(--pg-panel-hover);
   color: var(--pg-text);
 }
-.tat-open:focus-visible {
+:is(.tat-open, .tat-act):focus-visible {
   outline: var(--pg-ring) solid var(--pg-accent);
   outline-offset: -2px;
 }
-.tat-open svg {
+:is(.tat-open, .tat-act) svg {
   display: block;
+}
+
+/* The open thread's top-row controls on each card (135): one tight group with "open on its own",
+   2px apart as in the thread's own top row, and the on/off button gone while there is no session
+   (the grid above outranks the hidden attribute). */
+.tat-head .tat-act + :is(.tat-act, .tat-open) {
+  margin-left: -8px;
+}
+.tat-head .tat-act[hidden] {
+  display: none;
 }
 
 /* the conversation: 30's own look, in a narrower column */

@@ -130,8 +130,18 @@ try {
     '190k (below the 200k hand-off limit): no handoff'
   );
 
-  // At 210k with "Without asking: Retire": it hands off by itself.
+  // At 210k with "Without asking: Retire": it hands off by itself, after its hand-off letter
+  // (2026-10-14: the old agent writes one first; its reply is what the successor gets).
   await main('finish', A, nameA, report('- Next: add a keyboard shortcut\n'), 210000);
+  check(
+    !!(await until(() => U.briefing().find(b => b.paneId === A), 3000)) &&
+      sent.some(s => s.paneId === A && /hand-off letter/.test(s.text)) &&
+      !H.list().length,
+    'the old agent is asked for its hand-off letter first; nothing has started yet'
+  );
+  await main('finish', A, nameA, report('- Next: add a keyboard shortcut\n'), 210500, {
+    fresh: true,
+  });
   const e1 = await until(() => H.list().find(e => e.result === 'ok'), 10000);
   check(!!e1, '210k with Retire: handed off (' + JSON.stringify(phases) + ')');
   const B = e1?.to?.paneId,
@@ -175,11 +185,9 @@ try {
     "the handoff message went to the new agent, asking for a summary and the user's confirmation"
   );
   check(
-    !!(await until(
-      () => !document.querySelector('.terminal-pane[data-pane-id="' + CSS.escape(A) + '"]'),
-      3000
-    )),
-    'old panel closed'
+    sent.some(s => s.paneId === B && /tnai ask/.test(s.text)) &&
+      !!document.querySelector('.terminal-pane[data-pane-id="' + CSS.escape(A) + '"]'),
+    'the new agent is told it can ask the old one, which stays open for its questions'
   );
   const stored = await main('stored');
   check(
@@ -204,6 +212,16 @@ try {
   check(
     !H.status(B) && e1b?.after === 18000 && e1b.confirmedAt > 0,
     'confirmed: normal status again, after = 18k (first reported reading)'
+  );
+
+  // The user answers the new agent's summary (its next task): the old panel closes.
+  await main('finish', B, nameB, report(), 19000, { fresh: true });
+  check(
+    !!(await until(
+      () => !document.querySelector('.terminal-pane[data-pane-id="' + CSS.escape(A) + '"]'),
+      3000
+    )),
+    'old panel closed once the new agent finished its next task'
   );
 
   // The Handoff history button in the top row of the agent's thread opens the history at that
@@ -315,6 +333,10 @@ try {
       '.tnai-bell-pop [data-item="notice:upkeep:' + CSS.escape(B) + '"] [data-a="retire"]'
     )
     ?.click();
+
+  // its hand-off letter first, then the successor fails to start
+  await until(() => U.briefing().find(b => b.paneId === B), 3000);
+  await main('finish', B, nameB, report(), 220500, { fresh: true });
   const e2 = await until(() => H.list().find(e => e.result === 'failed'), 5000);
   await thread(B);
   check(

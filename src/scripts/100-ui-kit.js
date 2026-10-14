@@ -23,11 +23,13 @@
 
   /*
    * ---------- TnaiFloat: popovers, menus and tips next to an anchor ----------
-   * TnaiFloat.attach(anchor, panel, { placement:'bottom-start', offset:6, flip:true, shift:8,
-   * sameWidth:false, fade:true }) Places the panel at the anchor with flip/shift/offset and keeps
-   * it there (autoUpdate) while it is shown. It stops by itself when the panel is hidden, closed or
-   * removed, so callers don't have to call the returned cleanup (they may). No timers or observers
-   * run while nothing is open. The panel stays where it is in the DOM.
+   * TnaiFloat.attach(anchor, panel, { placement:'bottom-start', offset:6, flip:true,
+   * shift:8, sameWidth:false, fade:true, maxHeight:0 }) Places the panel at the anchor
+   * with flip/shift/offset and keeps it there (autoUpdate) while it is shown.
+   * maxHeight caps its height in px (0 = no cap). It stops by itself when the panel is
+   * hidden, closed or removed, so callers don't have to call the returned cleanup (they
+   * may). No timers or observers run while nothing is open. The panel stays where it
+   * is in the DOM.
    */
   const live = new Map(); // panel → stop()
 
@@ -42,6 +44,7 @@
       shift: 8,
       sameWidth: false,
       fade: true,
+      maxHeight: 0,
       ...opts,
     };
     const s = panel.style;
@@ -57,7 +60,10 @@
       F.size({
         padding: 8,
         apply({ availableHeight, rects }) {
-          s.maxHeight = Math.max(120, Math.floor(availableHeight)) + 'px';
+          // the room left in the window, never more than the caller's own cap (maxHeight, in px)
+          let room = Math.max(120, Math.floor(availableHeight));
+          if (o.maxHeight > 0) room = Math.min(room, o.maxHeight);
+          s.maxHeight = room + 'px';
           if (o.sameWidth) s.minWidth = Math.round(rects.reference.width) + 'px';
         },
       })
@@ -145,6 +151,16 @@
     return running;
   }
   window.TnaiMotion = { swap, reduced };
+
+  // The ground's slow drift (`body::before`, 07) redraws the whole window every frame. While the
+  // window is not in front it pauses where it is, so nothing changes while the user looks at it
+  // and the graphics process rests otherwise. The rule is `html.tnai-away` in 31.
+  const markAway = () => {
+    document.documentElement.classList.toggle('tnai-away', !document.hasFocus());
+  };
+  window.addEventListener('blur', markAway);
+  window.addEventListener('focus', markAway);
+  markAway();
 
   // Page switches: a real click on a nav item replays itself inside a view transition, so every
   // page's own click handler (08, 30, 65, …) runs unchanged and the page change cross-fades. Window

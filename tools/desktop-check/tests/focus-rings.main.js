@@ -7,7 +7,11 @@
 
 module.exports = win => ({
   async actFocused(on) {
-    await win.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', {
+    // The command needs the debugger attached ("No target available" otherwise). The app's
+    // desktop/preview-emulation.js usually attached it already; attach it here when not.
+    const tools = win.webContents.debugger;
+    if (!tools.isAttached()) tools.attach('1.3');
+    await tools.sendCommand('Emulation.setFocusEmulationEnabled', {
       enabled: !!on,
     });
     return true;

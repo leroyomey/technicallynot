@@ -24,8 +24,22 @@ skill(
   '---\nname: tnai-agent-orchestration\ndescription: Agents.\n---\n'
 );
 skill('.agents/skills', 'secret', '---\nname: secret-ui\ndescription: x\ntnai-hidden: true\n---\n');
+
+// `keywords:` written as a YAML list, at the first column and indented (once read as one term).
+skill(
+  '.claude/skills',
+  'quokka',
+  '---\nname: quokka\ndescription: x\nkeywords:\n- pineapple\n- mango tree\n---\n'
+);
+skill(
+  '.claude/skills',
+  'wombat',
+  '---\nname: wombat\ndescription: x\nkeywords:\n  - "kiwi"\n  - papaya\n---\n'
+);
 try {
   const names = p => t.match(p, root).map(s => s.name);
+  assert.deepStrictEqual(names('a mango tree'), ['quokka'], 'list keywords at the first column');
+  assert.deepStrictEqual(names('kiwi and papaya'), ['wombat'], 'indented list keywords');
   assert.deepStrictEqual(names('Fix the UI spacing'), ['tnai-modern-ui'], 'name word matches');
   assert.deepStrictEqual(
     names('rebuild the guide'),

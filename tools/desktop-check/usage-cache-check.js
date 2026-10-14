@@ -1,21 +1,30 @@
 /*
- * Technically Not tools · desktop-check/usage-cache-check.js — desktop/usage-stats.js keeps its
- * per-file reading on disk and reads only what was added to a transcript. Plain Node, no Electron.
- * Against a temp folder of small fake Claude Code + Codex transcripts, every way of getting the
- * records must give exactly what the old way (readline over the whole file, kept here as the
- * reference) gives: a full scan, a second run from the cache after a "restart" (the module loaded
- * fresh), lines added (a streamed message re-written across the join, a Codex turn that ends in the
- * added part, a last line with no newline yet), a file cut shorter, a file replaced by a longer
- * one, a deleted file, and a cache that is damaged, of another format or missing. Then one timing
- * on the real transcripts, READ-ONLY, with the cache in a temp file (never the app's settings
- * folder): file count, record count and ms only, never content. Run: node
- * tools/desktop-check/usage-cache-check.js [--before=2026-10-04T00:00:00Z] [--no-real]
+ * * Technically Not tools · desktop-check/usage-cache-check.js — desktop/usage-stats.js keeps its
+ * * per-file reading on disk and reads only what was added to a transcript. Plain Node, no
+ * Electron.
+ * * Against a temp folder of small fake Claude Code + Codex transcripts, every way of getting the
+ * * records must give exactly what reading the whole file at once (split at each \n only, kept here
+ * * as the reference) gives: a full scan, a second run from the cache after a "restart" (the module
+ * loaded
+ * * fresh), lines added (a streamed message re-written across the join, a Codex turn that ends in
+ * the
+ * * added part, a last line with no newline yet), a file cut shorter, a file replaced by a longer
+ * * one, a deleted file, and a cache that is damaged, of another format or missing. Then one timing
+ * * on the real transcripts, READ-ONLY, with the cache in a temp file (never the app's settings
+ * * folder): file count, record count and ms only, never content. Run: node
+ * * tools/desktop-check/usage-cache-check.js [--before=2026-10-04T00:00:00Z] [--no-real]
  */
 'use strict';
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const readline = require('readline');
+
+// Every line of a file, split at \n only (U+2028 and U+2029 may sit inside a JSON string), without
+// a Windows \r at its end. Async, so it can stand where readline's line reader stood.
+async function* fileLines(file) {
+  for (const text of fs.readFileSync(file, 'utf8').split('\n'))
+    yield text.endsWith('\r') ? text.slice(0, -1) : text;
+}
 
 let ok = true;
 const check = (cond, label) => {
@@ -37,10 +46,7 @@ const now = Date.now(),
 // with ----
 async function oldClaude(file) {
   const byKey = new Map();
-  for await (const l of readline.createInterface({
-    input: fs.createReadStream(file, { encoding: 'utf8' }),
-    crlfDelay: Infinity,
-  })) {
+  for await (const l of fileLines(file)) {
     if (!l || !l.includes('"usage"')) continue;
     let j;
     try {
@@ -83,10 +89,7 @@ async function oldCodex(file) {
     base = zero(),
     turnStart = 0,
     inTurn = false;
-  for await (const l of readline.createInterface({
-    input: fs.createReadStream(file, { encoding: 'utf8' }),
-    crlfDelay: Infinity,
-  })) {
+  for await (const l of fileLines(file)) {
     if (!l) continue;
     let j;
     try {
@@ -220,7 +223,7 @@ fs.writeFileSync(
     '\n' +
     JSON.stringify(msg('m2', 'r2', 70000, [5000, 500, 0, 0])) +
     '\r\n' + // a CRLF line
-    // readline broke this line in two, so the old reading never counted it
+    // U+2028 inside the JSON: readline broke this line in two and lost its usage; it counts now
     line(msg('m3', 'r3', 60000, [70, 10, 5, 0], { note: 'a\u2028b' })) +
     line(msg('m4', 'r4', 50000, [2000, 400, 100, 50]))
 );

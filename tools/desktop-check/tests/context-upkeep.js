@@ -48,7 +48,10 @@ const box = () => {
 };
 const report = extra =>
   'Done.\n\nTechnically Not report\n- Did: tidied the settings page\n' + (extra || '');
-let shell;
+
+// A terminal's text without color codes and spaces: PowerShell wraps a long typed line anywhere.
+const flat = text => text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\s+/g, '');
+let shell, heir;
 try {
   check(
     !!U &&
@@ -159,14 +162,32 @@ try {
     !U.pending().length && /decision/.test(U.why(pane)),
     'open decision: no action (' + U.why(pane) + ')'
   );
-  await feed(report(), 90000);
+
+  // (an open next step: past half the compact size a finished task with nothing left is offered a
+  // hand-off, checked just below)
+  const busyReport = report('- Next: wire the footer\n');
+  await feed(busyReport, 90000);
   check(!U.pending().length && U.why(pane) === '', 'below both thresholds: no action');
-  await feed(report(), 90000, { calls: 200 });
+
+  // The best moment (2026-10-14): past half the compact size (60k of 120k), a task that ended with
+  // nothing left is offered a hand-off; with work left it is not.
+  await feed(report(), 90000);
+  const pSoft = await until(() => U.pending()[0], 3000);
+  check(
+    pSoft?.handoff === true && pSoft.tokens === 90000,
+    'a finished task with nothing left at 90k (past half of 120k) → hand-off offered (' +
+      JSON.stringify(pSoft) +
+      ')'
+  );
+  await feed(busyReport, 90000);
+  await wait(300);
+  check(!U.pending().length, 'the next turn leaves work open: the offer goes away');
+  await feed(busyReport, 90000, { calls: 200 });
   check(
     !U.pending().length && U.why(pane) === '',
     'many model calls but under 100k context: no action'
   );
-  await feed(report(), 110000, { calls: 149 });
+  await feed(busyReport, 110000, { calls: 149 });
   check(
     !U.pending().length && U.why(pane) === '',
     '149 model calls, below the threshold: no action'
@@ -219,18 +240,56 @@ try {
     U.pending().length === 1 && !/\/compact/.test(await buf()),
     'still asking after 4 s, nothing typed by itself'
   );
+
+  // Run with Summarize first on (2026-10-14): the summary first, /compact after that reply, and the
+  // summary back once the compact has run.
   box().querySelector('[data-a="now"]').click();
-  check(!U.pending().length, 'Run answers it');
   check(
-    !!(await until(async () => /\/compact/.test(await buf()), 5000)),
-    '/compact typed into the pane'
+    !U.pending().length && U.briefing()[0]?.cmd === '/compact',
+    'Run answers it and asks for the summary first'
   );
   check(
-    /^Compacted .+ at 170k tokens \(Project Context up to date: result [0-9a-f]+\)/.test(
+    !!(await until(async () => /whatmustsurvive/.test(flat(await buf())), 5000)),
+    'the summary prompt reached the panel'
+  );
+  const markRun = (await buf()).length;
+  await feed(report('- Remains: the footer\n'), 171000, { fresh: true });
+  check(
+    !!(await until(async () => /\/compact/.test((await buf()).slice(markRun)), 5000)),
+    '/compact typed into the pane after the summary reply'
+  );
+  check(
+    /^Compacted .+ at 170k tokens after it wrote its summary \(saved in Project Context\)/.test(
       window.TnaiLiveTasks?.get(pane)?.text || ''
     ),
     'recorded: ' + (window.TnaiLiveTasks?.get(pane)?.text || '')
   );
+  const markBack = (await buf()).length;
+  await main('compacted', pane, 14000);
+  check(
+    !!(await until(
+      async () =>
+        /has run in this session/.test((await buf()).slice(markBack)) &&
+        /^Gave .+ its summary back after \/compact/.test(
+          window.TnaiLiveTasks?.get(pane)?.text || ''
+        ),
+      5000
+    )),
+    'once the compact ran (14k after it), the summary went back to the agent'
+  );
+
+  // A /compact typed in the prompt box (11 → compactNow) takes the same way; typing in the panel
+  // cancels it.
+  check(
+    U.compactNow(pane, '/compact keep the plan') === true &&
+      U.briefing()[0]?.cmd === '/compact keep the plan',
+    'a typed /compact asks for the summary first and keeps what was typed after it'
+  );
+  document
+    .querySelector('.terminal-pane[data-pane-id="' + pane + '"]')
+    ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+  await wait(200);
+  check(!U.briefing().length, 'typing in the panel cancels it');
   U.set({ never: false });
   await wait(1000);
   check(
@@ -343,8 +402,8 @@ try {
   check(
     !!set?.querySelector('[data-k=brief]') &&
       set.querySelector('[data-k=brief]').checked &&
-      set.querySelector('[data-k=brief]').disabled,
-    'Settings: Summarize first switch is there, on, and grayed while Without asking is not Compact'
+      !set.querySelector('[data-k=brief]').disabled,
+    'Settings: Summarize first switch is there and on, for every compact'
   );
   check(
     !!set &&
@@ -369,11 +428,90 @@ try {
   set?.scrollIntoView({ block: 'center' });
   console.log('TNAI_SHOT:context-upkeep-settings');
   await wait(450);
+  window.TnaiSettings.close?.();
+
+  // Hand off from the thread's "..." menu (2026-10-14), last because the old thread closes: a
+  // letter first, the successor (a second PowerShell pane standing in for a fresh agent) gets it
+  // and is told to ask its predecessor, the old thread stays open until the successor's summary was
+  // answered, then it closes.
+  const team = window.TnaiTeam,
+    realStart = team?.startLead;
+  team.startLead = async () => {
+    heir = await window.TnaiTest.open('Terminal');
+    return heir?.ok ? { paneId: heir.paneId, name: 'Vega' } : { error: 'no test pane' };
+  };
+  U.set({ auto: '', brief: true });
+  await feed(busyReport, 100000);
+  check(U.handOffWhy(pane) === '', 'an idle agent can be handed off (' + U.handOffWhy(pane) + ')');
+  check(
+    (window.TnaiThreadMore?.rows?.(pane) || [])
+      .map(row => row.id)
+      .join(',')
+      .includes('stop,handoff,close'),
+    'the "..." menu has Hand off to a fresh agent under Stop (' +
+      (window.TnaiThreadMore?.rows?.(pane) || []).map(row => row.id).join(',') +
+      ')'
+  );
+  check(
+    U.handOff(pane) === true && U.briefing()[0]?.paneId === pane,
+    'Hand off asks the agent for its letter first'
+  );
+  check(
+    !!(await until(async () => /hand-offletter/.test(flat(await buf())), 5000)),
+    'the letter prompt reached the panel'
+  );
+  await feed(report('- Next: wire the footer\n'), 101000, { fresh: true });
+  const handing = await until(() => U.handingOver()[0], 8000);
+  check(
+    handing?.paneId === pane && !!heir?.paneId && handing.to === heir.paneId,
+    'the successor started and the old agent is handing over (' + JSON.stringify(handing) + ')'
+  );
+  const heirBuf = async () => (await N.pty.replay(heir.paneId))?.buffer || '';
+  check(
+    !!(await until(
+      async () =>
+        /TN\.aihandoff:youtakeoverfrom/.test(flat(await heirBuf())) &&
+        /tnaiask/.test(flat(await heirBuf())),
+      5000
+    )),
+    'the successor got the letter and how to ask its predecessor'
+  );
+  check(
+    !!document.querySelector('.terminal-pane[data-pane-id="' + pane + '"]') &&
+      U.why(pane) === 'it is handing its work over',
+    'the old thread stays open and is not offered anything (' + U.why(pane) + ')'
+  );
+  await main(
+    'finish',
+    heir.paneId,
+    'Vega',
+    report(
+      '- Decide: Is this hand-off summary right? | 1. Yes, carry on (recommended) | 2. No, I will correct it\n'
+    ),
+    20000
+  );
+  check(
+    !!(await until(() => U.handingOver()[0]?.summaryAt > 0, 5000)) &&
+      !!document.querySelector('.terminal-pane[data-pane-id="' + pane + '"]'),
+    'the successor wrote its summary; the old thread waits for the answer'
+  );
+  await main('finish', heir.paneId, 'Vega', report(), 22000, { fresh: true });
+  check(
+    !!(await until(
+      () =>
+        !U.handingOver().length &&
+        !document.querySelector('.terminal-pane[data-pane-id="' + pane + '"]'),
+      5000
+    )),
+    'the user answered the successor: the old thread closed'
+  );
+  team.startLead = realStart;
   U.set({ on: false, compact: 400000, clear: 600000, never: true });
 } catch (err) {
   check(false, 'threw: ' + (err?.stack || err));
 }
 if (shell?.paneId) G.stop(shell.paneId);
+if (heir?.paneId) G.stop(heir.paneId);
 
 // Migration of old saved settings (continued in .after.js / .after2.js): seed what an older
 // Technically Not stored (v1: every key, old defaults 120k/160k/never off) with a compact

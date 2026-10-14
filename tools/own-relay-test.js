@@ -464,6 +464,29 @@ function fakeBackend({ available = true } = {}) {
     );
   }
   {
+    // Nothing was ever saved: the app's start asks whether a relay is set, and the system's secure
+    // storage must not be asked at all (on macOS it reads the keychain, and a keychain item of
+    // another build blocks the start with a prompt).
+    const backend = fakeBackend();
+    let asked = 0;
+    backend.exists = () => backend.text !== null;
+    backend.available = () => {
+      asked++;
+      return true;
+    };
+    const fresh = createOwnRelay({ backend, fetch });
+    check(
+      'nothing saved: the start does not ask the secure storage',
+      fresh.active() === false && !fresh.held() && asked === 0,
+      { asked }
+    );
+    check(
+      'and saving a relay then asks it as before',
+      fresh.set('relay.test', SECRET).ok === true && asked > 0 && fresh.active() === true,
+      { asked }
+    );
+  }
+  {
     const { own, backend } = make(fakeBackend({ available: false }));
     check(
       'no secure storage: nothing is saved in plain text',

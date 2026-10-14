@@ -30,6 +30,31 @@
     height: 44px;
   }
 
+  /* A thread's ✕ (119, 28): no hover under a finger, so it shows on the open thread's row, at 44,
+     in its own place. The row is taller than 44, so nothing grows. */
+  html.tnt-on:not(#tnt):not(#pg) .tnt-lst .tnt-th .tnt-th-x:not(#lp) {
+    right: 0;
+    width: 44px;
+    height: 44px;
+  }
+  html.tnt-on:not(#tnt):not(#pg) .tnt-lst .tnt-th[aria-selected='true'] .tnt-th-x:not(#lp) {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  html.tnt-on:not(#tnt):not(#pg)
+    .tnt-lst
+    .tnt-th:is([aria-selected='true'], :hover, :focus-visible):not([data-remote])
+    time:not(#lp) {
+    min-width: 32px;
+    visibility: hidden;
+  }
+  html.tnt-on:not(#tnt):not(#pg)
+    .tnt-lst
+    .tnt-th:is([aria-selected='true'], :hover, :focus-visible):not([data-remote])
+    small:not(#lp) {
+    padding-right: 40px;
+  }
+
   /* a sub-agent's small row */
   html.tnt-on:not(#tnt):not(#pg) .tnt-lst .tnt-th.tnt-sub:not(#lp) {
     min-height: 44px;
@@ -45,6 +70,49 @@
     height: 44px;
   }
   html.tnt-on:not(#tnt):not(#pg) .tnt-view .tnt-helpers-btn:not(#lp) {
+    height: 44px;
+  }
+
+  /* a thread's helper bubbles (123, 135): the row grows with them, still one line */
+  html.tnt-on:not(#tnt):not(#pg) :is(.tnt-head-helpers, .tat-helpers):not(#lp) {
+    height: 44px;
+  }
+  html.tnt-on:not(#tnt):not(#pg) :is(.tnt-head-helpers, .tat-helpers) .tnt-side-chip:not(#lp) {
+    height: 44px;
+  }
+
+  /* the New thread start screen (140): its tools, This folder / Own worktree, Cancel */
+  html.tnt-on:not(#tnt):not(#pg) .tnt-start .tnt-start-tool:not(#lp),
+  html.tnt-on:not(#tnt):not(#pg) .tnt-start .tnt-start-where .tnt-menu-seg:not(#lp) {
+    height: 44px;
+  }
+
+  /* A half of the switch sits 3 px inside the switch's edge, so a clear layer the switch's full
+     height takes the finger; the halves keep the look of the switch at rest. */
+  html.tnt-on:not(#tnt):not(#pg) .tnt-start .tnt-start-where .tnt-menu-seg button:not(#lp) {
+    position: relative;
+  }
+  html.tnt-on:not(#tnt):not(#pg) .tnt-start .tnt-start-where .tnt-menu-seg button:not(#lp)::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 0;
+    left: 0;
+    height: 44px;
+    transform: translateY(-50%);
+  }
+  html.tnt-on:not(#tnt):not(#pg) .tnt-start .tnt-start-cancel:not(#lp) {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* "Last report" and "Latest" at the bottom of a conversation. */
+  html.tnt-on:not(#tnt):not(#pg) .tnt-jump-btn:not(#lp) {
+    height: 44px;
+  }
+
+  /* Send now, Edit and Remove on a waiting prompt at the end of a conversation. */
+  html.tnt-on:not(#tnt):not(#pg) .tnt-queued-act:not(#lp) {
     height: 44px;
   }
 
@@ -71,7 +139,14 @@
      line of text by design and is not changed here. */
   html.tnt-on:not(#tnt):not(#pg)
     .composebox
-    :is(.attach, .tnai-voice-btn, .tnai-composer-pop, .tnai-new-agent, .send):not(#lp) {
+    :is(
+      .attach,
+      .tnai-voice-btn,
+      .tnai-composer-pop,
+      .tnai-composer-stop,
+      .tnai-new-agent,
+      .send
+    ):not(#lp) {
     min-width: 44px;
     height: 44px;
   }

@@ -257,11 +257,198 @@ try {
     'the threads end over the prompt box'
   );
 
+  // ---- one choice, shown in the card row and in the thread list ----
+  // Found 2026-10-14: a card chosen here left the list on the thread last opened on Threads.
+  const listRow = paneId =>
+    threads.slot('list')?.querySelector('.tnt-th:not(.tnt-sub)[data-pane="' + paneId + '"]');
+  const chosenRows = () =>
+    (window.TnaiThreadList?.rows() || []).filter(row => row.selected && !row.sub);
+  const second = state().shown[1];
+  strip.querySelector('.tat-card[data-pane="' + second + '"] .tat-head').click();
+  const listFollows = await until(
+    () => chosenRows().length === 1 && chosenRows()[0].paneId === second,
+    3000
+  );
+  check(
+    !!listFollows,
+    "a card chosen on the page is the thread list's chosen row (" +
+      chosenRows()
+        .map(row => row.paneId)
+        .join(', ') +
+      ', card ' +
+      second +
+      ')'
+  );
+
+  // a row whose card is off the page when there is one, else the third card
+  const offPage = state().order.find(paneId => !state().shown.includes(paneId));
+  const third = offPage || state().shown[2];
+  listRow(third)?.click();
+  const cardFollows = await until(
+    () =>
+      window.TnaiLiveTasks.target() === third &&
+      strip
+        .querySelector('.tat-card[data-pane="' + third + '"]')
+        ?.classList.contains('tat-target') &&
+      state().shown.includes(third) &&
+      all().state().on,
+    3000
+  );
+  check(
+    !!cardFollows,
+    'a row pressed in the list chooses its card and brings it on the page (' +
+      third +
+      (offPage ? ', was off the page' : '') +
+      ')'
+  );
+
+  // the list redraws on its next frame, so this waits for it
+  const rowFollows = await until(
+    () => chosenRows().length === 1 && chosenRows()[0].paneId === third,
+    3000
+  );
+  check(
+    !!rowFollows,
+    'the list shows that row as the only chosen one (' +
+      chosenRows()
+        .map(row => row.paneId)
+        .join(', ') +
+      ')'
+  );
+  console.log('TNAI_SHOT:all-threads-chosen');
+  await wait(700);
+
+  // back to the first card, as the steps below expect
+  strip.querySelector('.tat-card[data-pane="' + pick + '"] .tat-head').click();
+  await until(() => state().shown[0] === pick, 2000);
+
+  // ---- the pencil beside a card's name ----
+  const pickCard = strip.querySelector('.tat-card[data-pane="' + pick + '"]');
+  const cardName = pickCard.querySelector('.tat-name-line b');
+  const cardPencil = pickCard.querySelector('.tat-rename');
+  const cardField = () => pickCard.querySelector('.tat-name-line .tnai-rename-input');
+  const headHeight = box(pickCard.querySelector('.tat-head')).height;
+  check(!!cardPencil && box(cardPencil).width > 0, 'a pencil stands beside the card’s name');
+  const cardGap = box(cardPencil).left - box(cardName).right;
+  check(
+    cardGap >= 1 && cardGap <= 6,
+    'the pencil sits right after the name (' + round(cardGap) + ' px)'
+  );
+  cardPencil.click();
+  await wait(200);
+  check(
+    !!cardField() &&
+      getComputedStyle(cardName).display === 'none' &&
+      getComputedStyle(cardPencil).display === 'none' &&
+      document.activeElement === cardField(),
+    'the pencil puts a field where the card’s name stood'
+  );
+  check(
+    Math.abs(box(pickCard.querySelector('.tat-head')).height - headHeight) < 1,
+    'the card’s head keeps its height while the name is edited'
+  );
+  console.log('TNAI_SHOT:all-threads-pencil');
+  await wait(700);
+  const newName = 'Card ' + String(Date.now()).slice(-5);
+  cardField().value = newName;
+  cardField().dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+  );
+  check(
+    !!(await until(() => !cardField() && cardName.textContent === newName, 5000)) &&
+      window.TnaiThreadList?.thread?.(pick)?.name === newName,
+    'Enter saves the card’s new name, and the thread list has it (' + cardName.textContent + ')'
+  );
+
+  // ---- the open thread's top-row controls on the card ----
+  const cardHead = box(pickCard.querySelector('.tat-head'));
+  const acts = ['handoff', 'side', 'power', 'more'].map(name =>
+    pickCard.querySelector('.tat-act-' + name)
+  );
+  check(
+    acts.every(button => {
+      const rect = button && box(button);
+      return !!rect && rect.width > 0 && rect.left >= cardHead.left && rect.right <= cardHead.right;
+    }),
+    'the card’s head has handoff history, side column, on/off and "..." inside its edges'
+  );
+  const nameRoom = box(pickCard.querySelector('.tat-head-text')).width;
+  check(nameRoom >= 120, 'the card’s name keeps room beside them (' + round(nameRoom) + ' px)');
+  acts[3].click();
+  await wait(200);
+  const cardMenu = document.querySelector('.tnt-menu-thread:not([hidden])');
+  const cardRows = cardMenu ? [...cardMenu.querySelectorAll('.tnt-menu-row')] : [];
+  check(
+    cardRows.some(row => row.dataset.row === 'close') &&
+      cardRows.some(row => row.dataset.row === 'rename') &&
+      acts[3].getAttribute('aria-expanded') === 'true',
+    'the card’s "..." opens the thread menu (' +
+      cardRows.map(row => row.dataset.row).join(', ') +
+      ')'
+  );
+  check(
+    !!cardMenu && box(cardMenu).top >= box(acts[3]).bottom,
+    'the menu opens under the card’s "..."'
+  );
+  console.log('TNAI_SHOT:all-threads-card-menu');
+  await wait(700);
+  cardMenu?.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+  );
+  await wait(100);
+  check(
+    !document.querySelector('.tnt-menu-thread:not([hidden])') && all().state().on,
+    'Escape closes the card’s menu and All threads stays open'
+  );
+
   // ---- a thread on its own ----
   strip.querySelector('.tat-card[data-pane="' + pick + '"] .tat-open').click();
   check(
     !!(await until(() => threads.visible() && !all().state().on, 4000)),
     "a thread's button opens it on the Threads page"
+  );
+
+  // ---- the session clock beside the name ----
+  const cardAge = pickCard.querySelector('.tat-age');
+  const headAge = await until(() => {
+    const found = document.querySelector('.tnt-view .tnt-head-age');
+    return found && !found.hidden ? found : null;
+  }, 3000);
+  check(
+    !!cardAge &&
+      !cardAge.hidden &&
+      /^\d+m$/.test(cardAge.textContent) &&
+      cardAge.dataset.age === 'fresh' &&
+      !!headAge &&
+      headAge.textContent === cardAge.textContent &&
+      box(headAge).left >= box(document.querySelector('.tnt-view .tnt-head h1')).right,
+    'the card and the thread’s top row show how long the session is open, after the name (' +
+      (cardAge?.textContent || '-') +
+      ', ' +
+      (headAge?.textContent || '-') +
+      ')'
+  );
+  const ageSteps = [1, 2.5, 4.5, 7].map(hours => {
+    const probe = document.createElement('span');
+    probe.className = 'tnt-head-age';
+    document.body.append(probe);
+    const fake = 'age-probe-' + hours;
+    const sessions = window.TnaiAgents.sessions;
+    window.TnaiAgents.sessions = () => [
+      { paneId: fake, running: true, startedAt: Date.now() - hours * 3600000 },
+    ];
+    window.TnaiThreadView.paintAge(probe, fake);
+    window.TnaiAgents.sessions = sessions;
+    const result =
+      probe.textContent + ' ' + probe.dataset.age + ' ' + getComputedStyle(probe).color;
+    probe.remove();
+    return result;
+  });
+  check(
+    ageSteps.map(step => step.split(' ').slice(0, 3).join(' ')).join(' | ') ===
+      '1h 00m fresh | 2h 30m long | 4h 30m longer | 7h 00m longest' &&
+      new Set(ageSteps.map(step => step.split(' ').slice(3).join(' '))).size === 4,
+    'the clock’s four steps have four colors (' + ageSteps.join(' | ') + ')'
   );
 
   // ---- a PowerShell thread's card: one line and a button to its screen ----

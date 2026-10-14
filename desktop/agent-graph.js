@@ -777,6 +777,14 @@ async function delegate(
         )
       : { model: '', effort: '', label: '' };
   if (pick.error) return fail('Refused: ' + pick.error);
+
+  // The wait for the model list let a second delegate of the same task in: ask again.
+  if (model || effort) {
+    const refusedNow = refuse(parent, purpose, task, why, agent);
+
+    if (refusedNow) return fail(refusedNow);
+  }
+
   let plan = decide(parent, purpose + ' ' + task, agent, worktree);
   if (pick.label && (plan.action === 'reuse' || plan.action === 'revive'))
     plan = { action: 'clone', identity: identities.get(plan.instance.identityId) };
@@ -1386,7 +1394,17 @@ function flush(parentPaneId) {
   due.forEach(k => {
     k.reported = true;
   });
-  deliver(parentPaneId, '[TN.ai] ' + due.map(reportText).join('\n\n'));
+
+  // Not delivered: the reports count as unsent again, so the parent's next flush (its next Stop,
+  // another sub-agent's end, or a revive) sends them.
+  const lost = () => {
+    due.forEach(k => {
+      k.reported = false;
+    });
+    busy.delete(parentPaneId);
+  };
+
+  deliver(parentPaneId, '[TN.ai] ' + due.map(reportText).join('\n\n'), null, lost);
   busy.add(parentPaneId);
 }
 
@@ -1513,21 +1531,26 @@ function keep(nodeId, on = true) {
 // Task and report text comes from an LLM: prompt-submit.js drops control characters, so an ESC[201~
 // inside it can't end the paste early and type the rest as keys; Enter goes only to the same
 // process that got the paste. n: a sub-agent's first task; if its CLI never took it, the sub-agent
-// fails and its parent is told instead of waiting forever.
-function deliver(paneId, body, n) {
+// fails and its parent is told instead of waiting forever. lost: called when the text never reached
+// the panel (its process was gone, or the send threw); not when it sits unsent in its input.
+function deliver(paneId, body, n, lost) {
   if (!submit || !paneId) return;
 
   // Never typed into the user's unsent text or while they dictate (attention-service.js
   // holdIfDraft): it waits, is never dropped, and goes straight to an empty input as before (asap).
   submit(paneId, body, { holdIfDraft: { from: 'Technically Not', asap: true, keep: true } })
     .then(r => {
+      if (lost && !r?.ok && r?.state !== 'not-submitted') {
+        lost();
+      }
+
       if (!n || r?.ok || n.paneId !== paneId || n.status !== 'working') return;
       n.status = 'failed';
       n.report =
         cliOf(n) + ' did not take its task (' + (r?.error || r?.state || 'no answer') + ').';
       settle(n);
     })
-    .catch(() => {});
+    .catch(() => lost?.());
 }
 
 function setSettings(patch = {}) {

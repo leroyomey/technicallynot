@@ -1142,8 +1142,15 @@ module.exports = {
     return true;
   },
   stopAll() {
-    unwarm();
-    for (const id of [...sessions.keys()]) stop(id, 'quit');
+    try {
+      unwarm();
+    } catch {}
+
+    // one panel that throws never leaves the others unsaved
+    for (const id of [...sessions.keys()])
+      try {
+        stop(id, 'quit');
+      } catch {}
   },
   warm,
   unwarm,

@@ -64,7 +64,15 @@
 }
 
 /* ---------------------------------------------------------------- the popover */
+/* Compact on purpose, so the list stays small: long first words end in "…",
+   and a long list scrolls inside the popover instead of reaching the bottom of the window. The
+   600 px height cap is TnaiFloat's maxHeight in 138: a CSS max-height here would be overwritten. */
 .tnt-menu.tnh-pop {
+  width: min(210px, calc(100vw - 16px));
+}
+
+/* one conversation opened: its dates, facts and Resume keep the room they had */
+.tnt-menu.tnh-pop:has(.tnh-one:not([hidden])) {
   width: min(360px, calc(100vw - 16px));
 }
 .tnt-menu.tnh-pop:focus {

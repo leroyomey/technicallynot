@@ -420,6 +420,99 @@ try {
     !!(await until(() => threads.selected() === helper && view().shown() === helper, 5000)),
     'a second press on its chip opens the helper as its own thread'
   );
+
+  // ---- E: the helper's bubble in the lead's top row (123) and on its All threads card (135) ----
+  threads.select(lead);
+  await until(() => view().shown() === lead, 5000);
+  if (shown(side)) side.querySelector('.tnt-side-head button')?.click();
+  const bubble = await until(() => {
+    const found = island.querySelector('.tnt-head-helpers .tnt-side-chip');
+    return shown(found) ? found : null;
+  }, 6000);
+  check(!!bubble, "the lead's top row shows its helper as a bubble");
+  if (bubble) {
+    const head = island.querySelector('.tnt-head');
+    const title = box(island.querySelector('.tnt-head-text'));
+    const acts = box(island.querySelector('.tnt-head-acts'));
+    const b = box(bubble);
+    check(
+      b.left >= title.right - 1 &&
+        b.right <= acts.left + 1 &&
+        b.top >= box(head).top &&
+        b.bottom <= box(head).bottom,
+      'the bubble lies in the top row between the name and the buttons, over neither'
+    );
+    bubble.click();
+    const opened = await until(() => {
+      const chosen = side.querySelector('.tnt-side-chip[aria-selected="true"]');
+      return shown(side) && chosen ? chosen : null;
+    }, 5000);
+    check(
+      !!opened &&
+        island.querySelector('.tnt-head-helpers .tnt-side-chip')?.getAttribute('aria-pressed') ===
+          'true',
+      'a press on the bubble shows that helper beside the lead, and the bubble reads as pressed'
+    );
+    island.querySelector('.tnt-head-helpers .tnt-side-chip')?.click();
+    check(
+      !!(await until(() => !shown(side) && shown(island), 3000)),
+      'a second press on the bubble closes it again: the lead alone, as before'
+    );
+  }
+
+  window.TnaiRoute('terminal');
+  const card = await until(() => {
+    const found = document.querySelector('.tat-card[data-pane="' + CSS.escape(lead) + '"]');
+    return shown(found) ? found : null;
+  }, 6000);
+  const cardBubble = card?.querySelector('.tat-helpers .tnt-side-chip:not(.tat-back)');
+  const cardRow = card?.querySelector('.tat-helpers');
+  check(
+    shown(cardBubble),
+    "the lead's card on All threads shows the helper as a bubble (card " +
+      Math.round(card?.getBoundingClientRect().width || 0) +
+      ' px, bubbles row ' +
+      (cardRow?.hidden
+        ? 'hidden'
+        : Math.round(cardRow?.getBoundingClientRect().width || 0) + ' px') +
+      ', ' +
+      (cardRow?.children.length || 0) +
+      ' bubbles)'
+  );
+  if (card && cardBubble) {
+    const leadPart = () => card.querySelector('.tat-plain:not([hidden]), .tat-body:not([hidden])');
+    const before = leadPart();
+    cardBubble.click();
+    const helperTalk = await until(() => {
+      const found = card.querySelectorAll('.tat-body')[1]?.querySelector('.tnt-talk-list');
+      return card.classList.contains('tat-viewing') && shown(found) ? found : null;
+    }, 8000);
+    const back = card.querySelector('.tat-helpers .tat-back');
+    check(
+      !!helperTalk &&
+        !shown(before) &&
+        shown(back) &&
+        back === card.querySelector('.tat-helpers').firstElementChild,
+      'a press shows the helper\'s conversation in the card, with "← ' +
+        (back?.textContent || '') +
+        '" first'
+    );
+    await shot('thread-helpers-bubbles');
+    card.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    check(
+      !!(await until(() => !card.classList.contains('tat-viewing') && shown(leadPart()), 3000)) &&
+        !card.querySelector('.tat-back'),
+      "Escape goes back to the lead's own part, as it was"
+    );
+    card.querySelector('.tat-helpers .tnt-side-chip')?.click();
+    await until(() => card.classList.contains('tat-viewing'), 3000);
+    card.querySelector('.tat-helpers .tat-back')?.click();
+    check(
+      !!(await until(() => !card.classList.contains('tat-viewing') && shown(leadPart()), 3000)),
+      'the "←" bubble goes back too'
+    );
+  }
+  window.TnaiRoute('overview');
 } catch (error) {
   check(false, 'error: ' + (error.stack || error.message));
 }

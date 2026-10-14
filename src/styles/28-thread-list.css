@@ -137,11 +137,14 @@
 .tnt-th[data-tone='ready'] {
   --tone: var(--pg-ready);
 }
+.tnt-th[data-tone='agents'] {
+  --tone: var(--pg-agents);
+}
 .tnt-th[data-tone='err'] {
   --tone: var(--pg-err);
 }
 .tnt-th:hover {
-  background: var(--pg-panel);
+  background: var(--pg-panel-hover-soft);
 }
 .tnt-th[aria-selected='true'] {
   background: linear-gradient(
@@ -203,6 +206,52 @@
   flex: none;
   font-style: normal;
   color: var(--pg-text-4);
+}
+
+/* A thread's ✕ (119): hidden at rest, in the time's place on hover or keyboard focus. The time
+   keeps its room while hidden, so the name never moves; the line under it ends sooner. Another
+   computer's agent is not closed from here. */
+.tnt-th-x {
+  position: absolute;
+  top: 50%;
+  right: calc(var(--inset) - 4px);
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--pg-r-sm);
+  color: var(--pg-text-3);
+  font-style: normal;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: opacity 0.15s var(--pg-ease);
+}
+.tnt-th-x svg {
+  display: block;
+}
+.tnt-th:is(:hover, :focus-visible) .tnt-th-x {
+  opacity: 1;
+  pointer-events: auto;
+}
+.tnt-th .tnt-th-x:hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+.tnt-th:is(:hover, :focus-visible):not([data-remote]) time {
+  min-width: 20px;
+  visibility: hidden;
+}
+.tnt-th:is(:hover, :focus-visible):not([data-remote]) small {
+  padding-right: 24px;
+}
+.tnt-th[data-remote] .tnt-th-x {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tnt-th-x {
+    transition: none;
+  }
 }
 
 /* The device character: stacked pictures of one size (960 x 780). The screen picture is a mask

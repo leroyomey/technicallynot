@@ -209,8 +209,8 @@ try {
     'open foreground sub-agent → status waiting-agents (' + paneStatus() + ')'
   );
   check(
-    !!(await until(() => row()?.dataset.tone === 'work')),
-    'the thread row of a lead waiting on its sub-agents keeps the working tone (' +
+    !!(await until(() => row()?.dataset.tone === 'agents')),
+    'the thread row of a lead waiting on its sub-agents has the violet waiting-on-agents tone (' +
       row()?.dataset.tone +
       ', "' +
       nowText() +
@@ -338,6 +338,29 @@ try {
     !!(await until(() => !/Waiting for your OK/.test(nowText()))),
     'an answered prompt leaves the thread row (' + row()?.dataset.tone + ', "' + nowText() + '")'
   );
+
+  // 3b. Waiting on another agent (37 TnaiMesh.waitsOn: a question sent with the tnai command and
+  // not answered yet): the row takes the violet tone and says whom it waits on, never the blue of
+  // a free agent. The mesh's answer is stood in for; an unknown panel reads "another agent".
+  const mesh = window.TnaiMesh;
+  const realWaitsOn = mesh?.waitsOn;
+  if (mesh) mesh.waitsOn = id => (id === paneId ? ['someone-elses-pane'] : []);
+  try {
+    G.changed?.();
+    check(
+      !!(await until(
+        () => row()?.dataset.tone === 'agents' && nowText().includes('Waiting on another agent')
+      )),
+      "a thread waiting on another agent's answer is violet and names it (" +
+        row()?.dataset.tone +
+        ', "' +
+        nowText() +
+        '")'
+    );
+  } finally {
+    if (mesh) mesh.waitsOn = realWaitsOn;
+    G.changed?.();
+  }
 
   // 4. A turn with tokens and a queued prompt, then finished.
   const started = Date.now() - 42000;

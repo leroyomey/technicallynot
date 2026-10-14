@@ -66,19 +66,18 @@ function config() {
 // TNAI_UPDATE_URL (testing, run from source only) → update-config.json {"url"} → the public
 // repository of package.json (publicRepo above). "owner/repo" is shorthand for that GitHub repo's
 // latest release: https://github.com/owner/repo/releases/latest/download/ Installed builds take an
-// update-config.json feed only on Technically Not's or GitHub's hosts (the file is user-writable,
-// and an unsigned installer has no publisher check), so a rewritten file can't point updates at
-// another server; from source any feed works.
-const OVERRIDE_HOSTS = /^(?:[\w-]+\.)*technicallynot\.ai$|^github\.com$/i;
-
+// update-config.json feed only when it is that same public repository (the file is user-writable,
+// and an unsigned installer has no publisher check, so any other repo or server could hand out
+// someone else's installer); from source any feed works.
 function overrideAllowed(url) {
   if (!app.isPackaged) return true;
-  const full = /^[\w.-]+\/[\w.-]+$/.test(url) ? 'https://github.com/' + url : url;
-  try {
-    return OVERRIDE_HOSTS.test(new URL(full).hostname);
-  } catch {
-    return false;
-  }
+  const repo = publicRepo();
+  if (!repo) return false;
+  const full = /^[\w.-]+\/[\w.-]+$/.test(url) ? feedOfRepo(url) : url;
+
+  // GitHub names are not case-sensitive, and the trailing slash is optional
+  const plain = text => String(text).toLowerCase().replace(/\/+$/, '');
+  return plain(full) === plain(feedOfRepo(repo));
 }
 
 function feedUrl() {
@@ -87,7 +86,7 @@ function feedUrl() {
   let override = String(config().url || '').trim();
   if (override && !overrideAllowed(override)) {
     console.warn(
-      '[updater] update-config.json url ignored: only technicallynot.ai or github.com feeds in installed builds'
+      '[updater] update-config.json url ignored: an installed build takes only its public repository'
     );
     override = '';
   }
@@ -100,11 +99,12 @@ function feedUrl() {
 }
 
 // Release-notes page for a version: update-config.json "notesUrl" ({version} is replaced), else the
-// GitHub release page when the feed is a GitHub repo. https only.
+// GitHub release page when the feed is a GitHub repo. https only. TNAI_UPDATE_NOTES_URL counts only
+// in a copy run from source, like TNAI_UPDATE_URL.
 function notesUrlFor(
   feed,
   version,
-  template = process.env.TNAI_UPDATE_NOTES_URL || config().notesUrl || ''
+  template = (!app.isPackaged && process.env.TNAI_UPDATE_NOTES_URL) || config().notesUrl || ''
 ) {
   const v = encodeURIComponent(String(version || ''));
   let url = '';

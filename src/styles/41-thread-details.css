@@ -27,15 +27,76 @@
   display: none !important;
 }
 
-/* ---------------------------------------------------------------- the total running time */
-/* Text color only says how long the session has run: green within the recommended time, yellow
-   getting long, red past it. */
+/* ---------------------------------------------------------------- the card at the top */
+/* What the user opens Details for, first: the state in its status color, how long it
+   has run, and what it does now. The one soft surface of the tab's top. */
+.ttd-now {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 2px 0 10px;
+  padding: 12px 14px;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel-2);
+}
+.ttd-now-dot {
+  flex: none;
+  width: round(9px, var(--tnai-screen-px, 1px));
+  height: round(9px, var(--tnai-screen-px, 1px));
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--pg-idle);
+}
+.ttd-now[data-status='working'] .ttd-now-dot,
+.ttd-now[data-status='background'] .ttd-now-dot,
+.ttd-now[data-status='starting'] .ttd-now-dot {
+  background: var(--pg-work);
+}
+.ttd-now[data-status='waiting'] .ttd-now-dot,
+.ttd-now[data-status='waiting-agents'] .ttd-now-dot {
+  background: var(--pg-ready);
+}
+.ttd-now[data-status='needs-you'] .ttd-now-dot {
+  background: var(--pg-wait);
+}
+.ttd-now[data-status='exited'] .ttd-now-dot,
+.ttd-now[data-status='error'] .ttd-now-dot {
+  background: var(--pg-err);
+}
+.ttd-now-words {
+  min-width: 0;
+}
+.ttd-now-line {
+  margin: 0;
+  color: var(--pg-text);
+  font: 600 13.5px/1.4 var(--pg-sans);
+}
+.ttd-doing {
+  margin: 2px 0 0;
+  color: var(--pg-text-2);
+  font: 400 13px/1.45 var(--pg-sans);
+  overflow-wrap: anywhere;
+}
+.ttd-quiet {
+  margin: 0 0 12px;
+}
+
+/* Two empty sections say so in the quiet line under the card instead (139 paintHead). */
+.ttd-sec[data-empty]:is([data-sec='queue'], [data-sec='team']) {
+  display: none;
+}
+
+/* The total running time follows the state ("Working · 51m"). Its color only says how long the
+   session has run: green within the recommended time, yellow getting long, red past it. */
 .ttd-total {
-  margin: 0 0 6px;
-  color: var(--pg-text-3);
-  font: 400 12px/28px var(--pg-mono);
+  font: 500 12.5px/1.4 var(--pg-mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+.ttd-total::before {
+  content: ' · ';
+  color: var(--pg-text-3);
+  font-family: var(--pg-sans);
 }
 .ttd-total[data-age='ok'] {
   color: var(--pg-work);
@@ -68,9 +129,10 @@ html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-head:not(#lp),
   border-radius: 7px;
   background: transparent;
   box-shadow: none;
-  color: var(--pg-text-3);
-  font: 500 12px/1 var(--pg-sans);
-  letter-spacing: 0.02em;
+  /* the section titles stand out from the labels inside them */
+  color: var(--pg-text);
+  font: 600 12.5px/1 var(--pg-sans);
+  letter-spacing: 0.01em;
   text-align: left;
   cursor: pointer;
 }
@@ -148,8 +210,41 @@ html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-head:not(#lp):focus-visible,
   margin: 0;
   font: 400 13px/1.5 var(--pg-sans);
 }
+/* the labels step back, the values read plainly */
 .ttd-kv dt {
   color: var(--pg-text-3);
+  font-size: 12px;
+}
+
+/* A task made of decisions: one row each, "Decision 1 of 2 · Yes, build all four", and the
+   result they came from under them. */
+.ttd-kv dd.ttd-answers .ttd-clamp {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ttd-answer {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+}
+.ttd-answer em {
+  flex: none;
+  color: var(--pg-text-3);
+  font: 400 12px/1.4 var(--pg-sans);
+  font-style: normal;
+}
+.ttd-answer b {
+  min-width: 0;
+  color: var(--pg-text);
+  font-weight: 500;
+}
+.ttd-from {
+  color: var(--pg-text-3);
+  font-size: 12px;
 }
 .ttd-kv dd {
   min-width: 0;
@@ -484,20 +579,52 @@ html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-link:not(#lp):hover,
   display: grid;
   /* the time takes the room it needs ("06:07:07 PM" where the clock has 12 hours): in a fixed
      column its end lay over the first letters of the step */
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: 0 10px;
+  /* the time, the step's kind as a small tinted icon, then the step over its detail */
+  grid-template-columns: max-content 20px minmax(0, 1fr);
+  gap: 0 8px;
   padding: 4px 0;
   color: var(--pg-text-2);
   font: 400 12.5px/1.45 var(--pg-sans);
 }
 .ttd-timeline time {
-  grid-row: 1 / span 2;
+  grid-row: 1 / span 3;
   color: var(--pg-text-3);
   font: 400 11.5px/1.6 var(--pg-mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* A kind of step in the app's code colors (37), never a status color: ran, edited, read, test. */
+.ttd-step {
+  grid-row: 1 / span 3;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  color: var(--pg-text-3);
+}
+.ttd-step svg {
+  display: block;
+}
+.ttd-timeline li[data-step='run'] .ttd-step {
+  color: var(--code-keyword);
+  background: color-mix(in srgb, var(--code-keyword) 14%, transparent);
+}
+.ttd-timeline li[data-step='edit'] .ttd-step {
+  color: var(--code-function);
+  background: color-mix(in srgb, var(--code-function) 14%, transparent);
+}
+.ttd-timeline li[data-step='read'] .ttd-step {
+  color: var(--code-name);
+  background: color-mix(in srgb, var(--code-name) 14%, transparent);
+}
+.ttd-timeline li[data-step='test'] .ttd-step {
+  color: var(--code-type);
+  background: color-mix(in srgb, var(--code-type) 14%, transparent);
+}
 .ttd-timeline b {
+  grid-column: 3;
   min-width: 0;
   overflow: hidden;
   color: var(--pg-text);
@@ -506,12 +633,88 @@ html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-link:not(#lp):hover,
   white-space: nowrap;
 }
 .ttd-timeline span {
-  grid-column: 2;
+  grid-column: 3;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .ttd-timeline span:empty {
+  display: none;
+}
+
+/* "4 times", for one step repeated on the same thing */
+.ttd-times {
+  grid-column: 3;
+  color: var(--pg-text-3);
+  font-size: 11.5px;
+}
+
+/* A command in code colors, without its "cd <folder>;" and with paths from the project (139). */
+.ttd-timeline li:is([data-step='run'], [data-step='test'], [data-step='read']) > span {
+  font: 400 12px/1.5 var(--pg-mono);
+}
+.ttd-c {
+  font-style: normal;
+}
+.ttd-c-cmd {
+  color: var(--code-keyword);
+}
+.ttd-c-flag {
+  color: var(--code-meta);
+}
+.ttd-c-str {
+  color: var(--code-string);
+}
+.ttd-c-num {
+  color: var(--code-number);
+}
+.ttd-c-op {
+  color: var(--pg-text-3);
+}
+
+/* A file by its kind: code, style, docs, tests. */
+.ttd-c-file-code {
+  color: var(--code-function);
+}
+.ttd-c-file-style {
+  color: var(--code-name);
+}
+.ttd-c-file-doc {
+  color: var(--pg-text-2);
+}
+.ttd-c-file-test {
+  color: var(--code-type);
+}
+.ttd-c-file-other {
+  color: var(--pg-text-2);
+}
+
+/* A file by its name first, its folder after it and quieter, so a cut-off line cuts the folder,
+   never the name; the text itself stays the path ("src/theme.js") for copying. */
+.ttd-file {
+  display: inline-flex;
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  vertical-align: bottom;
+  font: 400 12px/1.5 var(--pg-mono);
+}
+.ttd-file i {
+  font-style: normal;
+}
+.ttd-file-name {
+  flex: none;
+}
+.ttd-file-dir {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pg-text-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ttd-file-dir:empty {
   display: none;
 }

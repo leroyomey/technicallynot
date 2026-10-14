@@ -35,7 +35,7 @@ const check = (cond, label) => {
   check(out === 42, 'a timed function still returns its own result');
   check(
     lines.length === 1 &&
-      /blocked ~\d+ ms at \S+ · longest named section: ipc demo:block (29\d|3\d\d) ms · own CPU \d+ ms of \d+ ms( · garbage collection .*)?$/.test(
+      /blocked ~\d+ ms at \S+ · longest named section: ipc demo:block (29\d|3\d\d) ms · own CPU \d+ ms of \d+ ms( · garbage collection [^·]*)? · heap \d+ of \d+ MB$/.test(
         lines[0]
       ),
     'a named section that blocks 300 ms is named in the stall line: ' + (lines[0] || 'no line')
@@ -44,10 +44,13 @@ const check = (cond, label) => {
   // The block here is a sleep, so the process's own CPU time must be far below the blocked time (a
   // block of our own code would be near it; that side is not tested: it would need a busy loop,
   // which the checks never run on the user's PC).
-  const cpu = /own CPU (\d+) ms of (\d+) ms(?: · garbage collection .*)?$/.exec(lines[0] || '');
+  const cpu =
+    /own CPU (\d+) ms of (\d+) ms(?: · garbage collection [^·]*)? · heap \d+ of \d+ MB$/.exec(
+      lines[0] || ''
+    );
   check(
     !!cpu && +cpu[1] < 150 && +cpu[2] > 350 && +cpu[2] < 900,
-    'the line ends with the own CPU time of the stalled interval, low for a sleeping block: ' +
+    'the line holds the own CPU time of the stalled interval, low for a sleeping block, then the heap: ' +
       (cpu ? cpu[0] : 'no field')
   );
   stalls.timed('ipc demo:quick', () => sleep(5))();
@@ -55,7 +58,9 @@ const check = (cond, label) => {
   await wait(400);
   check(
     lines.length === 2 &&
-      / · no named section · own CPU \d+ ms of \d+ ms( · garbage collection .*)?$/.test(lines[1]),
+      / · no named section · own CPU \d+ ms of \d+ ms( · garbage collection [^·]*)? · heap \d+ of \d+ MB$/.test(
+        lines[1]
+      ),
     'a block outside any named section says so, and a 5 ms section is not blamed: ' +
       (lines[1] || 'no line')
   );

@@ -9,8 +9,9 @@
 'use strict';
 const agents = require('./agent-registry');
 
-// the developer self-test switch, never on in a release build
-const { selfTest } = require('./build-info');
+// the developer self-test switch, never on in a release build; `release` makes the build ignore
+// the test registry variable below
+const { selfTest, release } = require('./build-info');
 
 // id → npm package, and the CLI's own update command (run in a visible Terminal panel when the user
 // presses Update): every CLI with an `npm` package in agent-registry.js RELEASES, so a new CLI is
@@ -21,7 +22,7 @@ const CLIS = agents
   .map(r => ({ id: r.id, pkg: r.npm, cmd: r.update }));
 const FIRST = 90 * 1000,
   EVERY = 6 * 60 * 60 * 1000; // a registry can't push to this PC, so Technically Not asks rarely
-const REGISTRY = process.env.TNAI_NPM_REGISTRY || 'https://registry.npmjs.org/';
+const REGISTRY = (!release && process.env.TNAI_NPM_REGISTRY) || 'https://registry.npmjs.org/';
 
 const semver = text =>
   (String(text || '').match(/(\d+)\.(\d+)\.(\d+)/) || []).slice(1, 4).map(Number);

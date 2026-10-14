@@ -69,6 +69,15 @@
   const ownLine = make('div', 'tnt-helper-line');
   ownLine.hidden = true;
 
+  // The helpers as bubbles in the top row, beside the name, to view a helper
+  // and come back easily. A press shows that helper in the side island, beside the
+  // lead's conversation, which stays where it was; a press on the chosen bubble, or the island's
+  // ×, closes it again. Up to three bubbles, then "+N", which opens the first of the rest.
+  const HEAD_CHIPS = 3;
+  const headChips = make('div', 'tnt-head-helpers');
+  headChips.hidden = true;
+  headChips.setAttribute('aria-label', 'Helpers of this thread');
+
   function paintLine(host, paneId) {
     safe(() => window.TnaiGraph?.paintLine?.(host, paneId || ''), null);
     host.hidden = !host.querySelector('.tnai-graph-line:not([hidden])');
@@ -105,6 +114,48 @@
     for (const helper of fromCards.get(paneId)?.values() || [])
       if (!known.some(other => other.key === helper.key)) known.push(helper);
     return known;
+  }
+
+  // A helper's short name: what comes before the first " · " ("Indigo · Claude Code" is Indigo).
+  const shortName = name => String(name || '').split(' · ')[0] || 'Helper';
+
+  // One helper's bubble, the side island's chip: its state dot and its short name. All threads
+  // (135) makes its bubbles here too, so the two pages draw them alike.
+  function helperChip(helper, pressed) {
+    const chip = make('button', 'tnt-side-chip');
+    chip.type = 'button';
+    chip.dataset.key = helper.key;
+    chip.dataset.tone = helper.tone || 'idle';
+    chip.setAttribute('aria-pressed', String(!!pressed));
+    chip.title = 'View the conversation of ' + helper.name;
+    chip.append(make('i'), make('span', '', shortName(helper.name)));
+    return chip;
+  }
+
+  // "+N" after the first bubbles: its tip names the rest, and a press opens the first of them.
+  function moreChip(rest) {
+    const chip = make('button', 'tnt-side-chip tnt-chip-more', '+' + rest.length);
+    chip.type = 'button';
+    chip.dataset.key = rest[0].key;
+    chip.dataset.more = '1';
+    chip.title = 'More helpers: ' + rest.map(helper => shortName(helper.name)).join(', ');
+    return chip;
+  }
+
+  function paintHead() {
+    const list = helpersOf(pane);
+    headChips.hidden = !list.length;
+    const key =
+      list.map(helper => helper.key + '\n' + helper.name + '\n' + helper.tone).join('\n\n') +
+      '|' +
+      (opened ? chosen : '');
+    if (headChips.dataset.key === key || window.TnaiPress?.defer(headChips, paintHead)) return;
+    headChips.dataset.key = key;
+    const bubbles = list
+      .slice(0, HEAD_CHIPS)
+      .map(helper => helperChip(helper, opened && helper.key === chosen));
+    if (list.length > HEAD_CHIPS) bubbles.push(moreChip(list.slice(HEAD_CHIPS)));
+    headChips.replaceChildren(...bubbles);
   }
 
   // ---------- the shared files ----------
@@ -215,6 +266,7 @@
       sideTalk.dataset.helper = shownKey;
       showHelper(now);
     }
+    paintHead();
   }
 
   function setOpen(want, key) {
@@ -238,7 +290,17 @@
       sideTalk.dataset.helper = '';
       window.TnaiThreadReadable?.unmount(sideTalk);
     }
+    paintHead();
   }
+
+  headChips.addEventListener('click', event => {
+    const chip = event.target.closest('.tnt-side-chip');
+    if (!chip) return;
+
+    // the bubble of the helper on show is the way back: the island closes, the lead stays
+    if (opened && !chip.dataset.more && chip.dataset.key === chosen) setOpen(false);
+    else setOpen(true, chip.dataset.key);
+  });
 
   chips.addEventListener('click', event => {
     const chip = event.target.closest('.tnt-side-chip');
@@ -262,6 +324,7 @@
     button.querySelector('span').textContent = count === 1 ? '1 helper' : count + ' helpers';
     if (opened && !count) setOpen(false);
     else if (opened) paintSide();
+    paintHead();
     paintShared();
     paintLine(ownLine, pane);
 
@@ -276,6 +339,10 @@
     const acts = view?.querySelector('.tnt-head-acts');
     if (!acts) return false;
     if (button.parentNode !== acts) acts.prepend(button);
+
+    // the bubbles stand between the name and the state, in the room the top row has spare
+    const state = view.querySelector('.tnt-head-state');
+    if (state && headChips.nextSibling !== state) state.before(headChips);
     if (shared.parentNode !== view) view.querySelector('.tnt-head').after(shared);
     if (ownLine.parentNode !== view) view.querySelector('.tnt-head').after(ownLine);
     return true;
@@ -328,5 +395,11 @@
     open: key => setOpen(true, key),
     close: () => setOpen(false),
     state: () => ({ pane, opened, chosen, helpers: helpersOf(pane).map(helper => helper.key) }),
+
+    // for All threads (135): any thread's helpers, and their bubbles drawn as here
+    list: paneId => helpersOf(paneId),
+    chip: helperChip,
+    moreChip,
+    shortName,
   };
 })();

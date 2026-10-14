@@ -1364,7 +1364,7 @@ html.vt-skill::view-transition-group(sk-detail) {
   contain-intrinsic-size: auto 112px;
 }
 .skills-group .skill-row:hover {
-  background: var(--pg-panel);
+  background: var(--pg-panel-hover-soft);
 }
 .skills-group .skill-row[aria-selected='true'] {
   background: var(--pg-accent-soft);

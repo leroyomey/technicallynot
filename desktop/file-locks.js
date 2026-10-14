@@ -441,7 +441,18 @@ function diskChanges(project, batch) {
     }));
 }
 
+// An alert time older than ALERT_MS no longer holds anything back, so it can go. The disk keys
+// (ending in "disk") belong to no panel, so closing a panel never removed them.
+function pruneAlerted() {
+  for (const [ak, at] of alerted) {
+    if (now() - at >= ALERT_MS) {
+      alerted.delete(ak);
+    }
+  }
+}
+
 function applyChanges(project, batch, edits, active, leads, k) {
+  pruneAlerted();
   const m = table(project); // as the locks stand now: one taken while the disk was asked is seen
   const toHolder = new Map(),
     toOthers = new Map(); // paneId → { files, others | holders }
@@ -580,5 +591,6 @@ module.exports = {
       shells.clear();
       ignoredSeen.clear();
     },
+    alertedKeys: () => [...alerted.keys()],
   },
 };

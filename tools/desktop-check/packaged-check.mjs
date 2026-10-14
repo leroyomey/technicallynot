@@ -80,6 +80,15 @@ function printMainThread() {
   }
 }
 
+// The whole check may take 4 minutes. A main process that blocks after the page opened (a dialog
+// of the system nobody answers) otherwise lets a request wait until the job's own limit, with
+// nothing said: here it is sampled and the check fails.
+setTimeout(() => {
+  console.error('FAIL: the check did not finish within 4 minutes');
+  printMainThread();
+  finish(1);
+}, 240000).unref();
+
 let targets = [];
 for (let i = 0; i < 60; i++) {
   try {

@@ -90,6 +90,25 @@ check(
   life.lookup(lead, root).instanceId === lead,
   'the older closed agent is still reached by its id'
 );
+
+// A renamed agent, which the whole system should know by its new name at once: its old name still
+// reaches it, open or closed, while no agent carries that name now.
+open('p-brian', 'Brian', 's-brian');
+const brian = life.lookup('Brian', root).instanceId;
+const renames = life.setNames([{ paneId: 'p-brian', name: 'Nova' }]);
+check(
+  renames.length === 1 && renames[0].from === 'Brian' && renames[0].to === 'Nova',
+  'setNames reports the rename'
+);
+check(life.lookup('Nova', root).instanceId === brian, 'the new name reaches the renamed agent');
+check(life.lookup('Brian', root)?.instanceId === brian, 'the old name still reaches it');
+life.closed('p-brian');
+check(life.lookup('Brian', root)?.instanceId === brian, 'also after its panel closed');
+open('p-brian2', 'Brian', 's-brian2');
+check(
+  life.lookup('Brian', root).instanceId !== brian,
+  'an agent named Brian now wins over the old name of another'
+);
 life.flushSaves();
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(ok ? 'PASS' : 'FAILED');

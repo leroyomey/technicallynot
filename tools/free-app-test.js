@@ -3,9 +3,11 @@
 // the real desktop/user-auth.js and desktop/agent-registry.js with stand-ins for Electron and the
 // network, and the real src/scripts/34-user-auth.js with a stand-in page, and checks:
 //   1. the setting itself, and that nothing locks;
-//   2. no call leaves for an accounts server, whatever is pressed;
+// 2. no call leaves for an accounts server, whatever is pressed (only the public model list is
+// read);
 //   3. a sign-in saved by an earlier version is removed at start and never read;
-//   4. Claude Code's model list is the one built into the app, not one saved from the server;
+// 4. Claude Code's model list: the built-in one first, then the public repo's list, never one saved
+// from the server;
 //   5. the top-bar sign-in control is hidden in the desktop app, and only there;
 //   6. the community total is gone: no sender, no bridge, no switch;
 //   7. a build stages no sign-in client values.
@@ -80,10 +82,22 @@ Module._load = function (request, ...rest) {
   return request === 'electron' ? electron : realLoad.call(this, request, ...rest);
 };
 
-// The network: every call is written down and fails.
+// The network: every call is written down and fails, except the public model list, which answers
+// with one made-up model. Its address is made from package.json's homepage, as the app makes it.
+const PUBLIC_LIST =
+  'https://raw.githubusercontent.com/' +
+  /github\.com\/([\w.-]+\/[\w.-]+)/.exec(require('../package.json').homepage)[1] +
+  '/main/models/claude.json';
 const calls = [];
 global.fetch = async url => {
   calls.push(String(url));
+  if (String(url) === PUBLIC_LIST)
+    return {
+      ok: true,
+      json: async () => ({
+        models: [{ id: 'claude-from-public-list', label: 'Public', group: 'Public' }],
+      }),
+    };
   throw new Error('no network in this test');
 };
 
@@ -241,14 +255,23 @@ async function run() {
   const first = (await registry.models('Claude Code')).models.map(model => model.id);
   await wait(100);
   const later = (await registry.models('Claude Code')).models.map(model => model.id);
-  check('the model list has the built-in models', first.includes('claude-opus-5-5'), first);
+  check('the first model list is the built-in one', first.includes('claude-opus-5-5'), first);
   check(
     'a list saved from the server is not used',
     !first.includes('claude-saved-from-server') && !later.includes('claude-saved-from-server'),
     later
   );
+  check(
+    "then the public repo's model list is used",
+    later.includes('claude-from-public-list'),
+    later
+  );
 
-  check('no network call was made at all', calls.length === 0, calls);
+  check(
+    'the only network call is the public model list',
+    calls.length > 0 && calls.every(url => url === PUBLIC_LIST),
+    calls
+  );
 
   // 5. The top-bar control.
   const off = await topBarControl({ ...PAGE_STATE, off: true });

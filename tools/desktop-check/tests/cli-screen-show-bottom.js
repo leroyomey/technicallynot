@@ -87,6 +87,18 @@ try {
   );
   if (!term) throw new Error('no CLI screen for the thread');
 
+  // The terminal panels the agents run in underneath are never shown, so they hold no GPU context
+  // (speed lead 6, 2026-10-14: each one held one, and the CLI screen had to take one back).
+  const panelCanvases = started.map(
+    id =>
+      document.querySelectorAll('[data-pane-id="' + id + '"] .tnai-xterm .xterm-screen canvas')
+        .length
+  );
+  check(
+    panelCanvases.every(count => count === 0),
+    'the hidden terminal panels underneath hold no WebGL canvas (' + panelCanvases.join(', ') + ')'
+  );
+
   // What is shown instead of the thread for a while.
   const away = {
     'All threads': () => window.TnaiTest.openAllThreads(),
@@ -224,6 +236,31 @@ try {
     await wait(400);
     await print('V', 30);
     await shown('scrolled up, then 30 lines printed behind All threads');
+
+    // A CLI screen parked out of sight longer than 20 s (GL_IDLE_MS in 10) gives its GPU context
+    // back; shown again it takes one before it is painted, and new output still lands in it. The
+    // WebGL canvases sit in `.xterm-screen`; one plain canvas outside it stays on either renderer.
+    const kept = cliTerm();
+    away['another thread']();
+    await wait(21500);
+    check(
+      !kept.element.querySelector('.xterm-screen canvas'),
+      'a CLI screen parked for 21 s holds no WebGL canvas (its box ' +
+        kept.element.clientWidth +
+        'x' +
+        kept.element.clientHeight +
+        ', in the page: ' +
+        kept.element.isConnected +
+        ', in the parked holder: ' +
+        !!kept.element.closest('.ap-term-parked') +
+        ')'
+    );
+    await print('W', 30);
+    await shown('parked 21 s, 30 lines printed meanwhile');
+    check(
+      !!cliTerm()?.element.querySelector('.xterm-screen canvas'),
+      'shown again, the CLI screen is back on the WebGL renderer'
+    );
   }
 } catch (e) {
   check(false, 'threw: ' + (e.stack || e.message));

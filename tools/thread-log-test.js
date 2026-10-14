@@ -286,6 +286,50 @@ check(
     only.length === 1 && only[0].text === '' && only[0].added.length === 1,
     'a prompt that holds only an addition has no words of the user'
   );
+
+  // Two decisions pressed on a result, pasted as one block
+  const [two] = promptEntries(
+    '<pasted_content id="9cf4">\n[TN.ai] [This task builds on your own earlier result, from "[TN.ai] Wake up."] ' +
+      'Decision on "Decision 1 of 2: Make a new share picture whose words match the page title ("One workspace")?" ' +
+      'from Rook’s result 8b1f0a8e (task: Wake up.): go with Yes, new picture under a new file name\n' +
+      'Full result: `tnai context show 8b1f0a8e`\n\n' +
+      'Decision on "Decision 2 of 2: Rebuild the 404 page (it would lose the old menu search)?" ' +
+      'from Rook’s result 8b1f0a8e (task: Wake up.): go with Not now, its links are fixed\n' +
+      'Full result: `tnai context show 8b1f0a8e`\n</pasted_content id="9cf4">',
+    0
+  );
+  check(
+    two.text ===
+      'Decision 1 of 2: Yes, new picture under a new file name\n\nDecision 2 of 2: Not now, its links are fixed' &&
+      two.added.length === 2 &&
+      two.added[1].includes('Full result: `tnai context show 8b1f0a8e`'),
+    'pressed decisions show only their choices, the rest is kept apart ("' + two.text + '")'
+  );
+
+  // A decision whose source task was itself a decision, with brackets inside
+  const [nested] = promptEntries(
+    '[TN.ai] Decision on "Push one commit (the README), then start the Mac check?" from Launch Lead’s result 23e54d58 ' +
+      '(task: Decision on "What should I do next?" from Launch Lead’s result b276d58e (task: (no instructions)): go with Look into why): ' +
+      'go with Yes, once the other agents are idle\nFull result: `tnai context show 23e54d58`',
+    0
+  );
+  check(
+    nested.text === 'Yes, once the other agents are idle',
+    'a decision about a decision shows only the choice ("' + nested.text + '")'
+  );
+  const [fix] = promptEntries(
+    'Fix this issue from Ash’s result 1a2b3c4d (task: the cart): total is wrong\nFull result: `tnai context show 1a2b3c4d`',
+    0
+  );
+  check(
+    fix.text === 'Fix this issue: total is wrong',
+    'a pressed follow-up loses where it came from ("' + fix.text + '")'
+  );
+  const [typed] = promptEntries('Decision on "lunch": pizza, from Ash’s result as I said', 0);
+  check(
+    typed.text === 'pizza, from Ash’s result as I said',
+    'a decision typed by hand still shows its choice ("' + typed.text + '")'
+  );
 }
 {
   const [ask] = byId('t5');

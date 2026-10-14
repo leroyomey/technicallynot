@@ -1586,19 +1586,37 @@ const CLAUDE_MODELS = [
   ['claude-haiku-4-5-20251001', 'Haiku 4.5', 'Haiku'],
 ]; // Haiku 5.5: out 2026-10-07, taken by claude 2.1.293
 
-// Claude Code prints no model list, so the app shows a list kept on Technically Not's server (GET
-// /models/claude): a new Claude model appears
-// in every app on release day, no app update. Fetched in the background at most once an hour (a
+// Claude Code prints no model list, so the app shows a list kept outside the app: a new Claude
+// model appears in every app on release day, no app update. The list is the accounts server's
+// GET /models/claude when this build names a server; otherwise (the free build) the file
+// `models/claude.json` in the public GitHub repo, which anyone can read and a maintainer updates
+// on the day a model comes out. Fetched in the background at most once an hour (a
 // menu never waits on the network), kept on disk for offline starts; the built-in CLAUDE_MODELS
 // above is the fallback and ships with each release. Only rows that look like real Claude ids are
 // taken.
 const CLAUDE_LIST_TTL = 3600e3,
   CLAUDE_LIST_TIMEOUT = 5000;
 const claudeList = { rows: null, at: 0, pending: null, loaded: false };
+
+// The public repo is the one package.json's homepage names (github.com/OWNER/REPO).
+const publicClaudeList = () => {
+  const repo = /github\.com\/([\w.-]+\/[\w.-]+)/.exec(
+    String(require('../package.json').homepage || '')
+  );
+  return repo ? 'https://raw.githubusercontent.com/' + repo[1] + '/main/models/claude.json' : '';
+};
+
+// Where the list comes from now: the server's address when there is one, else the public file.
+const claudeListUrl = () =>
+  claudeListServer() ? claudeListServer() + '/models/claude' : publicClaudeList();
+
+// Each source keeps its own saved copy, so a list saved from the server by an earlier version is
+// never shown by a build that reads the public file.
 const claudeCacheFile = () => {
   try {
     const { app } = require('electron');
-    return app?.getPath ? require('path').join(app.getPath('userData'), 'claude-models.json') : '';
+    const name = claudeListServer() ? 'claude-models.json' : 'claude-models-public.json';
+    return app?.getPath ? require('path').join(app.getPath('userData'), name) : '';
   } catch {
     return '';
   }
@@ -1627,18 +1645,18 @@ function validClaudeRows(data) {
 }
 
 // The server the list comes from: the accounts server's address, '' when this build names none.
-const claudeListServer = () =>
-  (
-    process.env.TNAI_ACCOUNTS_URL ?? String(require('../package.json').tnaiAccountsUrl || '')
-  ).replace(/\/+$/, '');
+// TNAI_ACCOUNTS_URL is a developer override for a copy run from source; a release build ignores
+// it, so an environment variable cannot turn the server list back on in an installed app.
+const claudeListServer = () => {
+  const envUrl = require('./build-info').release ? undefined : process.env.TNAI_ACCOUNTS_URL;
+  return (envUrl ?? String(require('../package.json').tnaiAccountsUrl || '')).replace(/\/+$/, '');
+};
 
 // The list built into the app.
 const builtInClaudeModels = () => CLAUDE_MODELS.map(([id, label, group]) => ({ id, label, group }));
 
 function claudeModels() {
-  // No server: the built-in list, which is brought up to date with each release. A list saved from
-  // the server by an earlier version is not read, because nothing would ever renew it.
-  if (!claudeListServer()) return builtInClaudeModels();
+  if (!claudeListUrl()) return builtInClaudeModels();
   if (!claudeList.loaded) {
     // last list seen, from an earlier run
     claudeList.loaded = true;
@@ -1654,9 +1672,9 @@ function claudeModels() {
   if (Date.now() - claudeList.at > CLAUDE_LIST_TTL && !claudeList.pending)
     claudeList.pending = (async () => {
       try {
-        const base = claudeListServer();
-        if (!base) return;
-        const res = await fetch(base + '/models/claude', {
+        const url = claudeListUrl();
+        if (!url) return;
+        const res = await fetch(url, {
           signal: AbortSignal.timeout(CLAUDE_LIST_TIMEOUT),
         });
         const rows = res.ok ? validClaudeRows(await res.json()) : null;

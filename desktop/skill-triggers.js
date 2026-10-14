@@ -57,7 +57,7 @@ const STOP = new Set([
 const cache = new Map(); // SKILL.md path -> { mtime, skill }
 
 // Top-level `key: value` frontmatter; indented lines continue the previous value (folded `>-`
-// descriptions).
+// descriptions), and so do `- item` lines of a YAML list, which may start at the first column.
 function frontmatter(text) {
   const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(String(text).replace(/^﻿/, '')),
     meta = {};
@@ -70,9 +70,25 @@ function frontmatter(text) {
         meta[key] = /^[>|][+-]?$/.test(kv[2].trim())
           ? ''
           : kv[2].trim().replace(/^(['"])(.*)\1$/, '$2');
-      } else if (key && /^\s+\S/.test(line)) meta[key] = (meta[key] + ' ' + line.trim()).trim();
+      } else if (key && /^(\s+\S|-\s)/.test(line))
+        meta[key] = (meta[key] + ' ' + line.trim()).trim();
     }
   return meta;
+}
+
+// The items of a frontmatter list, in any of its forms: `[a, b]`, `a, b`, or one `- a` per line
+// (frontmatter() joins those lines into "- a - b"). A multi-word keyword keeps its inner spaces.
+function listItems(value) {
+  return String(value || '')
+    .replace(/^\[|\]$/g, '')
+    .split(/,|\s+-\s+/)
+    .map(item =>
+      item
+        .trim()
+        .replace(/^-\s*/, '')
+        .replace(/^(['"])(.*)\1$/, '$2')
+    )
+    .filter(Boolean);
 }
 
 function readSkill(file) {
@@ -95,25 +111,8 @@ function readSkill(file) {
           .split(/[^a-z0-9]+/)
           .filter(w => w.length > 1 && !STOP.has(w))
       );
-      for (const k of String(meta.keywords || '')
-        .replace(/^\[|\]$/g, '')
-        .split(',')) {
-        const t = k
-          .trim()
-          .toLowerCase()
-          .replace(/^(['"])(.*)\1$/, '$2');
-        if (t) terms.add(t);
-      }
-      const globs = String(meta.paths || '')
-        .replace(/^\[|\]$/g, '')
-        .split(/,|\s+-\s+/)
-        .map(g =>
-          g
-            .trim()
-            .replace(/^-\s*/, '')
-            .replace(/^(['"])(.*)\1$/, '$2')
-        )
-        .filter(Boolean);
+      for (const k of listItems(meta.keywords)) terms.add(k.toLowerCase());
+      const globs = listItems(meta.paths);
       skill = {
         name,
         description: String(meta.description || '').slice(0, 240),

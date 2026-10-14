@@ -733,10 +733,31 @@
     return '[Pasted text #' + n + ' +' + lines + ' line' + (lines === 1 ? '' : 's') + ']';
   }
 
+  // The pasted text is saved beside the composer draft (16 keeps the draft itself), so a draft
+  // restored after a restart still has the text behind each of its tokens.
+  const PASTED_KEY = 'tnai.draft.pasted.v1';
+
+  function savePasted() {
+    try {
+      if (Object.keys(pasted).length) {
+        localStorage.setItem(PASTED_KEY, JSON.stringify({ seq: pastedSeq, items: pasted }));
+      } else {
+        localStorage.removeItem(PASTED_KEY);
+      }
+    } catch {
+      // Too big to keep: drop the older copy too, so it can never fill a newer token of the same
+      // number after a restart (that token is then stripped instead).
+      try {
+        localStorage.removeItem(PASTED_KEY);
+      } catch {}
+    }
+  }
+
   function insertPastedText(text, lines) {
     const n = ++pastedSeq,
       token = pasteToken(n, lines);
     pasted[n] = { text, token };
+    savePasted();
     const start = prompt.selectionStart ?? prompt.value.length,
       end = prompt.selectionEnd ?? prompt.value.length;
     prompt.value = prompt.value.slice(0, start) + token + prompt.value.slice(end);
@@ -747,10 +768,39 @@
 
   // Deleting a token drops its stored text; an empty draft resets the numbering for the next one.
   prompt?.addEventListener('input', () => {
-    for (const n of Object.keys(pasted))
-      if (!prompt.value.includes(pasted[n].token)) delete pasted[n];
+    let dropped = false;
+    for (const n of Object.keys(pasted)) {
+      if (!prompt.value.includes(pasted[n].token)) {
+        delete pasted[n];
+        dropped = true;
+      }
+    }
     if (!Object.keys(pasted).length) pastedSeq = 0;
+    if (dropped) savePasted();
   });
+
+  // The draft (restored by 16, which loads first) gets its pasted text back. A token whose text
+  // was not saved is taken out, so it is never sent to the agent as the bare token.
+  if (prompt) {
+    try {
+      const saved = JSON.parse(localStorage.getItem(PASTED_KEY) || 'null');
+      for (const [n, entry] of Object.entries(saved?.items || {})) {
+        if (entry?.token && typeof entry.text === 'string' && prompt.value.includes(entry.token)) {
+          pasted[n] = { text: entry.text, token: entry.token };
+          pastedSeq = Math.max(pastedSeq, Number(saved.seq) || 0, Number(n) || 0);
+        }
+      }
+    } catch {}
+    const kept = new Set(Object.values(pasted).map(entry => entry.token));
+    const cleaned = prompt.value.replace(/\[Pasted text #\d+ \+\d+ lines?\]/g, token =>
+      kept.has(token) ? token : ''
+    );
+    if (cleaned !== prompt.value) {
+      prompt.value = cleaned;
+      prompt.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    savePasted();
+  }
 
   // A token is one unit: Backspace/Delete touching it (or inside it) first selects the whole token,
   // and only the next press deletes it, so one stray key never breaks a token and silently drops
@@ -864,8 +914,8 @@
   });
 
   // Expands every placeholder token in `text` to its full pasted content, delimited so the agent
-  // knows it is pasted content; a token with no stored text (e.g. a restored draft after a restart)
-  // is left as-is.
+  // knows it is pasted content; a token with no stored text is left as-is (a restored draft gets
+  // its text back from storage above, and loses any token whose text is gone).
   function expandPastedText(text) {
     if (!text) return text;
     for (const n of Object.keys(pasted)) {

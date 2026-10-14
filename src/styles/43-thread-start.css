@@ -1,0 +1,173 @@
+/* Technically Not · 43-thread-start.css — the New thread start screen (140), from the mock's
+   ".start" screen: the question, the tools as buttons, This folder / Own worktree, one sentence.
+   It stands in the open thread's island in place of the conversation; the prompt box stays under
+   it. Colors, radii and type come from the --pg-* tokens, so Dark and Light both follow. */
+
+/* While the screen shows, the thread's own parts step aside; its question cards stay. */
+.tnt-view.tnt-starting > :is(.tnt-head, .tnt-talk, .tnt-plain, .tnt-term, .tnt-none) {
+  display: none !important;
+}
+
+.tnt-start {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  min-height: 0;
+  padding: var(--inset, 18px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+  text-align: center;
+  animation: tnt-start-in 0.2s var(--pg-ease) both;
+}
+.tnt-start[hidden] {
+  display: none;
+}
+@keyframes tnt-start-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tnt-start {
+    animation: none;
+  }
+}
+
+.tnt-start h2 {
+  margin: 0;
+  color: var(--pg-text);
+  font: 600 26px/1.2 var(--pg-sans);
+  overflow-wrap: anywhere;
+}
+.tnt-start h2 em {
+  color: var(--pg-accent);
+  font-style: normal;
+}
+
+/* A label and its controls on one centered line; the controls wrap under it when narrow. */
+.tnt-start-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  max-width: 720px;
+}
+.tnt-start-row[hidden] {
+  display: none;
+}
+.tnt-start-label {
+  color: var(--pg-text-3);
+  font-size: 13px;
+}
+.tnt-start-tools {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* A tool: the mock's ".tool", a 34 px control with the tool's logo. */
+.tnt-start .tnt-start-tool.tnt-start-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  min-width: 0;
+  margin: 0;
+  padding: 0 14px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+  font: 13px/1 var(--pg-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tnt-start .tnt-start-tool.tnt-start-tool:hover:not(:disabled) {
+  border-color: var(--pg-accent);
+  color: var(--pg-text);
+}
+.tnt-start .tnt-start-tool.tnt-start-tool[aria-pressed='true'] {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+  color: var(--pg-text);
+}
+.tnt-start .tnt-start-tool.tnt-start-tool:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+.tnt-start .tnt-start-tool.tnt-start-tool:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.tnt-start-logo {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.tnt-start-logo svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+/* This folder / Own worktree: the look switch of Settings (31 `.tnt-menu-seg`), sized like the
+   tool buttons above it (34 px, 13 px type, 14 px sides) so both rows read as one set. The two
+   halves share one width and never wrap: "Own worktree" broke onto two lines before (user
+   2026-10-14). The ids in the selector lift it over the shared button rules. */
+html.tnt-on:not(#tnt):not(#pg) .tnt-start-where .tnt-menu-seg:not(#lp) {
+  display: inline-grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  height: 34px;
+  margin: 0;
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-start-where .tnt-menu-seg button:not(#lp) {
+  min-width: 0;
+  height: 100%;
+  padding: 0 14px;
+  font: 13px/1 var(--pg-sans);
+  white-space: nowrap;
+}
+
+.tnt-start-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px 10px;
+  max-width: 620px;
+  margin: 0;
+  color: var(--pg-text-3);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.tnt-start .tnt-start-cancel.tnt-start-cancel {
+  height: auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--pg-text-2);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.tnt-start .tnt-start-cancel.tnt-start-cancel:hover {
+  color: var(--pg-text);
+}
+.tnt-start .tnt-start-cancel.tnt-start-cancel:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 2px;
+}

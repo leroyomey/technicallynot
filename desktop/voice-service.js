@@ -410,7 +410,58 @@ function clean(text) {
     .trim();
   return PHANTOM.test(t) || !/[\p{L}\p{N}]/u.test(t)
     ? ''
-    : t.replace(/^(.{12,}?)(?:\s+\1)+$/, '$1');
+    : unloop(t.replace(/^(.{12,}?)(?:\s+\1)+$/, '$1'));
+}
+
+// A sentence the decoder looped inside a longer clip (one sentence once came back five
+// times): three or more copies in a row, where the first may carry a lead-in ("All right, X. X.
+// X.") and the last is often cut off by the decoder's length limit ("X. X. X. If you're do").
+// One copy is kept with its lead-in, and the cut-off copy is dropped. Two copies stay: a person
+// may say a sentence twice. Sentences shorter than LOOP_CHARS are never folded.
+const LOOP_MIN = 3,
+  LOOP_CHARS = 12;
+const sentenceKey = s =>
+  s
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+
+function unloop(text) {
+  const parts = text.match(/[^.!?]+(?:[.!?]+|$)/g) || [];
+  if (parts.length < LOOP_MIN) return text;
+  const keys = parts.map(sentenceKey);
+  const out = [];
+  let i = 0;
+  while (i < parts.length) {
+    // the copy the next sentence repeats: this one, or its end after a lead-in
+    const next = keys[i + 1] || '';
+    const looped = next.length >= LOOP_CHARS && (next === keys[i] || keys[i].endsWith(' ' + next));
+    if (!looped) {
+      out.push(parts[i]);
+      i++;
+      continue;
+    }
+    let end = i + 1;
+    while (end < parts.length && keys[end] === next) end++;
+
+    // the last sentence of the clip, cut off part way through another copy
+    const cut =
+      end === parts.length - 1 &&
+      !/[.!?]\s*$/.test(parts[end]) &&
+      keys[end].length > 0 &&
+      next.startsWith(keys[end]);
+    const copies = end - i + (cut ? 1 : 0);
+    if (copies >= LOOP_MIN) {
+      out.push(parts[i]);
+      i = cut ? end + 1 : end;
+    } else {
+      out.push(...parts.slice(i, end));
+      i = end;
+    }
+  }
+
+  // each part keeps its own leading space, so "0.3.72" and the spacing come back as they were
+  return out.join('').trim();
 }
 
 // Initial prompt: biases decoding toward the names people say to their agents ("Claude", not
@@ -1442,6 +1493,7 @@ function createVoiceService({ dir, onProgress, guard } = {}) {
 
 module.exports = {
   createVoiceService,
+  clean,
   sanitizeHints,
   buildPrompt,
   inventedName,

@@ -386,6 +386,140 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
 
   const sessionOf = e => window.TnaiAgents?.sessions?.().find(s => s.paneId === e.paneId);
 
+  // ---------- which option the user pressed ----------
+  // Kept on this computer, by agent and question, so a thread can show which option of a decision
+  // was chosen (122). The answer itself goes to the agent as before. At most CHOICES_MAX, newest
+  // kept.
+  const CHOICES_KEY = 'tnai.decision-choices.v1';
+  const CHOICES_MAX = 300;
+  const choiceKey = (paneId, question) => paneId + '\n' + words(question);
+
+  function readChoices() {
+    try {
+      return JSON.parse(localStorage.getItem(CHOICES_KEY) || '{}') || {};
+    } catch {
+      return {};
+    }
+  }
+
+  function rememberChoice(paneId, question, label) {
+    if (!paneId || !question) return;
+    const all = readChoices();
+    all[choiceKey(paneId, question)] = {
+      paneId,
+      question: String(question),
+      label: String(label || ''),
+      at: Date.now(),
+    };
+    const newest = Object.entries(all)
+      .sort((a, b) => b[1].at - a[1].at)
+      .slice(0, CHOICES_MAX);
+    try {
+      localStorage.setItem(CHOICES_KEY, JSON.stringify(Object.fromEntries(newest)));
+    } catch {}
+  }
+
+  // The option pressed for a card's question: the same question as written, or the shortened
+  // form a result keeps (pressed on a result card) compared on its first words.
+  function choiceFor(paneId, question) {
+    const all = readChoices();
+    const exact = all[choiceKey(paneId, question)];
+    if (exact) return exact.label;
+    const near = Object.values(all).find(
+      one =>
+        one.paneId === paneId &&
+        (questionMatches(question, one.question) || questionMatches(one.question, question))
+    );
+    return near?.label || '';
+  }
+
+  // Marks that mean the decision was answered (here, from the composer, or by hand). Every other
+  // mark (parked as old, superseded, resolved by inference) leaves it pressable: an older decision
+  // can still be answered, and the answer then waits for the agent like any prompt.
+  const DONE_MARKS = new Set(['answered', 'sent', 'dismissed', 'deleted']);
+
+  // The result a thread's decision card belongs to, found by its agent and question (a thread
+  // draws reports from the tool's own record, which knows no result id). The card shows the
+  // question as written; the result keeps it cleaned and clipped, so the two are compared on the
+  // result's first words only. → { id, n, done } or null.
+  const words = text =>
+    String(text || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  const questionMatches = (cardText, resultText) => {
+    const start = words(resultText).slice(0, 40);
+    return !!start && words(cardText).includes(start);
+  };
+
+  function findDecision(paneId, question) {
+    if (!words(question)) return null;
+    for (const e of data.entries) {
+      if (e.paneId !== paneId) continue;
+      const n = decisionsOf(e).findIndex(c => questionMatches(question, c.question));
+      if (n < 0) continue;
+      const key = markKey(e.id, 'choices', n);
+      return { id: e.id, n, done: answered.has(key) || DONE_MARKS.has(marked(key)?.state) };
+    }
+    return null;
+  }
+
+  // A thread's decision pressed (122): the answer is sent by itself (149): to the agent an option
+  // hands the work to, or else to the asking agent, held while it works. Only when nobody can take
+  // it (the agent is stopped, or the option asks for the user's own words) does it go into the
+  // prompt box. A decision with no saved result still gets its answer, as the same words.
+  function decideInThread(paneId, question, index, label) {
+    window.TnaiLiveTasks?.setTarget?.(paneId);
+    const found = findDecision(paneId, question);
+    if (found && found.done) return false;
+    const routing = window.TnaiDecisionRouting;
+    const markAnswered = () => {
+      if (!found) return;
+      const key = markKey(found.id, 'choices', found.n);
+      answered.add(key);
+
+      // by then the mark is back from main (an Undo there opens it again), as in `decide`
+      setTimeout(() => answered.delete(key), 5000);
+      native.context.mark(key, 'answered').catch(() => {});
+    };
+
+    // An option that hands the work to another agent by name goes to that agent (149).
+    if (routing?.targetOf?.(label, paneId) && routing.handOff(paneId, question, label, found?.id)) {
+      markAnswered();
+      rememberChoice(paneId, question, label);
+      return true;
+    }
+
+    // A plain option goes straight to the asking agent while it runs (held while it works, so the
+    // thread shows it as waiting); with a saved result, through `decide`, which also gathers a
+    // report's several decisions into one message.
+    if (routing?.sendsItself?.(paneId, label)) {
+      const sent = found
+        ? decide(found.id + '#' + found.n, index, 'send')
+        : routing.sendPlain(paneId, question, label);
+      if (sent) {
+        rememberChoice(paneId, question, label);
+        return true;
+      }
+    }
+
+    // Nobody can take it now (the agent is stopped, or the option asks for the user's own
+    // words): the answer goes into the prompt box for the user to finish and send.
+    if (found) {
+      if (!decide(found.id + '#' + found.n, index)) return false;
+    } else {
+      const prompt = document.getElementById('prompt');
+      if (!prompt) return false;
+      const add = 'Decision on "' + question + '": go with ' + label + '.';
+      prompt.value = prompt.value.trim() ? prompt.value.replace(/\s+$/, '') + '\n\n' + add : add;
+      prompt.dispatchEvent(new Event('input', { bubbles: true }));
+      prompt.focus();
+      prompt.setSelectionRange(prompt.value.length, prompt.value.length);
+    }
+    rememberChoice(paneId, question, label);
+    return true;
+  }
+
   // Answer a decision with option i: typed into the asking agent's panel (only while it runs), or
   // put in the composer. Either marks it answered. i === 'other' answers with the user's own words
   // instead of an option.
@@ -436,12 +570,18 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
         return true;
       }
       const parts = [...kept].sort((a, b) => a[0] - b[0]);
-      if (!window.TnaiAgents.send(s.paneId, parts.map(p => p[1].text).join(' '))) {
+
+      // An agent still at work gets the answer when its task ends, like a prompt from the box: the
+      // app holds it, and its thread shows it as waiting (71, 122).
+      const answer = parts.map(p => p[1].text).join(' ');
+      const shown = 'Decision: ' + parts.map(p => p[1].label).join(' · ');
+      if (!window.TnaiAgents.send(s.paneId, answer, { userText: shown, holdIfBusy: true })) {
         kept.delete(n);
         say(e.name + ' stopped before the choice could be sent.');
         return false;
       }
       held.delete(id);
+      parts.forEach(([j, part]) => rememberChoice(e.paneId, all[j]?.question, part.label));
       window.TnaiLiveTasks?.record?.(
         s.paneId,
         'Decision: ' + parts.map(p => p[1].label).join(' · '),
@@ -457,6 +597,7 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
       return true;
     }
     if (!toComposer(id, o.label, o.own ? 'reply' : 'choices', c.question)) return false;
+    rememberChoice(e.paneId, c.question, o.label);
     answered.add(key);
     setTimeout(() => answered.delete(key), 5000);
     native.context.mark(key, 'answered').catch(() => {});
@@ -492,6 +633,12 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
     refresh,
     toComposer,
     decide,
+
+    // a thread's decision cards (122): which result a card belongs to, the option pressed for it,
+    // and pressing one
+    findDecision,
+    choiceFor,
+    decideInThread,
     decisionsOf,
     openChoice,
   };

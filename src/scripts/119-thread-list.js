@@ -60,7 +60,7 @@
     working: 'work',
     starting: 'work',
     running: 'work',
-    'waiting-agents': 'work',
+    'waiting-agents': 'agents',
     background: 'work',
     'needs-you': 'needs',
     waiting: 'ready',
@@ -188,6 +188,19 @@
     const steps = running && turn && !turn.endedAt ? turn.steps : null;
     const count = steps?.total > 0 ? steps.index + '/' + steps.total : '';
     const doing = digest ? (flagged ? digest.last : digest.now) : label;
+
+    // Waiting on another agent: it asked that agent with the tnai command and has no answer yet
+    // (37), or its own helpers still run (10). A violet tone of its own, never the blue of "free",
+    // so a thread still tied to another's work is not closed by mistake. While it
+    // works itself, "working" wins.
+    const waitedOn = running ? safe(() => window.TnaiMesh?.waitsOn?.(id), []) : [];
+    const waitingOn =
+      waitedOn.length > 0 && status !== 'working' && status !== 'starting'
+        ? 'Waiting on ' +
+          waitedOn.slice(0, 2).map(nameOf).join(', ') +
+          (waitedOn.length > 2 ? ' +' + (waitedOn.length - 2) : '')
+        : '';
+    const tone = needs || limited ? 'needs' : waitingOn ? 'agents' : TONE[status] || 'idle';
     return {
       talk,
       team: mates.map(nameOf).join(', '),
@@ -197,13 +210,19 @@
       session,
       name: session.name || panel.querySelector('.terminal-pane-title')?.textContent || 'Terminal',
       tool: session.agent || 'Terminal',
-      tone: needs || limited ? 'needs' : TONE[status] || 'idle',
-      label: limited ? 'Usage limit reached' : label,
+      tone,
+
+      // The panel's own status word (10): the conversation's live line tells "working in
+      // background" and "waiting on agents" apart from a reply that runs.
+      status,
+      label: limited ? 'Usage limit reached' : waitingOn || label,
       now: limited
         ? 'Usage limit reached'
         : cut
           ? 'Interrupted by ' + cut.by
-          : [doing, count].filter(Boolean).join(' · '),
+          : waitingOn && !flagged
+            ? waitingOn
+            : [doing, count].filter(Boolean).join(' · '),
       inferred: !limited && !cut && !!digest && !flagged && !!digest.inferred,
       task: digest?.task || '',
       needs,
@@ -261,6 +280,18 @@
       (isSub ? '<i class="tnt-dot" aria-hidden="true"></i>' : faceHtml()) +
       '<b></b><time></time><small><span class="tnt-th-line"><span class="tnt-th-tool"></span>' +
       '<span class="tnt-th-now"></span></span><i class="tnt-th-inf" hidden>· inferred</i></small>';
+
+    // A thread's own ✕, shown on hover. It is a mark inside the row, not a
+    // second button, since a button may not hold one: the list's click handler reads it, and
+    // Delete on a focused row does the same for the keyboard. A Claude Code sub-agent has no
+    // panel to close, so its small row gets none.
+    if (!isSub) {
+      const close = make('i', 'tnt-th-x');
+      close.title = 'Close thread';
+      close.setAttribute('aria-hidden', 'true');
+      close.innerHTML = safe(() => window.TnaiIcon?.('x', { size: 14 }), '') || '';
+      row.append(close);
+    }
     rows.set(key, row);
     return row;
   }
@@ -645,12 +676,28 @@
     // Another computer's agent is not a thread of this computer: 138 takes that press before
     // this handler and shows the agent in the thread's main area. Nothing is chosen here.
     if (row.dataset.remote) return;
+    if (event.target.closest('.tnt-th-x')) {
+      closeRow(row);
+      return;
+    }
     threads()?.select(row.dataset.pane);
     refresh();
   });
+
+  // Closes a row's thread the way the thread's own "..." menu does (137): it asks first, over the
+  // open thread, while the agent still runs.
+  function closeRow(row) {
+    if (!row.dataset.pane || row.dataset.remote || row.classList.contains('tnt-sub')) return;
+    window.TnaiLiveTasks?.close?.(row.dataset.pane, document.querySelector('.tnt-view'));
+  }
   box.addEventListener('keydown', event => {
     const row = event.target.closest?.('.tnt-th');
     if (!row || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.key === 'Delete') {
+      event.preventDefault();
+      closeRow(row);
+      return;
+    }
     const all = [...box.querySelectorAll('.tnt-th')];
     const at = all.indexOf(row);
     let to = null;

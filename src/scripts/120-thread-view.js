@@ -46,6 +46,11 @@
   root.className = 'tnt-view';
   root.innerHTML =
     '<header class="tnt-head"><div class="tnt-head-text"><div class="tnt-head-line"><h1></h1>' +
+    '<button type="button" class="tnt-icon-btn tnt-head-rename" title="Rename this agent" ' +
+    'aria-label="Rename this agent">' +
+    icon('pencil', 14) +
+    '</button>' +
+    '<span class="tnt-head-age" hidden></span>' +
     '<span class="tnt-head-topic"></span></div><p><span class="tnt-head-tool"></span>' +
     '<span class="tnt-head-more"></span></p></div><span class="tnt-head-state" data-tone="idle"><i></i>' +
     '<span></span></span><div class="tnt-head-acts">' +
@@ -144,8 +149,66 @@
     if (stateEl.dataset.tone !== thread.tone) stateEl.dataset.tone = thread.tone;
     setText(stateEl.querySelector('span'), thread.label || '');
     stateEl.hidden = !thread.label;
+    paintAge(headEl.querySelector('.tnt-head-age'), pane);
     return mode;
   }
+
+  // ---------- how long the agent's session has been open ----------
+  // A clock beside the name. Its color says when a session has run long: a long
+  // session fills the agent's context, and a fresh agent (the "..." menu's Hand off) works better.
+  // Under 2 hours quiet, 2 to 4 hours plain, 4 to 6 hours amber, from 6 hours red.
+  const HOUR = 60 * 60 * 1000;
+
+  function ageText(ms) {
+    const minutes = Math.floor(ms / 60000);
+    if (minutes < 60) return minutes + 'm';
+    const rest = minutes % 60;
+    return Math.floor(minutes / 60) + 'h ' + (rest < 10 ? '0' : '') + rest + 'm';
+  }
+
+  function ageStep(ms) {
+    if (ms >= 6 * HOUR) return 'longest';
+    if (ms >= 4 * HOUR) return 'longer';
+    if (ms >= 2 * HOUR) return 'long';
+    return 'fresh';
+  }
+
+  // Paints one clock (the top row's, or an All threads card's, 135) for one thread. Hidden while
+  // its session does not run: the clock counts from the moment the session started.
+  function paintAge(node, paneId) {
+    if (!node) return;
+    const session =
+      paneId && safe(() => agents.sessions().find(one => one.paneId === paneId), null);
+    const startedAt = session?.running ? session.startedAt || 0 : 0;
+    node.hidden = !startedAt;
+    if (!startedAt) return;
+    const ms = Math.max(0, Date.now() - startedAt);
+    setText(node, ageText(ms));
+    const step = ageStep(ms);
+    if (node.dataset.age !== step) node.dataset.age = step;
+    const title =
+      'This agent session has been open for ' +
+      ageText(ms).replace('h', ' h').replace(/m$/, ' min') +
+      (step === 'fresh'
+        ? ''
+        : '. A long session fills its context: Hand off in "..." starts a fresh agent.');
+    if (node.title !== title) node.title = title;
+  }
+
+  // The clocks move once a minute (every 30 s, so a new minute shows within half a minute), and
+  // not while the window is hidden. 135 paints its cards' clocks on the same tick.
+  setInterval(() => {
+    if (document.hidden) return;
+    if (pane) paintAge(headEl.querySelector('.tnt-head-age'), pane);
+    window.dispatchEvent(new CustomEvent('tnai:thread-age-tick'));
+  }, 30000);
+
+  // The pencil beside the name: the name becomes a field where it stands (137's Rename). The new
+  // name is saved by the panel's own rename, so the list, the cards and the agents follow it.
+  headEl.querySelector('.tnt-head-rename').addEventListener('click', () => {
+    if (pane) window.TnaiThreadMore?.rename?.(pane);
+  });
+
   headEl.querySelector('.tnt-head-page').addEventListener('click', () => {
     if (pane) window.TnaiLiveTasks?.focusPane?.(pane, true);
   });
@@ -774,6 +837,9 @@
     term: () => view?.term || null,
     mode: () => (pane ? modes.get(pane) || (talkEl.hidden ? 'term' : 'read') : ''),
     setMode,
+
+    // the session clock beside a name, for an All threads card (135)
+    paintAge,
   };
   if (safe(() => threads()?.visible(), false)) start();
 })();

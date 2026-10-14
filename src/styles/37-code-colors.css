@@ -1,8 +1,10 @@
 /* Technically Not · 37-code-colors.css — The colors of code in the Files column's reader (134
    splits the words, highlight.js names them `hljs-…`). They are the colors most editors use, the
    ones of Visual Studio Code's own dark and light looks: blue keywords, orange-brown strings (red
-   in Light), green comments, pale green numbers, yellow function names, teal types. */
-.tnt-fileview-text {
+   in Light), green comments, pale green numbers, yellow function names, teal types. The Details
+   tab (41) colors commands and files with the same values. */
+.tnt-fileview-text,
+.ttd {
   --code-keyword: #569cd6;
   --code-string: #ce9178;
   --code-comment: #6a9955;
@@ -16,7 +18,10 @@
   --code-added: #b5cea8;
   --code-removed: #ce9178;
 }
-html[data-theme='light'] .tnt-fileview-text {
+/* Light is the look without data-theme (32 removes it), never data-theme='light': a rule written
+   for that never applied, and the file viewer showed Dark's pale colors on the light page. */
+html:not([data-theme='dark']) .tnt-fileview-text,
+html:not([data-theme='dark']) .ttd {
   --code-keyword: #0000ff;
   --code-string: #a31515;
   --code-comment: #008000;

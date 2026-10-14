@@ -271,7 +271,9 @@ try {
     );
     {
       // The five that 120 builds for a thread on its CLI screen; other files add theirs (the
-      // helpers, the side column), so the row may hold more, all of the one size.
+      // helpers, the side column), so the row may hold more, all of the one size. The pencil
+      // beside the name (.tnt-head-rename) is not one of them: it stands in the name's own line at
+      // 24px so that line keeps its height, and `thread-more` measures it.
       const own = [
         '[data-tnai-font="-1"]',
         '[data-tnai-font="1"]',
@@ -280,7 +282,7 @@ try {
         '.tnt-head-menu',
       ].map(selector => head.querySelector('.tnt-icon-btn' + selector));
       const buttons = [...head.querySelectorAll('.tnt-icon-btn')].filter(
-          b => b.getClientRects().length
+          b => b.getClientRects().length && !b.closest('.tnt-head-line')
         ),
         sizes = [...new Set(buttons.map(b => n(box(b).width) + 'x' + n(box(b).height)))],
         page = head.querySelector('.tnt-head-page'),

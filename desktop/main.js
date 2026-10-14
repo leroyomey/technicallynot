@@ -19,10 +19,19 @@ const webBridge = webBridgePort ? require('./web-bridge') : null;
 webBridge?.hookIpc(ipcMain);
 
 // A dev copy started from a shell that has since closed: console writes hit a broken pipe (EPIPE).
-// Logging must never crash Technically Not, so those errors are dropped.
+// Logging must never crash Technically Not, so those errors are dropped. Any other error on one
+// stream (rethrown, it had no handler and ended the app) is noted once on the other one.
+let consoleErrorNoted = false;
+
 for (const s of [process.stdout, process.stderr])
   s?.on?.('error', err => {
-    if (err?.code !== 'EPIPE') throw err;
+    if (err?.code === 'EPIPE' || consoleErrorNoted) return;
+    consoleErrorNoted = true;
+    const other = s === process.stdout ? process.stderr : process.stdout;
+
+    try {
+      other?.write?.('[tnai] console stream error: ' + (err?.code || err?.message || err) + '\n');
+    } catch {}
   });
 
 // A copy run from source (npm start) keeps its own settings, so trying changes never touches the
@@ -291,8 +300,22 @@ function createWindow() {
   // Technically Not never navigates away from itself; web links open in the user's browser. The
   // windows it may open are pop-outs (a Live preview panel or the composer, panel-windows.js): same
   // preload and security, the same frame rules below, and it never navigates at all.
-  const deny = ({ url }) => {
-    if (/^https?:/i.test(url)) shell.openExternal(url);
+  // A page's links open a few at a time at most (open-outside.js): a Live preview page can ask
+  // with no click, over and over.
+  const { openOutside } = require('./open-outside');
+  const pageOf = address => {
+    try {
+      return new URL(address).origin;
+    } catch {
+      return '';
+    }
+  };
+  const deny = ({ url, referrer }) => {
+    openOutside(
+      link => shell.openExternal(link),
+      url,
+      'open:' + (pageOf(referrer?.url) || 'window')
+    );
     return { action: 'deny' };
   };
 
@@ -332,7 +355,11 @@ function createWindow() {
       }
       if (!isLocalUrl(details.url) && !/^about:/i.test(details.url)) {
         details.preventDefault();
-        if (/^https?:/i.test(details.url)) shell.openExternal(details.url);
+        openOutside(
+          link => shell.openExternal(link),
+          details.url,
+          'frame:' + details.frame?.frameTreeNodeId
+        );
       }
     });
 
@@ -771,6 +798,10 @@ gitService.init(
     }
   }
 );
+
+// A file of the project changed: git's status is asked again next time (git-service.js keeps the
+// last one until then).
+watch.onChanges(() => gitService.changed());
 
 // Only Technically Not's own page may use the native bridge: the top frame of a Technically Not
 // window on its file: origin. A localhost page in the Live preview, or an about:blank pop-up it
@@ -1215,6 +1246,9 @@ handle('fs:root', () => files.root());
 // files.root() per call). Running panes keep their cwd.
 const rootChanged = result => {
   watch.start(files.root());
+
+  // the new project's saved context is read now, in the background, not on the first press
+  agentContext.warm(files.root()).catch(() => {});
   gitService.stop();
   worktrees.rootChanged();
   toWindow('git:changed', { at: Date.now() });
@@ -1656,11 +1690,19 @@ handle(
         try {
           ptyCleanup(paneId);
         } catch {}
-      }
+      } else {
+        // Stopped while starting (pty:stop): the panel stays, but the hook token and the
+        // prompt files written for a process that never ran go.
+        if (error.code === 'cancelled') {
+          try {
+            hooks.forget(paneId);
+          } catch {}
+        }
 
-      // A sub-agent that will not start (folder not allowed, CLI failed): its lead's tnai_delegate
-      // / tnai_wait gets the reason (agent-graph.js).
-      else if (options?.subagentOf) graph.notStarted(paneId, error.message);
+        // A sub-agent that will not start (folder not allowed, CLI failed, stopped while starting):
+        // its lead's tnai_delegate / tnai_wait gets the reason (agent-graph.js).
+        if (options?.subagentOf) graph.notStarted(paneId, error.message);
+      }
       return { ok: false, error: { message: error.message, code: error.code || '' } };
     } finally {
       if (ptyLaunching.get(paneId) === gen) ptyLaunching.delete(paneId);
@@ -1990,6 +2032,17 @@ const remote = remoteService.createRemoteService({
     view: model => toWindow('remote:view', model),
   },
 });
+
+// The prompt box's Stop (150-composer-stop.js): this computer's own user stops an agent where it
+// is, or cancels its prompt. The keys and their checks live in user-interrupt.js
+// (tools/user-interrupt-test.js).
+const userInterrupt = require('./user-interrupt').createUserInterrupt({
+  ptys,
+  turns,
+  attention,
+  abort: paneId => require('./opencode-link').abort(paneId),
+});
+handle('agents:interrupt', paneId => userInterrupt.interrupt(paneId));
 
 // ---- Full control: the app's real actions for a paired computer's operations
 // ("change n" below names a numbered change of their design). remote-control.js has checked the
@@ -2505,12 +2558,38 @@ handle('handoffs:update', (id, patch) =>
 );
 handle('handoffs:results', id => agentContext.raw(String(id || '')));
 handle('mesh:names', list => {
-  lifecycle.setNames(list);
+  // a renamed agent's saved results take its new name too (agent-context.js)
+  for (const r of lifecycle.setNames(list)) agentContext.renamed(r.instanceId, r.to);
   fileLocks.setNames(list);
   const r = mesh.setNames(list);
+  tellRenames();
   remoteAgents();
   return r;
 });
+
+// A rename reaches Claude Code with its next prompt (agent-hooks.js UserPromptSubmit →
+// mesh.renamedNote). Codex, OpenCode and Cursor Agent run no prompt hook, so they get the same line
+// typed in the way a team notice reaches them (above), once, never into the user's unsent text.
+function tellRenames() {
+  for (const paneId of mesh.renamesPending()) {
+    const session = ptys.list().find(s => s.paneId === paneId && s.running);
+    const cli = mesh.cliOf(paneId) || (session?.agent !== 'Terminal' && session?.agent) || '';
+    if (!session || !cli || cli === 'Claude Code') continue;
+    const text = mesh
+      .renamedNote(paneId)
+      .split('\n')
+      .filter(Boolean)
+      .map(line => line.replace(/^Technically Not: /, ''))
+      .join(' ');
+    if (!text) continue;
+    promptSubmit
+      .submit(paneId, '[from Technically Not] ' + text + ' No reply needed.', {
+        agent: cli,
+        holdIfDraft: APP_NOTICE,
+      })
+      .catch(e => console.warn('[tnai] rename notice failed:', e?.message || e));
+  }
+}
 handle('preview:shown', (id, result) => mesh.previewShown(id, result));
 handle('agentEvents:history', () => hooks.history());
 
@@ -2737,16 +2816,38 @@ stalls.start(app.getPath('userData'));
 app.whenReady().then(async () => {
   await files.loadRoot();
   watch.start(files.root());
+
+  // the project's saved context is read in the background while the window loads (agent-context.js
+  // warm), so the page's first context:state does not wait on a synchronous read
+  agentContext.warm(files.root()).catch(() => {});
   createWindow();
 });
+
+// Quitting: the waiting saves are written first, then every terminal panel stops (each writes its
+// own record and scrollback before it closes), then the saves that stopping queued. Each step runs
+// on its own, so one that throws never skips the saves after it. Closing many panels at once can
+// crash node-pty (pty-service.js queueClose), so nothing may still be unsaved when they close.
+function flushAllSaves() {
+  for (const save of [lifecycle, graph, agentContext])
+    try {
+      save.flushSaves();
+    } catch {}
+}
+
+function saveAndStopAll() {
+  flushAllSaves();
+  try {
+    ptys.stopAll();
+  } catch {}
+  flushAllSaves();
+}
+
 app.on('before-quit', () => {
-  ptys.stopAll();
-  watch.stop();
-  hooks.stop();
-  gitService.stop();
-  lifecycle.flushSaves();
-  graph.flushSaves();
-  agentContext.flushSaves();
+  saveAndStopAll();
+  for (const service of [watch, hooks, gitService])
+    try {
+      service.stop();
+    } catch {}
 });
 
 // Installed (production) and release builds: developer tools stay closed in every Technically Not
@@ -2756,7 +2857,7 @@ if (app.isPackaged || release)
     contents.on('devtools-opened', () => contents.closeDevTools())
   );
 app.on('window-all-closed', () => {
-  ptys.stopAll();
+  saveAndStopAll();
   app.quit();
 });
 

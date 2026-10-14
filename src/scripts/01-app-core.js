@@ -384,36 +384,49 @@ window.TnaiPress = (() => {
     if (pressed && !ending) ending = setTimeout(finish);
   }
 
-  document.addEventListener('pointerdown', event => start(event.target, 'pointer'), true);
-  window.addEventListener('pointerup', end, true);
-  window.addEventListener('pointercancel', end, true);
-  window.addEventListener('blur', end);
+  // Presses are heard in the main window and in every window a panel is popped out into (the
+  // Live preview, 65, and the others, 93), since their buttons are built anew there too.
+  const heard = new WeakSet();
 
-  // A release that was never reported (it happened outside the window): the next move says so.
-  window.addEventListener(
-    'pointermove',
-    event => {
-      if (pressedBy === 'pointer' && event.buttons === 0) end();
-    },
-    true
-  );
+  // Kept by document: a window that loads a new page loses its listeners with the old one.
+  function listenIn(win) {
+    const doc = win?.document;
+    if (!doc || heard.has(doc)) return;
+    heard.add(doc);
+    doc.addEventListener('pointerdown', event => start(event.target, 'pointer'), true);
+    win.addEventListener('pointerup', end, true);
+    win.addEventListener('pointercancel', end, true);
+    win.addEventListener('blur', end);
 
-  // Space presses a button when the key comes up again.
-  document.addEventListener(
-    'keydown',
-    event => {
-      if (event.key === ' ' && !event.repeat && event.target.closest?.('button, [role="button"]'))
-        start(event.target, 'key');
-    },
-    true
-  );
-  window.addEventListener(
-    'keyup',
-    event => {
-      if (event.key === ' ' && pressedBy === 'key') end();
-    },
-    true
-  );
+    // A release that was never reported (it happened outside the window): the next move says so.
+    win.addEventListener(
+      'pointermove',
+      event => {
+        if (pressedBy === 'pointer' && event.buttons === 0) end();
+      },
+      true
+    );
+
+    // Space presses a button when the key comes up again.
+    doc.addEventListener(
+      'keydown',
+      event => {
+        if (event.key === ' ' && !event.repeat && event.target.closest?.('button, [role="button"]'))
+          start(event.target, 'key');
+      },
+      true
+    );
+    win.addEventListener(
+      'keyup',
+      event => {
+        if (event.key === ' ' && pressedBy === 'key') end();
+      },
+      true
+    );
+  }
+
+  listenIn(window);
+  window.addEventListener('tnai:panel-popout', event => listenIn(event.detail?.win));
 
   function defer(box, repaint) {
     if (!pressed || !box || !box.contains(pressed)) return false;
@@ -421,5 +434,5 @@ window.TnaiPress = (() => {
     return true;
   }
 
-  return { defer };
+  return { defer, listenIn };
 })();

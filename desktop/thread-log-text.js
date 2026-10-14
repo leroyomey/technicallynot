@@ -60,11 +60,97 @@ const ADDED_AFTER = [
   /(?:^|\n\n)\[Technically Not: [\s\S]*\]\s*$/,
 ];
 
+// The line a press on a result item writes under its follow-up (src/scripts/49-context-data.js
+// `toComposer`), so the agent can read the result in full.
+const FULL_RESULT_LINE = /^Full result: `tnai context show [0-9a-f]+`$/;
+
+// Where a follow-up came from: " from Rook’s result 8b1f0a8e" (or "Follow up on Rook’s result
+// 8b1f0a8e"), then maybe " (task: …)".
+const SOURCE = /(?: from |^Follow up on )[^\n"]{1,120}?['’]s result [0-9a-f]{6,}\b/;
+
+// The end of the source: past " (task: …)", whose task can hold brackets of its own (a task that
+// was itself a follow-up), so the brackets are counted rather than matched by a pattern.
+function sourceEnd(line, start) {
+  if (!line.startsWith(' (task: ', start)) return start;
+  let depth = 0;
+  for (let index = start + 1; index < line.length; index++) {
+    if (line[index] === '(') depth++;
+    if (line[index] === ')') depth--;
+    if (depth === 0) return index + 1;
+  }
+  return start;
+}
+
+// One line a press on a result item wrote, as the user means it: a decision shows only the
+// choice, a follow-up loses where it came from. Null when the line is not one of them.
+function tidyFollowUpLine(line) {
+  const decision = /^Decision on "/.exec(line);
+  const followUp = /^(Fix this issue|Continue|Try this suggestion|Follow up on)\b/.exec(line);
+  if (!decision && !followUp) return null;
+  const source = SOURCE.exec(line);
+  let questionEnd = -1;
+  let restStart = -1;
+  if (source) {
+    const end = sourceEnd(line, source.index + source[0].length);
+    if (!line.startsWith(': ', end)) return null;
+    questionEnd = source.index;
+    restStart = end + 2;
+  } else if (decision) {
+    questionEnd = line.indexOf('": ');
+    restStart = questionEnd + 3;
+  }
+  if (questionEnd < 0) return null;
+  const rest = line.slice(restStart);
+  if (followUp) {
+    const label = followUp[1] === 'Follow up on' ? 'Follow up' : followUp[1];
+    return rest ? label + ': ' + rest : label;
+  }
+
+  // The question ends at its closing quote, just before the source or the ": ".
+  const closing = source ? questionEnd - 1 : questionEnd;
+  if (line[closing] !== '"') return null;
+
+  // "Decision on "Decision 1 of 2: …"": the number tells several answers apart, so it stays.
+  const question = line.slice(decision[0].length, closing);
+  const number = /^(Decision \d+ of \d+):/.exec(question);
+  const choice = rest.replace(/^go with /, '');
+  return number ? number[1] + ': ' + choice : choice;
+}
+
+// The follow-ups and decisions a press on a result item wrote, shown as the user means them; the
+// lines as they were sent are kept apart, like the rest of what the app adds.
+function tidyFollowUps(words) {
+  const removed = [];
+  const lines = words.split('\n').filter(line => {
+    if (!FULL_RESULT_LINE.test(line.trim())) return true;
+    removed.push(line.trim());
+    return false;
+  });
+  const shown = lines.map(line => {
+    const tidy = tidyFollowUpLine(line.trim());
+    if (tidy === null) return line;
+    removed.push(line.trim());
+    return tidy;
+  });
+  if (!removed.length) return { words, removed: [] };
+  return {
+    words: shown
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim(),
+    removed: [removed.join('\n')],
+  };
+}
+
 // A recorded prompt in two parts: what the user wrote, and what the app added around it, in the
 // order it stood in the prompt.
 function splitPrompt(text) {
   let words = String(text || '')
-    .replace(/^\s*\[(?:TN\.ai|TechnicallyNot\.ai)\]\s*/, '')
+    // Claude Code wraps a long paste as <pasted_content id="…">…</pasted_content id="…">
+    // (a nested one escaped as <\pasted_content …>): the wrapper is not the user's words.
+    .replace(/<[\/\\]?(?:pasted_content|pasted_text)\b[^<>]*>/g, '')
+    .trim()
+    .replace(/^\[(?:TN\.ai|TechnicallyNot\.ai)\]\s*/, '')
     .trim();
   const before = [];
   const after = [];
@@ -83,7 +169,9 @@ function splitPrompt(text) {
   };
   take(ADDED_BEFORE, before);
   take(ADDED_AFTER, after);
-  return { words, added: before.concat(after.reverse()) };
+  const followUps = tidyFollowUps(words);
+  words = followUps.words;
+  return { words, added: before.concat(followUps.removed, after.reverse()) };
 }
 
 // A recorded prompt as entries: the user's words, a message another agent sent with `tnai send`,

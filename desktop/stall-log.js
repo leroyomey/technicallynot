@@ -205,12 +205,22 @@ function start(dir) {
       // Node hands over its record of a pause one step later in the same turn of the loop, so the
       // line is written there.
       setImmediate(() => {
-        const gc = gcSince(),
-          line =
-            head +
-            (gc.total >= 20
-              ? ` · garbage collection ${gc.total} ms (longest pause ${gc.longest} ms)`
-              : '');
+        const gc = gcSince();
+
+        // How full the heap is: a stall with no named section and a heap near its limit points at
+        // garbage collection, a small heap at a wait on the disk or another process. Read only when
+        // a stall is written.
+        let heap = '';
+        try {
+          const { heapUsed, heapTotal } = process.memoryUsage();
+          heap = ` · heap ${Math.round(heapUsed / 1048576)} of ${Math.round(heapTotal / 1048576)} MB`;
+        } catch {}
+        const line =
+          head +
+          (gc.total >= 20
+            ? ` · garbage collection ${gc.total} ms (longest pause ${gc.longest} ms)`
+            : '') +
+          heap;
         console.warn(line);
         if (file) {
           pending += line + '\n';

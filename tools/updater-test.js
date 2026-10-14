@@ -366,6 +366,33 @@ async function run() {
           'https://github.com/some-owner/some-repo/releases/latest/download/',
       world.fakeUpdater.feed
     );
+
+    // another GitHub repository is just as foreign: only the build's own public repo is taken
+    const feedFrom = configUrl => {
+      fs.writeFileSync(
+        path.join(profile, 'update-config.json'),
+        JSON.stringify({ url: configUrl })
+      );
+      console.warn = () => {};
+      delete require.cache[updaterFile];
+      world.fakeUpdater = makeFakeUpdater();
+      require(updaterFile).init(() => {});
+      console.warn = realWarn;
+      return world.fakeUpdater.feed && world.fakeUpdater.feed.url;
+    };
+    const ownFeed = 'https://github.com/some-owner/some-repo/releases/latest/download/';
+    check(
+      'another GitHub repo in update-config.json is ignored by an installed build',
+      feedFrom('other-owner/other-repo') === ownFeed &&
+        feedFrom('https://github.com/other-owner/other-repo/releases/latest/download/') ===
+          ownFeed &&
+        feedFrom('https://updates.technicallynot.ai/feed/') === ownFeed
+    );
+    check(
+      'the public repo itself in update-config.json is still taken by an installed build',
+      feedFrom('Some-Owner/some-repo') ===
+        'https://github.com/Some-Owner/some-repo/releases/latest/download/'
+    );
     fs.rmSync(path.join(profile, 'update-config.json'), { force: true });
   }
 

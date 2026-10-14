@@ -20,13 +20,22 @@ module.exports = win => {
   const pixelsPerPx = picture =>
     win.webContents.getZoomFactor() * (picture.getSize().width / win.getContentSize()[0]);
 
+  // A test window the user's own windows cover draws no frames (webContents.isPainting() is
+  // false), and capturePage then returns the last frame it drew, from before the state under
+  // test (learned 2026-10-14: every ring read 0 pixels and 1 to 1). Ask for a new frame first.
+  const freshPicture = async () => {
+    win.webContents.invalidate();
+    await new Promise(resolve => setTimeout(resolve, 150));
+    return win.webContents.capturePage();
+  };
+
   return {
     ...agentGraphHelper(win),
 
     // For each spot { x, y, axis } (CSS px): the colors of the pixels from REACH before it to
     // REACH after it along its axis ('x' or 'y'), all read from one picture.
     async runs(spots) {
-      const picture = await win.webContents.capturePage();
+      const picture = await freshPicture();
       const size = picture.getSize();
       const bitmap = picture.toBitmap();
       const factor = pixelsPerPx(picture);
@@ -52,7 +61,7 @@ module.exports = win => {
 
     // A cut-out of the window's picture around a box (CSS px), as a data URL the page can draw.
     async cutOut(left, top, width, height) {
-      const picture = await win.webContents.capturePage();
+      const picture = await freshPicture();
       const size = picture.getSize();
       const factor = pixelsPerPx(picture);
       const x = Math.max(0, Math.round(left * factor));

@@ -215,5 +215,9 @@
   window.TnaiMesh = {
     state: () => [...members.entries()].map(([paneId, m]) => ({ paneId, ...m })),
     peers,
+
+    // The panels this agent asked a question with the tnai command and has no answer from yet
+    // (desktop/agent-links.js). The thread list gives such a thread its own tone (119).
+    waitsOn: paneId => members.get(paneId)?.waitsOn || [],
   };
 })();

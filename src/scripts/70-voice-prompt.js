@@ -1221,6 +1221,23 @@
   }
   window.TnaiVoice._micCheck = micCheck; // desktop-check (voice-prompt)
 
+  // The mic was unplugged mid-recording and no other mic could be opened (69 reopen): the stream
+  // is already dead, so the recording ends here as if released (what was said goes on as usual)
+  // and the bell says why. A recording on a live mic is never ended by this.
+  window.addEventListener('tnai:voice-mic-gone', () => {
+    if (!busy || btn.dataset.state !== 'listening') return;
+    holding = null;
+    finish();
+    window.TnaiNextActions?.notify?.({
+      key: 'voice-mic-gone',
+      source: 'Voice',
+      tag: 'Microphone',
+      k: 'next',
+      title: 'The microphone was disconnected',
+      text: 'The recording stopped when the microphone went away, and no other microphone was found. What you said before that was kept. Plug a microphone in and try again.',
+    });
+  });
+
   // A dev copy started with TNAI_VOICE_KEEP=1 keeps each short prompt's unprocessed clip and what
   // was heard as a test clip (tools/voice-regress.js). Never on in an installed build: main answers
   // keepOn() with false there and refuses keep().

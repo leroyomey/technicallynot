@@ -995,15 +995,22 @@ function claudeHook(paneId, h) {
   if (event === 'PostToolUse' && !h.agent_id) claudeChecklist(paneId, h);
   const t = turns.get(paneId);
   if (!t || t.agent !== 'Claude Code') return;
+
+  // cancelSoon guessed wrong: it still works. endSaid goes back too, so the end listeners (held
+  // prompts) hear the real end instead of the guessed one only.
   if (t.cancelled && event !== 'Stop' && event !== 'StopFailure') {
     t.cancelled = false;
     t.endedAt = 0;
     t.endedBy = '';
-  } // cancelSoon guessed wrong: it still works
+    t.endSaid = false;
+  }
+
+  // …and finished: keep its answer
   if (t.cancelled && event === 'Stop') {
     t.cancelled = false;
     t.endedAt = 0;
-  } // …and finished: keep its answer
+    t.endSaid = false;
+  }
 
   // A sub-agent's messages are in its own transcript (merged into the task by message id, so
   // nothing counts twice); a finished one is read a last time. Read at once, in order, only where
@@ -1216,10 +1223,15 @@ function readCodex(c, lines = readLines(c.reader)) {
       changed = true;
     } // Codex's own plan usage windows (used_percent, resets)
 
-    // a queued prompt while still working: the running task goes on
-    if (p.type === 'task_started' && c.live && c.turn && !c.turn.endedAt) continue;
+    // A queued prompt while still working: the running task goes on. But a task_started with
+    // another turn_id is a new task: Codex runs one task at a time (no rollout read on 2026-10-14
+    // had one inside another), so the running one ended without its end event and would otherwise
+    // stay "working" for good.
+    const sameTask = !p.turn_id || !c.turn?.turnId || p.turn_id === c.turn.turnId;
+    if (p.type === 'task_started' && c.live && c.turn && !c.turn.endedAt && sameTask) continue;
     if (p.type === 'task_started') {
       c.turn = {
+        turnId: p.turn_id || '',
         paneId: c.paneId,
         agent: 'Codex',
         source: 'codex-rollout',

@@ -184,6 +184,10 @@ function onFrameEvent(sessionId, method, p) {
   } else if (method === 'Log.entryAdded') {
     const e = p?.entry;
     if (e?.level !== 'error') return;
+
+    // Our own header for `tnai show` pages (show-file.js) names `webrtc`, which this Chromium does
+    // not know yet; WebRTC is removed another way (NO_RTC), so the warning is not the page's fault.
+    if (/directive 'webrtc'/.test(String(e.text || ''))) return;
     report(sessionId, 'preview:error', {
       kind: e.source === 'network' ? 'network' : 'log',
       text: clip(e.text, 500),

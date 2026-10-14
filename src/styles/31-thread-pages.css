@@ -69,6 +69,8 @@ html.tnt-on:not([data-theme='dark']):not(#tnt):not(#pg) {
      whiter white: over this pale ground --pg-panel-2 stood one level over --pg-panel,
      which nobody could see. In Dark it is the value of --pg-panel-2. */
   --pg-panel-hover: rgba(var(--pg-tint-l), 0.06);
+  /* the rows and tabs that showed --pg-panel under the pointer (07) take the same shade */
+  --pg-panel-hover-soft: var(--pg-panel-hover);
   --pg-line: rgba(var(--pg-tint-l), 0.17);
   --pg-panel-solid: #f6f4ef;
   --pg-text: #26232d;
@@ -100,6 +102,12 @@ html.tnt-on:not(#tnt):not(#pg) body::before {
   background:
     radial-gradient(40% 35% at 70% 20%, rgba(var(--tnt-aura-1), 0.3), transparent 70%),
     radial-gradient(35% 40% at 20% 80%, rgba(var(--tnt-aura-2), 0.26), transparent 70%);
+}
+
+/* While the window is not in front the aurora's drift holds still where it is (100 sets
+   `tnai-away`), so the whole window is not redrawn every frame. */
+html.tnai-away:not(#tnt):not(#pg) body::before {
+  animation-play-state: paused;
 }
 
 /* ---------------------------------------------------------------- one ground, no hard cuts */
@@ -530,6 +538,15 @@ html.tnt-on:not(#tnt):not(#pg)
   display: none;
 }
 
+/* A swatch's focus ring takes the swatch's color (32). Pale teal on the pale ground of Light
+   stood 1.85 to 1, so in Light that ring is drawn in the text color. */
+html.tnt-on:not([data-theme='dark']):not(#tnt):not(#pg)
+  .tnai-accent-options
+  input[value='teal']:focus-visible
+  + span {
+  outline-color: var(--pg-text);
+}
+
 /* ---------------------------------------------------------------- beyond tokens, part by part */
 /* Each block below is something a page drew with a color written by hand, or in the accent, where
    the two looks need another. Nothing here moves or resizes anything. */
@@ -645,6 +662,15 @@ html.tnt-on:not(#tnt):not(#pg) #terminalView .terminal-toolbar .terminal-subtitl
 }
 html.tnt-on:not(#tnt):not(#pg) #terminalView .terminal-toolbar .terminal-tools {
   min-width: 0;
+}
+
+/* On All threads the row stood 9 px under the top bar's chips and 16 px over the cards (user
+   2026-10-14: New thread and Preview "slightly too close to the notification bell"). The row's
+   height stays, so the cards do not move; 8 px more room on top centers its controls 4 px lower,
+   and the whole row moves together so its title, tabs and buttons keep one center line. */
+html.tnt-on:not(#tnt):not(#pg) #terminalView.tat-on > .terminal-toolbar {
+  box-sizing: border-box;
+  padding-top: 8px;
 }
 
 /* All threads beside Live preview (135 sets the two numbers). This rule stands here, before

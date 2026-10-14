@@ -161,6 +161,10 @@ const WORST = { n: 'f'.repeat(16), c: 0x7fffffff, ms: 9999999999 };
 function storageBackend({ safeStorage, file, fs = require('fs'), platform = process.platform }) {
   return {
     available() {
+      // macOS always has its keychain, and asking reads it: a keychain item made by another build
+      // then raises a prompt that blocks the main process, at start, while the window asks for the
+      // state. The real read happens only when something is saved or read.
+      if (platform === 'darwin') return true;
       try {
         if (!safeStorage.isEncryptionAvailable()) return false;
         return !(

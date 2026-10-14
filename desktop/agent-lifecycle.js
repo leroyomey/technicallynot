@@ -53,6 +53,10 @@ const notes = new Map();
 const prompts = new Map(); // paneId -> { at, text, note } the last prompt hook (full text)
 const reviving = new Map(); // request id -> resolve
 
+// instance id -> the promise of its revive still under way: a second `tnai send` to the same closed
+// agent joins it instead of opening a second panel on the same conversation
+const revivesUnderWay = new Map();
+
 // request ids of `tnai new` spawns: their pane is marked startedByAgent even when the answer comes
 // late or not ready
 const spawning = new Set();
@@ -367,17 +371,29 @@ function closed(paneId) {
   publish();
 } // pane ids are never reused
 
+// A renamed agent keeps its last few old names (`formerNames`), so a closed agent is still
+// found by the name it had before (lookup). Returns the renames: [{ instanceId, from, to }].
+const FORMER_NAMES_MAX = 5;
+
 function setNames(list) {
-  let changed = false;
+  const renames = [];
   for (const item of Array.isArray(list) ? list : []) {
     const n = instances.get(byPane.get(item?.paneId));
     const name = clip(item?.name, 80);
     if (n && name && n.name !== name) {
+      if (n.name) {
+        const kept = (n.formerNames || []).filter(
+          old =>
+            old.toLowerCase() !== n.name.toLowerCase() && old.toLowerCase() !== name.toLowerCase()
+        );
+        n.formerNames = [n.name, ...kept].slice(0, FORMER_NAMES_MAX);
+        renames.push({ instanceId: n.id, from: n.name, to: name });
+      }
       n.name = name;
-      changed = true;
     }
   }
-  if (changed) save();
+  if (renames.length) save();
+  return renames;
 }
 
 // ---------- Tasks ----------
@@ -501,7 +517,14 @@ function onTurn(t) {
   // A running task's progress updates (tokens, sub-agent logs) change nothing here: the whole state
   // goes out only when it does.
   if (!t.endedAt) {
-    if (!created && n.state === 'active') return;
+    // A task ended by a guess (Esc right after the prompt) that a later hook shows still working:
+    // it is open again, so its real end is recorded below instead of skipped.
+    if (task.endedAt) {
+      task.endedAt = 0;
+      task.result = '';
+      prints.delete(task.id);
+      cancelClose(n);
+    } else if (!created && n.state === 'active') return;
     n.state = 'active';
     return publish();
   }
@@ -656,7 +679,13 @@ function lookup(key, project) {
   const named = pool
     .filter(n => (n.name || '').toLowerCase() === key)
     .sort((a, b) => rank(b) - rank(a) || used(b) - used(a));
-  return named.length ? describe(named[0], lastTask(named[0])) : null;
+  if (named.length) return describe(named[0], lastTask(named[0]));
+
+  // No agent carries the name now: an agent the user renamed away from it
+  const renamed = pool
+    .filter(n => (n.formerNames || []).some(old => old.toLowerCase() === key))
+    .sort((a, b) => rank(b) - rank(a) || used(b) - used(a));
+  return renamed.length ? describe(renamed[0], lastTask(renamed[0])) : null;
 }
 const lastTask = n =>
   [...tasks.values()]
@@ -666,6 +695,9 @@ const lastTask = n =>
 // ---------- Revive: the window reopens a conversation (a new pane with the CLI's resume, or a
 // restart in its own pane) ----------
 function revive(instanceId) {
+  // Already being revived: wait for that one and get the same panel back.
+  const underWay = revivesUnderWay.get(instanceId);
+  if (underWay) return underWay;
   const n = instances.get(instanceId);
   const state = n && availability(n);
   if (!n || (state !== 'hidden' && state !== 'stopped'))
@@ -674,7 +706,7 @@ function revive(instanceId) {
     // a closed pane Technically Not reopens is Technically Not's to close again; a restart in the
     // user's open pane is not
     reopened = !n.paneId;
-  return new Promise(resolve => {
+  const promise = new Promise(resolve => {
     const timer = setTimeout(() => {
       reviving.delete(requestId);
       resolve({ error: (n.name || n.agent) + ' did not become ready in time.' });
@@ -698,6 +730,11 @@ function revive(instanceId) {
       ownedByUser: n.ownedByUser,
     });
   });
+  revivesUnderWay.set(instanceId, promise);
+
+  // Answered or timed out: the next revive of this agent starts fresh.
+  promise.then(() => revivesUnderWay.delete(instanceId));
+  return promise;
 }
 
 // `tnai new` (agent-mesh.js): a fresh conversation in a new pane, owned by the user like the

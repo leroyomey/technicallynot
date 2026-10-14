@@ -203,9 +203,11 @@
 
     // The DOM renderer swapped in still redraws every row on each resize (xterm runs a paused
     // terminal's resize when idle), measuring each glyph at width 0 while hidden: it draws nothing
-    // until the terminal is shown again, and then only if no context is free.
+    // until the terminal is shown again, and then only if no context is free. Its own drawing
+    // (quietHiddenRows' wrapper) is kept to be put back, not deleted.
     const dom = rs?._renderer?.value;
-    if (dom && typeof dom.renderRows === 'function') dom.renderRows = () => {};
+    const ownDraw = dom?.renderRows;
+    if (dom && typeof ownDraw === 'function') dom.renderRows = () => {};
     const el = t.element;
     if (!el || t.tnaiDisposed) return;
     const ro = new (el.ownerDocument.defaultView || window).ResizeObserver(() => {
@@ -218,28 +220,63 @@
       useWebgl(t);
 
       // no context for it: it draws with the DOM renderer again
-      if (!t.tnaiWebglOff && dom) delete dom.renderRows;
+      if (!t.tnaiWebglOff && dom && typeof ownDraw === 'function') dom.renderRows = ownDraw;
       seen(true); // shown again before its observer saw it hidden, it would stay paused
     });
     ro.observe(el);
   }
 
-  // A not-running view (a saved or exited session: nothing draws in it) whose box stays hidden
-  // gives its context back, so 15 offline panels no longer hold all WEBGL_MAX and make every
-  // running terminal borrow. After GL_IDLE_MS, not as it hides: terminals giving contexts up on
-  // every page switch measured far slower (see lend). It takes one again when shown (giveUp's
-  // observer), like any terminal.
+  // Hidden terminals hold no GPU context (speed lead 6, 2026-10-14). Since the app is threads only,
+  // the agents' panels are never shown, and each one held a context that the first CLI screen
+  // opened then had to take back. A terminal opened out of sight takes none (openRenderer), and one
+  // whose box stays hidden (a parked CLI screen, Your terminal behind another tab) gives its
+  // context back after GL_IDLE_MS. Not the moment it hides: going back to a thread seen a moment
+  // ago would make a new context each time (terminals giving contexts up on every page switch
+  // measured far slower, see lend). It takes one again when shown (giveUp's observer). A hidden
+  // terminal draws nothing meanwhile (quietHiddenRows), so the DOM renderer costs it nothing.
   const GL_IDLE_MS = 20000;
 
-  function idleGl(view, shown) {
-    clearTimeout(view.glTimer);
-    view.glTimer = 0;
-    if (shown || view.running) return;
-    view.glTimer = setTimeout(() => {
-      view.glTimer = 0;
-      const t = view.term;
-      if (!view.running && t && !t.tnaiDisposed && t.tnaiWebglOff && boxHidden(t)) giveUp(t);
-    }, GL_IDLE_MS);
+  function giveUpWhenHidden(term) {
+    const el = term.element;
+    if (!el) return null;
+    let timer = 0;
+    const observer = new (el.ownerDocument.defaultView || window).ResizeObserver(() => {
+      clearTimeout(timer);
+      timer = 0;
+      if (!boxHidden(term)) return;
+      timer = setTimeout(() => {
+        timer = 0;
+        if (!term.tnaiDisposed && term.tnaiWebglOff && boxHidden(term)) giveUp(term);
+      }, GL_IDLE_MS);
+    });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      clearTimeout(timer);
+    };
+  }
+
+  // The renderer of a terminal being opened: a context now when its box is on screen, else when
+  // its box first gets a size.
+  function openRenderer(term) {
+    wrapDispose(term);
+    if (term.element && boxHidden(term)) retryWhenShown(term);
+    else useWebgl(term);
+  }
+
+  // A disposed terminal gives its context back and stops waiting for one.
+  function wrapDispose(term) {
+    if (term.tnaiDisposeWrapped) return;
+    term.tnaiDisposeWrapped = true;
+    const origDispose = term.dispose.bind(term);
+    term.dispose = () => {
+      term.tnaiDisposed = true;
+      webglWaiting.delete(term);
+      term.tnaiWebglRetry?.disconnect();
+      term.tnaiWebglRetry = null;
+      term.tnaiWebglOff?.();
+      origDispose();
+    };
   }
 
   // The flicker of terminal text while a window edge or a divider is dragged (found 2026-10-12).
@@ -266,16 +303,7 @@
   function useWebgl(term) {
     if (term.tnaiWebglOff || term.tnaiDisposed || !window.WebglAddon || window.__tnaiDomRenderer)
       return; // __tnaiDomRenderer: desktop tests (tools/desktop-check/run.js)
-    if (!term.tnaiDisposeWrapped) {
-      term.tnaiDisposeWrapped = true;
-      const origDispose = term.dispose.bind(term);
-      term.dispose = () => {
-        term.tnaiDisposed = true;
-        webglWaiting.delete(term);
-        term.tnaiWebglOff?.();
-        origDispose();
-      };
-    }
+    wrapDispose(term);
     if (webglCount >= WEBGL_MAX && !(term.element && !boxHidden(term) && lend(term))) {
       webglWaiting.add(term);
       retryWhenShown(term);
@@ -284,7 +312,8 @@
     webglWaiting.delete(term);
     let addon,
       counted = false,
-      gl = null;
+      gl = null,
+      stopHiddenWatch = null;
 
     // The addon's dispose leaves its GL context alive until garbage collection, so lending (dispose
     // + new) piled up live contexts until Chromium dropped the oldest, often a terminal on screen,
@@ -301,6 +330,8 @@
     // ones.
     const release = (upgrade = true) => {
       const freed = counted;
+      stopHiddenWatch?.();
+      stopHiddenWatch = null;
       if (counted) {
         counted = false;
         webglCount--;
@@ -338,6 +369,7 @@
       gl = addon._renderer?._gl || null; // addon-webgl 0.19 internals
       drawWithResize(term, addon._renderer);
       term.tnaiWebglOff = release;
+      stopHiddenWatch = giveUpWhenHidden(term);
     } catch {
       release();
     }
@@ -1211,7 +1243,7 @@
       origOpen(parent);
       quietSelection(term);
       quietHiddenRows(term);
-      useWebgl(term);
+      openRenderer(term);
       latestButton(term);
 
       // Ctrl+wheel over a terminal does nothing: no text zoom, no window zoom, no scrolling (xterm
@@ -3167,9 +3199,7 @@
 
     // Resized or shown again (window maximized, grid reflow, back on the Terminal page): refit, and
     // this pane drives the pty size, so the program never keeps drawing for a smaller box than the
-    // one on screen. Hidden panes keep their GPU context: giving it back switches them to the DOM
-    // renderer, which then measures every glyph in the 0×0 box and froze Terminal → Agents for 3–7
-    // s (agents-speed, stress-switch, 2026-09-25).
+    // one on screen. Its GPU context follows the box (giveUpWhenHidden, openRenderer).
     view.unwatch = watchFit(
       host,
       () => {
@@ -3179,7 +3209,6 @@
       shown => {
         view.boxShown = shown;
         if (!shown) view.wasHidden = true;
-        idleGl(view, shown);
       },
       () => !view.running
     );
@@ -3241,7 +3270,6 @@
         );
       paint(view);
       notify();
-      if (!view.running) idleGl(view, !!host.offsetParent);
 
       // A terminal built late is ready once its saved screen and the notes under it are written
       // (sayBelow writes from a write callback).
@@ -3347,7 +3375,6 @@
     if (!view) return;
     live.delete(paneId);
     view.unwatch?.();
-    clearTimeout(view.glTimer);
     view.term?.dispose();
     view.host.remove();
     view.pane.classList.remove('tnai-live');
@@ -3707,7 +3734,6 @@
     view.exitCode = exitCode;
     paint(view);
     notify();
-    if (view.boxShown !== true) idleGl(view, false); // ended while hidden
     if (wasLogin && view.accountId) {
       if (!exitCode) {
         say(view, 'Sign-in finished. Starting ' + view.agent + '…');

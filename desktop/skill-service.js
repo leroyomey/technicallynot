@@ -81,6 +81,26 @@ function writeAtomic(file, text) {
   fs.renameSync(temp, file);
 }
 
+// Puts a finished staging folder in the place of dest. The old dest is moved aside first and
+// deleted only after the swap, so a failed rename (a file held open on Windows) puts it back
+// instead of leaving no folder at all.
+function swapFolder(staging, dest) {
+  const aside = dest + '.old-' + process.pid;
+  fs.rmSync(aside, { recursive: true, force: true });
+  const had = fs.existsSync(dest);
+  let movedAside = false;
+  try {
+    if (had) fs.renameSync(dest, aside);
+    movedAside = had;
+    fs.renameSync(staging, dest);
+  } catch (error) {
+    if (movedAside) fs.renameSync(aside, dest);
+    fs.rmSync(staging, { recursive: true, force: true });
+    throw error;
+  }
+  if (had) fs.rmSync(aside, { recursive: true, force: true });
+}
+
 // ---- SKILL.md parsing ----
 // Claude Code needs `name` and `description` frontmatter; missing values are derived and reported
 // as warnings.
@@ -91,6 +111,17 @@ const slug = text =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 64);
+
+// A skill's folder id. A name with no Latin letters or digits (all Japanese, say) has an empty
+// slug; it gets a short hash of the name instead, so two such skills never share the id "skill" and
+// overwrite each other.
+const skillId = name => {
+  const fromName = slug(name);
+  if (fromName) return fromName;
+  const text = String(name || '').trim();
+  if (!text) return '';
+  return 'skill-' + crypto.createHash('sha1').update(text).digest('hex').slice(0, 8);
+};
 
 function parseSkill(text, hint) {
   const src = String(text || '').replace(/^﻿/, '');
@@ -150,7 +181,7 @@ function parseSkill(text, hint) {
     if (meta.name || match)
       warnings.push('No `description` in the frontmatter; used the first line of the skill.');
   }
-  const id = slug(name) || 'skill';
+  const id = skillId(name) || 'skill';
   return { id, name: name || id, description, body, hasFrontmatter: !!match, meta, warnings };
 }
 
@@ -264,8 +295,7 @@ function storeSkill(text, hint, sourceDir, record = {}) {
       ...record,
     })
   );
-  fs.rmSync(dest, { recursive: true, force: true });
-  fs.renameSync(staging, dest);
+  swapFolder(staging, dest);
   return {
     id: parsed.id,
     name: parsed.meta.name || parsed.name,
@@ -377,7 +407,7 @@ function saveAgentSkill(inputPath, cwd, projectRoot, { distinct = false } = {}) 
   // that one, not add a library copy that shadows it.
   const same = s =>
     s.path !== (dir && path.resolve(dir)) &&
-    (slug(s.name) === parsed.id || slug(path.basename(s.path)) === parsed.id);
+    (skillId(s.name) === parsed.id || slug(path.basename(s.path)) === parsed.id);
   const clash = [
     ...(projectRoot
       ? PROJECT_SKILL_DIRS.flatMap(rel => listDirSkills(path.join(projectRoot, rel), 'project', ''))
@@ -542,11 +572,11 @@ function overlapsFor(inputPath, cwd, root) {
 // `tnai skill remove NAME`: an agent removes a library skill a merge made redundant. Only
 // agent-written ones; the user removes their own.
 function removeAgentSkill(name) {
-  const want = slug(name);
+  const want = skillId(name);
   const hit =
     want &&
     listDirSkills(libraryDir(), 'imported', '').find(
-      s => path.basename(s.path) === want || slug(s.name) === want
+      s => path.basename(s.path) === want || skillId(s.name) === want
     );
   if (!hit)
     throw new Error(
@@ -673,8 +703,7 @@ function buildPlugin(agent, root = projectRoot()) {
     const src = skillSource(agent, id, root);
     if (hasSkill(src)) copyTree(src, path.join(staging, 'skills', path.basename(src)));
   }
-  fs.rmSync(dir, { recursive: true, force: true });
-  fs.renameSync(staging, dir);
+  swapFolder(staging, dir);
   return dir;
 }
 const pluginManifest = agent =>
@@ -711,6 +740,50 @@ async function copyTreeLater(src, dest) {
   }
 }
 
+// swapFolder with fs.promises.
+async function swapFolderLater(staging, dest) {
+  const aside = dest + '.old-' + process.pid;
+  await fsp.rm(aside, { recursive: true, force: true });
+  const had = fs.existsSync(dest);
+  let movedAside = false;
+  try {
+    if (had) await fsp.rename(dest, aside);
+    movedAside = had;
+    await fsp.rename(staging, dest);
+  } catch (error) {
+    if (movedAside) await fsp.rename(aside, dest);
+    await fsp.rm(staging, { recursive: true, force: true });
+    throw error;
+  }
+  if (had) await fsp.rm(aside, { recursive: true, force: true });
+}
+
+// The newest change anywhere in a skill folder (SKILL.md and its reference files) and how many
+// files it holds, so a cached copy is rebuilt when any of them changes, not only SKILL.md.
+async function folderStamp(dir) {
+  let newest = 0;
+  let count = 0;
+
+  async function walk(folder) {
+    let entries;
+    try {
+      entries = await fsp.readdir(folder, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const full = path.join(folder, e.name);
+      if (e.isDirectory()) await walk(full);
+      else if (e.isFile()) {
+        count++;
+        newest = Math.max(newest, mtimeOf(full));
+      }
+    }
+  }
+  await walk(dir);
+  return newest + '.' + count;
+}
+
 // buildPlugin for a panel start. Its own staging folder name: a build from the Skills page
 // (buildPlugin, not awaited) can run between two steps here.
 async function buildPluginLater(agent, root = projectRoot()) {
@@ -727,8 +800,7 @@ async function buildPluginLater(agent, root = projectRoot()) {
     const src = skillSource(agent, id, root);
     if (hasSkill(src)) await copyTreeLater(src, path.join(staging, 'skills', path.basename(src)));
   }
-  await fsp.rm(dir, { recursive: true, force: true });
-  await fsp.rename(staging, dir);
+  await swapFolderLater(staging, dir);
   return dir;
 }
 
@@ -1003,10 +1075,11 @@ function seedStarters() {
       } // the user's own skill by that name
       // up to date, or changed by the user
       else if (current === shipped || (meta.hash && meta.hash !== sha(current))) continue;
-      fs.rmSync(dest, { recursive: true, force: true });
-      copyTree(path.join(STARTER_DIR, id), dest);
+      const staging = dest + '.copying-' + process.pid;
+      fs.rmSync(staging, { recursive: true, force: true });
+      copyTree(path.join(STARTER_DIR, id), staging);
       fs.writeFileSync(
-        warningsFile(dest),
+        warningsFile(staging),
         JSON.stringify({
           warnings: [],
           importedAt: meta?.importedAt || Date.now(),
@@ -1015,6 +1088,7 @@ function seedStarters() {
           hash: sha(shipped),
         })
       );
+      swapFolder(staging, dest);
       if (fresh) {
         every.seeded.push(id);
         if (!every.on.includes(id)) every.on.push(id);
@@ -1167,9 +1241,11 @@ function syncHomeSkills({ add = false } = {}) {
   const root = homeSkillsDir(),
     { copies, on } = homeSkillsPlan(root, add);
   for (const c of copies) {
-    fs.rmSync(c.dest, { recursive: true, force: true });
-    copyTree(path.join(libraryDir(), c.id), c.dest);
-    fs.writeFileSync(path.join(c.dest, HOME_MARK), homeMarkText(c.hash));
+    const staging = c.dest + '.copying-' + process.pid;
+    fs.rmSync(staging, { recursive: true, force: true });
+    copyTree(path.join(libraryDir(), c.id), staging);
+    fs.writeFileSync(path.join(staging, HOME_MARK), homeMarkText(c.hash));
+    swapFolder(staging, c.dest);
   }
   for (const dir of homeSkillsGone(root, on)) fs.rmSync(dir, { recursive: true, force: true });
 }
@@ -1179,9 +1255,11 @@ async function syncHomeSkillsLater({ add = false } = {}) {
   const root = homeSkillsDir(),
     { copies, on } = homeSkillsPlan(root, add);
   for (const c of copies) {
-    await fsp.rm(c.dest, { recursive: true, force: true });
-    await copyTreeLater(path.join(libraryDir(), c.id), c.dest);
-    await fsp.writeFile(path.join(c.dest, HOME_MARK), homeMarkText(c.hash));
+    const staging = c.dest + '.copying-' + process.pid;
+    await fsp.rm(staging, { recursive: true, force: true });
+    await copyTreeLater(path.join(libraryDir(), c.id), staging);
+    await fsp.writeFile(path.join(staging, HOME_MARK), homeMarkText(c.hash));
+    await swapFolderLater(staging, c.dest);
   }
   for (const dir of homeSkillsGone(root, on)) await fsp.rm(dir, { recursive: true, force: true });
 }
@@ -1421,10 +1499,12 @@ async function buildEverywherePluginDir(configDir) {
           .filter(k => !own.has(k.id) && !ids.includes(k.id))
           .sort((a, b) => (a.id < b.id ? -1 : 1));
   if (!ids.length && !mine.length) return '';
-  const mineStamp = mine.map(k => k.id + ':' + mtimeOf(path.join(k.path, 'SKILL.md'))).join(',');
-  const libStamp = ids
-    .map(id => id + ':' + mtimeOf(path.join(libraryDir(), id, 'SKILL.md')))
-    .join(',');
+  const mineStamps = [];
+  for (const k of mine) mineStamps.push(k.id + ':' + (await folderStamp(k.path)));
+  const libStamps = [];
+  for (const id of ids) libStamps.push(id + ':' + (await folderStamp(path.join(libraryDir(), id))));
+  const mineStamp = mineStamps.join(',');
+  const libStamp = libStamps.join(',');
   const key = crypto
     .createHash('sha1')
     .update(libStamp + '|' + mineStamp)
@@ -1455,10 +1535,8 @@ async function buildEverywherePluginDir(configDir) {
   // A session still reading the previous copy can block the swap on Windows; that copy is then used
   // as is.
   try {
-    await fsp.rm(dir, { recursive: true, force: true });
-    await fsp.rename(staging, dir);
+    await swapFolderLater(staging, dir);
   } catch (error) {
-    await fsp.rm(staging, { recursive: true, force: true });
     if (!fs.existsSync(path.join(dir, '.claude-plugin', 'plugin.json'))) throw error;
   }
   everywherePlugins.set(key, true);

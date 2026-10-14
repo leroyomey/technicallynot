@@ -1279,7 +1279,27 @@ const item = (paneId, kind, detail) => ({
         },
         file: 'k',
         fs,
+        platform: 'win32',
       }).available() === false
+    );
+
+    // macOS: asking reads the keychain, which can block the start with a prompt; it is not asked.
+    let askedMac = 0;
+    const mac = storageBackend({
+      safeStorage: {
+        isEncryptionAvailable: () => {
+          askedMac++;
+          return true;
+        },
+      },
+      file: 'k',
+      fs,
+      platform: 'darwin',
+    });
+    check(
+      'safeStorage on macOS: available without asking the keychain',
+      mac.available() === true && askedMac === 0,
+      { askedMac }
     );
   }
 

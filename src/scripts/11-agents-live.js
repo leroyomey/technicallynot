@@ -2034,6 +2034,9 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
     tasks[paneId] = { text, at: Date.now(), to };
     saveTasks();
     schedule();
+
+    // the thread that got it goes to its newest line (122)
+    window.dispatchEvent(new CustomEvent('tnai:prompt-sent', { detail: { paneId } }));
   }
 
   function setTarget(paneId) {
@@ -2727,6 +2730,21 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
       }
       return;
     } // deploy: stopped @mentioned custom agents (50)
+
+    // A /compact typed for an idle agent (54): it writes down what must survive first, the command
+    // runs after that reply, and it gets the summary back once the compact is done. Not taken (a
+    // working agent, Summarize first off): the prompt goes as typed.
+    if (
+      r.kind === 'direct' &&
+      /^\/compact(\s|$)/i.test(full) &&
+      !files?.count() &&
+      window.TnaiContextUpkeep?.compactNow?.(r.chosen.paneId, full)
+    ) {
+      window.TnaiPromptRecall?.sent(text, full);
+      input.value = '';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    }
 
     // A busy lead + a prompt with nothing in common with its task (77): the user picks sub-agent /
     // new agent / send anyway; Cancel keeps the draft.

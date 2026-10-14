@@ -428,6 +428,8 @@
     window.TnaiFloat?.attach(anchor, pop, {
       placement: opener === footButton ? 'top-start' : 'bottom-end',
       offset: 6,
+      // the same 600 px cap as 40-thread-history.css: the placement's own height wins over CSS
+      maxHeight: 600,
     });
 
     // placed first, focused after, and never scrolling the page

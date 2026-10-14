@@ -121,6 +121,7 @@ function watchGitDir(dir) {
         .split(path.sep)
         .join('/');
       if (!/^(HEAD|index|packed-refs|refs\/.+|worktrees\/[^/]+\/(HEAD|index))$/.test(rel)) return;
+      forgetStatus();
       clearTimeout(timer);
       timer = setTimeout(() => send('git:changed', { at: Date.now() }), 60);
     });
@@ -232,6 +233,27 @@ async function status() {
   return result;
 }
 
+// The last status, kept until something it is made of changes: the repository's own files (the
+// git dir watcher above) or a file of the project (main.js tells, `changed`). Each ask used to
+// start git again, and starting a program on Windows took up to 1.4 s of the main process (stall
+// log). Asks that arrive together share one run; a run that failed is not kept.
+let lastStatus = null; // { root, answer: Promise }
+
+function forgetStatus() {
+  lastStatus = null;
+}
+
+function keptStatus() {
+  const here = root();
+  if (lastStatus && lastStatus.root === here) return lastStatus.answer;
+  const kept = { root: here, answer: status() };
+  lastStatus = kept;
+  kept.answer.catch(() => {
+    if (lastStatus === kept) lastStatus = null;
+  });
+  return kept.answer;
+}
+
 async function requireRepo() {
   const facts = await probe();
   if (!facts.available)
@@ -257,8 +279,12 @@ module.exports = {
   stop() {
     watchGitDir(null);
     clearTimeout(timer);
+    forgetStatus();
   },
-  status: wrap(status),
+  status: wrap(keptStatus),
+
+  // A file of the project changed (main.js, from watch-service): the next status asks git again.
+  changed: forgetStatus,
   // For worktree-service.js and agent-context.js: the same runner, folder and rules.
   // `watch` (the git dir watcher behind git:changed) is for remote-project.js, which needs a new
   // commit pushed while no page asked for status.

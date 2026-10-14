@@ -3,9 +3,10 @@
 // with a throwaway profile. With nothing running the list says so. Two real PowerShell panels show
 // as two thread rows with their device character, name and tool; rows share one size and one left
 // edge; a click and the arrow keys open and move; New thread is the prompt box's own switch; a
-// stopped session's character falls asleep. No agent CLI is started, so a working agent, "Needs
-// you" and sub-agent rows are not visited. Pictures: thread-list-empty, thread-list-rows. Returns
-// {ok, log}.
+// stopped session's character falls asleep; a row's ✕ shows on a real hover, closes a stopped
+// thread at once and asks first for a running one (Delete too). No agent CLI is started, so a
+// working agent, "Needs you" and sub-agent rows are not visited. Pictures: thread-list-empty,
+// thread-list-rows, thread-list-close. Returns {ok, log}.
 const log = [],
   wait = ms => new Promise(r => setTimeout(r, ms));
 let ok = true;
@@ -61,6 +62,22 @@ try {
   check(!!(await until(() => threads.visible(), 5000)), 'the thread layout is on and showing');
   const list = threads.slot('list');
   await until(() => list.querySelector('.tnt-lst'), 3000);
+
+  // ---- A0: the ground's drift holds still while the window is not in front ----
+  // A test window never takes focus, so it is the "not in front" case; taking the mark off for a
+  // moment shows the rule is what stops the drift.
+  {
+    const root = document.documentElement;
+    const drift = () => getComputedStyle(document.body, '::before').animationPlayState;
+    check(
+      !document.hasFocus() && root.classList.contains('tnai-away') && drift() === 'paused',
+      'with the window not in front the ground drift is paused (' + drift() + ')'
+    );
+    root.classList.remove('tnai-away');
+    const running = drift();
+    root.classList.add('tnai-away');
+    check(running === 'running', 'without the mark it drifts again (' + running + ')');
+  }
 
   // ---- A: nothing running ----
   const newButton = list.querySelector('.tnt-new');
@@ -251,6 +268,116 @@ try {
         (rowOf(second)?.dataset.tone || 'row gone') +
         ')'
     );
+
+    // ---- F: the row's ✕, with real pointer input ----
+    let inputId = 0;
+    const realInput = events =>
+      new Promise(resolve => {
+        const id = 'x' + ++inputId;
+        window.__tnaiInputDone = window.__tnaiInputDone || {};
+        window.__tnaiInputDone[id] = () => {
+          delete window.__tnaiInputDone[id];
+          resolve();
+        };
+        console.log('TNAI_INPUT:' + JSON.stringify({ id, events }));
+      });
+    const middle = el => {
+      const r = box(el);
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    };
+    const runningRow = rowOf(first);
+    const closeMark = runningRow?.querySelector('.tnt-th-x');
+    check(
+      !!closeMark && getComputedStyle(closeMark).opacity === '0',
+      'a row has a ✕ that is hidden at rest'
+    );
+    if (runningRow && closeMark) {
+      // A first move straight onto the row is not always taken as entering it: come in from
+      // beside it, as agent-graph does.
+      const rowMiddle = middle(runningRow);
+      await realInput([
+        { type: 'mouseMove', x: rowMiddle.x - 30, y: rowMiddle.y },
+        { type: 'mouseMove', ...rowMiddle },
+      ]);
+      await until(() => getComputedStyle(closeMark).opacity === '1', 2000);
+      const row = box(runningRow),
+        mark = box(closeMark),
+        icon = box(closeMark.querySelector('svg')),
+        name = box(runningRow.querySelector('b')),
+        line = box(runningRow.querySelector('.tnt-th-line'));
+      check(
+        getComputedStyle(closeMark).opacity === '1' &&
+          getComputedStyle(runningRow.querySelector('time')).visibility === 'hidden',
+        'on hover the ✕ shows and the time gives it its place (opacity ' +
+          getComputedStyle(closeMark).opacity +
+          ', time ' +
+          getComputedStyle(runningRow.querySelector('time')).visibility +
+          ', row hovered ' +
+          runningRow.matches(':hover') +
+          ')'
+      );
+      check(
+        mark.right <= row.right && near(mark.top + mark.height / 2, row.top + row.height / 2, 1),
+        'the ✕ sits inside the row, on its middle line (' +
+          n(row.right - mark.right) +
+          ' from its right edge)'
+      );
+      check(
+        name.right <= mark.left && line.right <= mark.left,
+        'neither the name nor the line under it runs under the ✕ (name ends ' +
+          n(mark.left - name.right) +
+          ', line ' +
+          n(mark.left - line.right) +
+          ' before it)'
+      );
+      check(
+        near(icon.left + icon.width / 2, mark.left + mark.width / 2, 1) &&
+          near(icon.top + icon.height / 2, mark.top + mark.height / 2, 1),
+        'the icon is centered in its box'
+      );
+      await shot('thread-list-close');
+
+      // A stopped thread closes at once.
+      const stoppedRow = rowOf(second);
+      if (stoppedRow) {
+        await realInput([{ type: 'mouseMove', ...middle(stoppedRow) }]);
+        const stoppedMark = stoppedRow.querySelector('.tnt-th-x');
+        await until(() => getComputedStyle(stoppedMark).opacity === '1', 2000);
+        const at = middle(stoppedMark);
+        await realInput([
+          { type: 'mouseMove', ...at },
+          { type: 'mouseDown', ...at },
+          { type: 'mouseUp', ...at },
+        ]);
+        check(
+          !!(await until(
+            () => !rowOf(second) && !agents.sessions().some(s => s.paneId === second),
+            5000
+          )),
+          'a press on the ✕ of a stopped thread closes it, with no question'
+        );
+      }
+
+      // A running thread asks first; Delete on the focused row is the keyboard's way.
+      runningRow.focus();
+      runningRow.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true })
+      );
+      const ask = await until(() => document.querySelector('.tnt-view .tnai-panel-confirm'), 3000);
+      check(
+        !!ask && /Close/.test(ask.textContent),
+        'Delete on a running thread asks first: "' +
+          (ask?.textContent.replace(/\s+/g, ' ').trim() || 'no question') +
+          '"'
+      );
+      ask?.querySelector('.tnai-ws-close-cancel')?.click();
+      await wait(300);
+      check(
+        !!rowOf(first) && agents.sessions().some(s => s.paneId === first && s.running),
+        'Cancel keeps the thread and its session running'
+      );
+      await realInput([{ type: 'mouseMove', x: 5, y: 5 }]);
+    }
   }
 } catch (error) {
   check(false, 'the test threw: ' + (error?.stack || error));

@@ -67,11 +67,9 @@ const RING_CONTRAST = 3;
 // Faults this test found and that are reported, not fixed: each is a color, and the change this
 // test came with was to change ring widths only. A line that begins like one of these is printed
 // as a known fault and does not fail the test; take the entry out when the fault is fixed.
-const KNOWN_FAULTS = [
-  // The accent picker draws a swatch's ring in the swatch's own color: a pale accent on the pale
-  // ground of Light stands under 3 to 1 (teal: 1.85 to 1, 2026-10-13).
-  'Light · Settings, General · input[radio] in .tnai-accent-options',
-];
+// (The Light teal swatch ring, 1.85 to 1, was one until 2026-10-14: 31 now draws it in the text
+// color.)
+const KNOWN_FAULTS = [];
 const TEXT_CONTRAST = 4.5;
 
 // Under the pointer a soft surface moves at least this many levels of 255 from rest (seen at a

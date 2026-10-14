@@ -405,7 +405,9 @@ module.exports = {
   // mid-save never leaves the user's file empty or half-written. A rename briefly refused by a sync
   // client or scanner (EPERM/EBUSY) is retried.
   write: wrap(async (rel, bytes, lane) => {
-    const full = inside(rel, lane),
+    // A symlinked file is saved at the file it points to (inside() checked that it is in the
+    // project); renaming over the link itself would replace the link with a plain file.
+    const full = real(inside(rel, lane)),
       temp = full + '.tnai-' + process.pid + '-' + Date.now() + '.tmp';
     await fs.writeFile(temp, Buffer.from(bytes));
     for (let attempt = 0; ; attempt++) {

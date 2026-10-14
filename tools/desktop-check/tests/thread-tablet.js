@@ -2,13 +2,13 @@
 // sized window and under touch, in the real app with a throwaway profile, the test's small
 // project folder and four real PowerShell threads (one of them the open one).
 // Checked here, at 1440, 1280, 1024, the smallest window and a low window, in these states: the
-// open thread, the side column, the three-dots menu, the thread list hidden, the All threads
-// page. In each state: the page does not scroll sideways, no part is wider than its
-// box, every control lies whole inside the window, nothing lies over a control and no two
-// controls lie over each other. Then with touch as the first way of pointing, at 1024 and the
-// smallest window: the same, and every control of the thread layout is at least 44 by 44.
-// Pictures: tablet-<look>-<size>-<state>, tablet-touch-<look>-<size>-<state>.
-// Returns {ok, log}.
+// open thread, the New thread start screen, the side column, the three-dots menu, the thread
+// list hidden, the All threads page. In each state: the page does not scroll sideways, no
+// part is wider than its box, every control lies whole inside the window, nothing lies over a
+// control and no two controls lie over each other. Then with touch as the first way of pointing, at
+// 1024 and the smallest window: the same, and every control of the thread layout is at least 44 by
+// 44. Pictures: tablet-<look>-<size>-<state>, tablet-touch-<look>-<size>-<state>. Returns {ok,
+// log}.
 const log = [],
   wait = ms => new Promise(r => setTimeout(r, ms));
 let ok = true;
@@ -71,7 +71,7 @@ const CONTROL =
 // text by design), the dots of the pages view (the arrows turn the page), the rest of the
 // All threads page's top row and the file rail's rows.
 const TOUCH_PARTS =
-  '.top .tnt-fold, .top .tnt-menu-btn, .tnt-lst, .tnt-head, .tnt-sidebox-head, .tnt-menu, .tpg-nav, .tnt-fold-preview, .composebox';
+  '.top .tnt-fold, .top .tnt-menu-btn, .tnt-lst, .tnt-head, .tnt-sidebox-head, .tnt-menu, .tpg-nav, .tnt-fold-preview, .composebox, .tnt-start';
 const TOUCH_SKIP = 'textarea, select, .attachment-list *';
 
 const name = el => {
@@ -258,6 +258,24 @@ const walk = async (tag, touch, pictures) => {
 
   await state('thread');
 
+  // the New thread start screen (140): its tools, This folder / Own worktree and Cancel
+  threads.slot('list').querySelector('.tnt-new')?.click();
+  await wait(450);
+
+  // the prompt box repaints its worktree label on a new size or New thread: unhidden again
+  // (see below), so the Where row is measured too
+  const label = document.getElementById('wtCompose')?.closest('label');
+  if (label) label.hidden = false;
+  window.TnaiThreadStart?.paint?.();
+  await wait(150);
+  check(
+    window.TnaiThreadStart?.shown?.() === true && shown(document.querySelector('.tnt-start-where')),
+    tag + ': New thread shows the start screen, with its Where row'
+  );
+  await state('start');
+  window.TnaiLiveTasks?.newAgent?.(false);
+  await wait(300);
+
   sideButton()?.click();
   await wait(450);
   check(shown(threads.slot('side')), tag + ': the side column opens');
@@ -332,8 +350,37 @@ const openThread = async (tool, options = {}) => {
     return { ok: false, error: error?.message || String(error) };
   }
 };
+
+// The window takes the size, or the size is one failure that says what the window was, instead
+// of a fault for every state measured on a page that kept its old size.
+const sized = async (width, height, tag) => {
+  const got = await main('size', width, height);
+  await wait(500);
+
+  // within 40 px: the smallest size lies near the window's own minimum
+  if (got && Math.abs(got[0] - width) <= 40 && Math.abs(got[1] - height) <= 40) return true;
+  check(
+    false,
+    tag +
+      ': the window did not take ' +
+      width +
+      ' by ' +
+      height +
+      ' (' +
+      (await main('state')) +
+      ')'
+  );
+  return false;
+};
+
+// The start screen's Where row shows only in a git project and the test project is none: the
+// prompt box's worktree label is unhidden for this test so the row is measured, then put back.
+const worktreeLabel = document.getElementById('wtCompose')?.closest('label');
+const worktreeWasHidden = !!worktreeLabel?.hidden;
+if (worktreeLabel) worktreeLabel.hidden = false;
 try {
   check(threads?.visible() === true && !!column, 'starts on Threads');
+  await main('awake');
   await agents.detect(true);
   for (let i = 0; i < 4; i++) await openThread('Terminal');
   check(
@@ -350,8 +397,7 @@ try {
     theme.set(look);
     await wait(400);
     for (const [width, height, label] of SIZES) {
-      await main('size', width, height);
-      await wait(500);
+      if (!(await sized(width, height, look + ' ' + label))) continue;
 
       // Dark carries the measurements at every size; Light is looked at in the pictures and
       // measured at the two tablet sizes.
@@ -375,8 +421,7 @@ try {
     for (const [width, height, label] of SIZES.filter(
       s => s[2] === '1024' || s[2] === 'smallest'
     )) {
-      await main('size', width, height);
-      await wait(500);
+      if (!(await sized(width, height, 'touch ' + look + ' ' + label))) continue;
       await walk('touch ' + look + ' ' + label, true, true);
     }
   }
@@ -384,5 +429,7 @@ try {
 } catch (error) {
   check(false, 'the test ran to its end: ' + (error && error.stack ? error.stack : error));
 }
+window.TnaiLiveTasks?.newAgent?.(false);
+if (worktreeLabel) worktreeLabel.hidden = worktreeWasHidden;
 theme?.set('dark');
 return { ok, log };

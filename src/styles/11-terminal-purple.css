@@ -97,6 +97,12 @@
   outline: var(--pg-ring) solid rgba(var(--pg-accent-rgb), 0.75);
   outline-offset: 2px;
 }
+/* In Dark the ring at 0.75 stood 2.99 to 1 beside the rename button: the full accent there. */
+html[data-theme='dark']:not(#pg)
+  .terminal-workspace-tab
+  > .terminal-workspace-rename:focus-visible {
+  outline-color: rgb(var(--pg-accent-rgb));
+}
 :root:not(#pg) .terminal-workspace-add:hover {
   border-color: var(--pg-accent);
   background: var(--pg-accent-soft);
@@ -572,7 +578,7 @@
   container: tnai-dg/size;
 }
 :root:not(#pg) .tnai-dg:hover {
-  background: var(--pg-panel);
+  background: var(--pg-panel-hover-soft);
 }
 :root:not(#pg) .tnai-dg:focus-visible {
   outline: var(--pg-ring) solid rgba(var(--pg-accent-rgb), 0.75);

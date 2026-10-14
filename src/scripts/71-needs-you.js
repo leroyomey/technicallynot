@@ -586,7 +586,7 @@
       if (why === 'busy' || why === 'queue')
         say(
           nameOf(paneId) +
-            ' is still working · your message waits in its queue (Details beside its thread: send now, edit or remove)'
+            ' is still working · your message waits at the end of its thread (send now, edit or remove)'
         );
       else notice = { type: 'held', paneId, heldId };
       paintNotice();

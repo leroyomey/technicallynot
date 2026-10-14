@@ -312,6 +312,52 @@ try {
     'and the session has it (' + sessionOf(first)?.name + ')'
   );
 
+  // ---- The pencil beside the name ----
+  const pencil = () => head().querySelector('.tnt-head-rename');
+  check(shown(pencil()), 'a pencil stands beside the name');
+  const nameBox = box(title()),
+    pencilBox = box(pencil()),
+    headHeight = box(head()).height;
+  const pencilGap = pencilBox.left - nameBox.right;
+  check(
+    pencilGap >= 2 && pencilGap <= 10,
+    'the pencil sits right after the name (' + pencilGap.toFixed(1) + ' px), not apart from it'
+  );
+  check(
+    Math.abs(pencilBox.top + pencilBox.height / 2 - (nameBox.top + nameBox.height / 2)) <= 1.5,
+    'the pencil shares the name’s center line'
+  );
+  const pencilIcon = box(pencil().querySelector('svg'));
+  check(
+    Math.abs(pencilIcon.left + pencilIcon.width / 2 - (pencilBox.left + pencilBox.width / 2)) <=
+      1 &&
+      Math.abs(pencilIcon.top + pencilIcon.height / 2 - (pencilBox.top + pencilBox.height / 2)) <=
+        1,
+    'the pencil icon is centered in its box'
+  );
+  pencil().click();
+  await wait(200);
+  check(
+    shown(field()) && !shown(title()) && !shown(pencil()) && document.activeElement === field(),
+    'the pencil puts a field where the name stood and steps aside'
+  );
+  check(
+    Math.abs(box(head()).height - headHeight) < 1,
+    'the top row keeps its height with the pencil and the field'
+  );
+  await shot('thread-pencil-field');
+  const byPencil = 'Pencil ' + String(Date.now()).slice(-5);
+  field().value = byPencil;
+  field().dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+  );
+  check(
+    !!(await until(() => !field() && title().textContent === byPencil, 5000)) &&
+      !!(await until(() => (listRow(first)?.textContent || '').includes(byPencil), 5000)),
+    'the pencil’s name is saved: top row and thread list read ' + title().textContent
+  );
+  check(shown(pencil()), 'and the pencil is back beside the new name');
+
   // ---- CLI screen and back ----
   if (withTalk) {
     button().click();
@@ -353,7 +399,7 @@ try {
         4000
       );
       check(
-        !!dialog && dialog.querySelector('h2').textContent === 'Team for ' + renamed,
+        !!dialog && dialog.querySelector('h2').textContent === 'Team for ' + byPencil,
         'Team opens the team box for this thread (' + dialog?.querySelector('h2').textContent + ')'
       );
       dialog?.querySelector('[data-choice="cancel"]').click();

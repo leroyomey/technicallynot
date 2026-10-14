@@ -37,7 +37,29 @@ const native = window.tnaiNative;
 const agents = window.TnaiAgents;
 const threads = window.TnaiThreads;
 const view = () => window.TnaiThreadView;
-const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
+
+// A window that draws no frames (covered or minimized) never answers requestAnimationFrame: the
+// wait is raced with a short timer so the test cannot stand still (it timed out at 405 s once).
+const frame = () =>
+  Promise.race([new Promise(resolve => requestAnimationFrame(resolve)), wait(150)]);
+
+// Is the page drawing? A real frame within 500 ms and the page visible.
+const drawing = async () => {
+  const start = performance.now();
+  const gotFrame = await Promise.race([
+    new Promise(resolve => requestAnimationFrame(() => resolve(true))),
+    wait(500).then(() => false),
+  ]);
+  return {
+    ok: gotFrame && document.visibilityState === 'visible',
+    text:
+      (gotFrame
+        ? 'a frame after ' + Math.round(performance.now() - start) + ' ms'
+        : 'no frame in 500 ms') +
+      ', page ' +
+      document.visibilityState,
+  };
+};
 
 const PANELS = 3;
 const ROUNDS = 150;
@@ -203,9 +225,26 @@ try {
       'a made-up conversation of ' + steps + ' steps stands for thread ' + (index + 1)
     );
   }
-  await main('size', 1920, 1040);
+
+  // The size must be taken and the page drawing, or every time below means nothing.
+  const got = await main('size', 1920, 1040);
   await wait(1200);
   log.push('note window ' + innerWidth + ' x ' + innerHeight + ', scale ' + devicePixelRatio);
+  const sized = got?.[0] === 1920 && got?.[1] === 1040;
+  const draws = await drawing();
+  if (!sized || !draws.ok) {
+    check(
+      false,
+      'the test window can be timed (size asked 1920 x 1040, got ' +
+        (got || []).join(' x ') +
+        '; ' +
+        draws.text +
+        '; window ' +
+        (await main('state').catch(() => '?')) +
+        '): nothing was timed'
+    );
+    throw new Error('the window cannot be timed');
+  }
 
   // starting a panel can leave another page in front
   threads.open();
@@ -317,7 +356,9 @@ try {
     say('a page change is over, fade and all', over);
   } else log.push('note the cross-fade did not run in this window: page changes were not timed');
 } catch (error) {
-  check(false, 'the test threw: ' + (error?.stack || error));
+  // the window check above already said why it stopped
+  if (error?.message !== 'the window cannot be timed')
+    check(false, 'the test threw: ' + (error?.stack || error));
 } finally {
   agents.sessions().forEach(session => agents.stop(session.paneId));
   await until(() => !agents.sessions().some(session => session.running), 15000);
