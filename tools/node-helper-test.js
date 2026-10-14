@@ -518,6 +518,9 @@ async function withShippedRuntime() {
   // No panel token and no port, so the script must behave as it does without the app.
   const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1', TNAI_NODE: 'C:\\nowhere\\old-app.exe' };
   delete env.TNAI_PANE_TOKEN;
+
+  // A test run inside a Technically Not panel inherits the panel's runtime; the old panel has none.
+  delete env.TNAI_RUNTIME;
   delete env.TNAI_MESH_PORT;
   env.TNAI_SHIM = shimScript;
   const pathKey = Object.keys(env).find(key => key.toLowerCase() === 'path') || 'PATH';

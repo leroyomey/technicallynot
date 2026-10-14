@@ -1,14 +1,14 @@
 name: Release
 
-# Push a tag vX.Y.Z that matches "version" in package.json. Windows and Linux are built side by
-# side, then one job publishes every installer and update file (latest.yml, latest-linux.yml,
-# latest-linux-arm64.yml) as a release of THIS repository. Installed copies read their updates
-# from the newest release here: the build writes this repository's name into the app
-# (package.json "tnaiPublicRepo"), so a fork that runs this workflow updates from the fork.
+# Push a tag vX.Y.Z that matches "version" in package.json. Windows, Linux and the Mac are built
+# side by side, then one job publishes every installer and update file (latest.yml,
+# latest-linux.yml, latest-linux-arm64.yml) as a release of THIS repository. Installed copies read
+# their updates from the newest release here: the build writes this repository's name into the
+# app (package.json "tnaiPublicRepo"), so a fork that runs this workflow updates from the fork.
 #
 # It needs no secret: publishing uses the token GitHub gives every run. The installers are not
-# code-signed. macOS is not built here: a Mac app can update itself only when it is signed and
-# notarized with an Apple developer account.
+# code-signed. The Mac app is a download only, with no update file: a Mac app can update itself
+# only when it is signed and notarized with an Apple developer account.
 #
 # The text of the release ("What's new" in the app) is the message of the annotated tag:
 #   git tag -a v1.2.3 -m "New: ..."   then   git push origin v1.2.3
@@ -208,22 +208,180 @@ jobs:
             dist/TechnicallyNot.ai-linux-*.deb
             dist/latest-linux*.yml
 
+  # The speech engine must be compiled on the chip it runs on, so the Intel Mac copy is built on
+  # an Intel machine and handed to the Mac job. Without it the Intel Mac app has no voice prompts.
+  mac-whisper-x64:
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # tar keeps the execute bits that an uploaded artifact would lose.
+      - name: Build the speech engine (Intel)
+        run: |
+          bash tools/build-whisper.sh
+          tar -C build-resources/whisper -czf whisper-mac-x64.tgz mac-x64
+
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          retention-days: 1
+          name: whisper-mac-x64
+          path: whisper-mac-x64.tgz
+          if-no-files-found: ignore
+
+  # The Mac app, for Apple Silicon and Intel, built on one Apple Silicon machine. It is NOT signed
+  # by Apple (that needs a paid Apple developer account): it carries only the "ad-hoc" signature
+  # Apple Silicon needs to run it at all, so macOS asks the user to allow it on first start, and
+  # it cannot update itself. The build marks itself ("tnaiMacUnsigned"), so the app says so in
+  # Settings instead of checking for updates. A failed Mac build only leaves the Mac out.
+  mac:
+    needs: mac-whisper-x64
+    if: always()
+    runs-on: macos-14
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      # node-pty's spawn-helper must stay executable inside the app, or no terminal can start.
+      - name: Install
+        run: |
+          npm ci
+          node node_modules/electron/install.js
+          chmod 755 node_modules/node-pty/prebuilds/darwin-*/spawn-helper
+
+      - name: Version
+        id: version
+        run: |
+          V=$(node -p "require('./package.json').version")
+          if [ "$GITHUB_REF_NAME" != "v$V" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $V"
+            exit 1
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "build=$(node -p "require('./package.json').tnaiBuild")" >> "$GITHUB_OUTPUT"
+
+      - name: Syntax and references
+        run: npm run check
+
+      - name: Window test from source (a terminal panel echoes through the login shell)
+        timeout-minutes: 10
+        run: node tools/desktop-check/check.js shell-echo
+
+      - uses: actions/download-artifact@v8.0.2
+        continue-on-error: true
+        with:
+          name: whisper-mac-x64
+
+      - name: Build the speech engine (Apple Silicon) and unpack the Intel one
+        run: |
+          bash tools/build-whisper.sh
+          if [ -f whisper-mac-x64.tgz ]; then
+            tar -C build-resources/whisper -xzf whisper-mac-x64.tgz
+          else
+            echo "::warning::No Intel speech engine; the Intel Mac app ships without voice prompts."
+          fi
+
+      - name: Release mark and open-source notices
+        run: node tools/prebuild.js
+
+      # Both Mac apps are made on this machine, so both runtimes are fetched here.
+      - name: Node runtime for the app (checked against its SHA-256, Intel and Apple Silicon)
+        run: node tools/fetch-node-runtime.js mac-x64 mac-arm64
+
+      # identity "-" is the ad-hoc signature; no signing certificate is looked for.
+      - name: Build the dmg, Intel and Apple Silicon (unsigned)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          npx electron-builder --mac dmg zip --x64 --arm64 --publish never \
+            "-c.mac.identity=-" "-c.mac.notarize=false" \
+            "-c.extraMetadata.tnaiPublicRepo=$GITHUB_REPOSITORY" \
+            "-c.extraMetadata.tnaiMacUnsigned=true" \
+            "-c.releaseInfo.releaseName=Technically Not ${{ steps.version.outputs.version }} build ${{ steps.version.outputs.build }}"
+
+      - name: Package check (no development files, maps or keys inside)
+        run: |
+          node tools/check-package.js dist/mac-arm64
+          node tools/check-package.js dist/mac
+
+      - name: The built app starts (a terminal panel echoes)
+        timeout-minutes: 10
+        run: node tools/desktop-check/packaged-check.mjs --exe "dist/mac-arm64/TechnicallyNot.ai.app/Contents/MacOS/TechnicallyNot.ai"
+
+      # The zip is only for the Intel check below; the release gets the dmg. No latest-mac.yml:
+      # an unsigned Mac app cannot update itself, so no update file may point at it.
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          retention-days: 1
+          name: mac-unsigned
+          if-no-files-found: error
+          path: |
+            dist/TechnicallyNot.ai-mac-*.dmg
+            dist/TechnicallyNot.ai-mac-*.zip
+
+  # The Intel app, unpacked from its zip and started on an Intel machine. The publish job reads
+  # "ok": anything but true leaves the Intel Mac download out of the release.
+  mac-x64-check:
+    needs: mac
+    if: always()
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    continue-on-error: true
+    outputs:
+      ok: ${{ steps.start.outcome == 'success' }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: mac-unsigned
+          path: mac
+
+      # continue-on-error: the job must end normally, so its "ok" reaches the publish job.
+      - name: The built Intel app starts (a terminal panel echoes)
+        id: start
+        continue-on-error: true
+        timeout-minutes: 10
+        run: |
+          ZIP=$(ls mac/TechnicallyNot.ai-mac-x64-*.zip | head -1)
+          ditto -x -k "$ZIP" app
+          node tools/desktop-check/packaged-check.mjs --exe "app/TechnicallyNot.ai.app/Contents/MacOS/TechnicallyNot.ai"
+
   publish:
-    needs: [windows, linux]
-    # Windows must have built; Linux joins when its jobs produced files.
+    needs: [windows, linux, mac, mac-x64-check]
+    # Windows must have built; Linux and the Mac join when their jobs produced files.
     if: always() && needs.windows.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: write
     env:
       V: ${{ needs.windows.outputs.version }}
       BUILD: ${{ needs.windows.outputs.build }}
+      MAC_X64_OK: ${{ needs.mac-x64-check.outputs.ok }}
     steps:
       - uses: actions/download-artifact@v8.0.2
         with:
           pattern: release-*
           merge-multiple: true
+          path: out
+
+      # The Mac files, when the Mac job made them. Only the dmg is published.
+      - uses: actions/download-artifact@v8.0.2
+        continue-on-error: true
+        with:
+          name: mac-unsigned
           path: out
 
       # A draft first, so no update file points at a release whose installers are still being
@@ -234,11 +392,16 @@ jobs:
         run: |
           cd out
           mv release-notes.md ../release-notes.md
+          if [ "$MAC_X64_OK" != "true" ]; then
+            echo "::warning::The Intel Mac app did not start in its check: the Intel Mac download is left out."
+            rm -f TechnicallyNot.ai-mac-x64-*
+          fi
           FILES=(TechnicallyNot.ai-Setup-$V.exe TechnicallyNot.ai-Setup-$V.exe.blockmap latest.yml)
-          for f in TechnicallyNot.ai-linux-* latest-linux*.yml; do
+          for f in TechnicallyNot.ai-linux-* latest-linux*.yml TechnicallyNot.ai-mac-*.dmg; do
             [ -f "$f" ] && FILES+=("$f")
           done
           ls -l "${FILES[@]}"
+          ls TechnicallyNot.ai-mac-*.dmg >/dev/null 2>&1 || echo "::warning::No Mac download in this release."
           [ -f latest-linux.yml ] || echo "::warning::No Linux x64 build in this release."
           [ -f latest-linux-arm64.yml ] || echo "::warning::No Linux arm64 build in this release."
           gh release create "v$V" "${FILES[@]}" \

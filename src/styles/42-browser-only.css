@@ -1,0 +1,100 @@
+/* Technically Not · 42-browser-only.css — the page a plain browser shows in place of the app
+   (148-browser-only.js). Colors are the thread look's tokens (31-thread-pages.css, html.tnt-on), so
+   it follows Dark, Light and the accent. One ground for the whole window, one soft card on it. */
+
+.browser-only {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  overflow: auto;
+  background: var(--pg-bg-l);
+  color: var(--pg-text);
+  font-family: inherit;
+}
+
+html[data-theme='dark'] .browser-only {
+  background: var(--pg-bg-d);
+}
+
+.browser-only-card {
+  width: min(460px, 100%);
+  padding: 32px 28px;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r);
+  background: var(--pg-panel);
+  text-align: center;
+}
+
+/* the logo that reads on the current ground: the light picture on Dark, the dark one on Light */
+.browser-only-logo {
+  height: 22px;
+  width: auto;
+  margin: 0 auto 22px;
+}
+
+.browser-only-logo.on-dark,
+html[data-theme='dark'] .browser-only-logo.on-light {
+  display: none;
+}
+
+html[data-theme='dark'] .browser-only-logo.on-dark {
+  display: block;
+}
+
+.browser-only h1 {
+  margin: 0 0 10px;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.browser-only p {
+  margin: 0;
+  color: var(--pg-text-2);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.browser-only .browser-only-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 12px 18px;
+  margin-top: 22px;
+}
+
+/* the main action, drawn like the prompt box's Send button (27-thread-frame.css) */
+.browser-only-get {
+  padding: 9px 20px;
+  border-radius: var(--pg-r-sm);
+  background: var(--tnt-send);
+  color: var(--tnt-on-send);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.browser-only-link {
+  color: var(--pg-text-2);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.browser-only-get:hover,
+.browser-only-link:hover {
+  filter: brightness(1.08);
+}
+
+.browser-only-get:active,
+.browser-only-link:active {
+  filter: brightness(0.94);
+}
+
+.browser-only-get:focus-visible,
+.browser-only-link:focus-visible {
+  outline: 2px solid rgb(var(--pg-acc));
+  outline-offset: 3px;
+}

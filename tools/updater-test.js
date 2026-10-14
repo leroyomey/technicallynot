@@ -186,6 +186,59 @@ async function run() {
     check('install is refused', updater.install() === false);
   }
 
+  // ---- an unsigned Mac build: it says where new versions are, and asks nothing ----
+  {
+    const realPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    try {
+      for (const flag of [true, 'true']) {
+        const { updater, states, fake } = startUpdater({
+          tnaiPublicRepo: 'some-owner/some-repo',
+          tnaiMacUnsigned: flag,
+        });
+        const state = updater.state();
+        check(
+          'unsigned Mac (' + JSON.stringify(flag) + '): the state is "manual"',
+          state.status === 'manual',
+          state
+        );
+        check('and it names the releases page', /releases page/i.test(state.message || ''));
+        check(
+          'and it keeps the releases page for the link',
+          state.releasesUrl === 'https://github.com/some-owner/some-repo/releases',
+          state.releasesUrl
+        );
+        updater.check();
+        updater.download();
+        await settle();
+        check(
+          'the update library is not loaded and nothing is requested',
+          !world.asked.includes('electron-updater') &&
+            fake.calls.length === 0 &&
+            states.length === 1 &&
+            fetched === 0,
+          { asked: world.asked, calls: fake.calls, states: states.length, fetched }
+        );
+      }
+      const signed = startUpdater({ tnaiPublicRepo: 'some-owner/some-repo' });
+      await settle();
+      check(
+        'a signed Mac build still checks',
+        signed.updater.state().status !== 'manual' && signed.fake.calls.includes('check'),
+        signed.updater.state()
+      );
+    } finally {
+      Object.defineProperty(process, 'platform', realPlatform);
+    }
+    const windows = startUpdater({ tnaiPublicRepo: 'some-owner/some-repo', tnaiMacUnsigned: true });
+    await settle();
+    check(
+      'the Mac mark changes nothing on Windows',
+      windows.updater.state().status !== 'manual',
+      windows.updater.state()
+    );
+  }
+
   // ---- a repository set: the feed, for everyone, with nothing of the app sent along ----
   {
     const { updater, states, fake } = startUpdater({ tnaiPublicRepo: 'some-owner/some-repo' });

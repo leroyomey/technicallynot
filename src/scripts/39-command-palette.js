@@ -143,7 +143,7 @@
     if (usable(document.querySelector('#send')))
       act('Focus the composer', () => document.getElementById('prompt')?.focus());
     const up = window.TnaiUpdates?.state?.();
-    if (up && !['unconfigured', 'dev', 'off'].includes(up.status))
+    if (up && !['unconfigured', 'dev', 'off', 'manual'].includes(up.status))
       act(up.status === 'ready' ? 'Restart to update Technically Not' : 'Check for updates', () =>
         up.status === 'ready' ? window.TnaiUpdates.confirmRestart() : window.TnaiUpdates?.checkNow()
       );

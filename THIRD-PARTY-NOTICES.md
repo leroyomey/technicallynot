@@ -86,6 +86,7 @@ Used only to build, format and test (274 packages, none of them inside the insta
 | uPlot | `src/vendor/uplot/` | MIT | `src/vendor/uplot/LICENSE` |
 | Parts of D3 (scale, shape, path, array, interpolate, color, format, time, time-format) and internmap | `src/vendor/d3/` | ISC | `src/vendor/d3/LICENSE-*.txt` |
 | jsQR | `phone/app/vendor/` | Apache-2.0 | `phone/app/vendor/jsqr-LICENSE.txt` |
+| highlight.js (code colors in the file viewer and threads) | `src/vendor/highlight/` | BSD-3-Clause | `src/vendor/highlight/LICENSE.txt` |
 | QR Code Generator for JavaScript | `tools/phone-pair-try/vendor/qrcode.js` | MIT | the header of that file |
 
 The relay in `relay/` and the phone page in `phone/` use no npm packages.

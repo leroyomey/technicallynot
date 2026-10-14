@@ -23,7 +23,11 @@ const load = Module._load;
 Module._load = (req, ...rest) =>
   req === 'electron'
     ? {
-        app: { getPath: () => path.join(tmp, 'user'), whenReady: () => new Promise(() => {}) },
+        app: {
+          getPath: () => path.join(tmp, 'user'),
+          whenReady: () => new Promise(() => {}),
+          on: () => {},
+        },
         shell: { openPath: async () => '' },
         dialog: {},
       }

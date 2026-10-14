@@ -1,12 +1,14 @@
 {
   "name": "tnai",
   "productName": "TechnicallyNot.ai",
-  "version": "0.3.70",
-  "tnaiBuild": 76,
+  "version": "0.3.71",
+  "tnaiBuild": 77,
   "tnaiPublicRepo": "",
   "tnaiAccountsUrl": "",
   "tnaiEnforcePlan": false,
-  "description": "Technically Not visual AI software-building workspace (Windows desktop app).",
+  "description": "Technically Not: a free, open-source visual AI software-building workspace (Windows desktop app).",
+  "license": "MIT",
+  "homepage": "https://github.com/leroyomey/technicallynot",
   "author": {
     "name": "Technically Not LLC",
     "email": "support@technicallynot.ai"
@@ -97,6 +99,9 @@
       "artifactName": "${productName}-mac-${arch}-${version}.${ext}",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
+      "signIgnore": [
+        "Contents/Resources/node/node$"
+      ],
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "minimumSystemVersion": "12.0",
@@ -135,8 +140,8 @@
       "executableName": "technicallynot",
       "maintainer": "Technically Not <support@technicallynot.ai>",
       "vendor": "Technically Not LLC",
-      "synopsis": "Visual AI software-building workspace",
-      "description": "Technically Not: a visual AI software-building workspace with agent terminals, files and live preview.",
+      "synopsis": "Open-source visual AI software-building workspace",
+      "description": "Technically Not: a free, open-source (MIT) visual AI software-building workspace with agent threads, files and live preview.",
       "artifactName": "${productName}-linux-${arch}-${version}.${ext}",
       "extraResources": [
         {

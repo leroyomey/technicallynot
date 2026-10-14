@@ -22,7 +22,7 @@
       const name =
         'Technically Not ' + s.next + (s.nextBuild ? ' (build ' + s.nextBuild + ')' : '');
       if (!['available', 'downloading', 'ready'].includes(s.status)) {
-        if (['current', 'unconfigured', 'dev', 'off'].includes(s.status))
+        if (['current', 'unconfigured', 'dev', 'off', 'manual'].includes(s.status))
           bell.unnotify('tnai-update');
         return;
       }

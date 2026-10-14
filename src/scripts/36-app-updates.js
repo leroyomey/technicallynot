@@ -32,9 +32,11 @@
   });
   const name = s =>
     'Technically Not ' + s.next + (s.nextBuild ? ' (build ' + s.nextBuild + ')' : '');
-  const notSetUp = s => ['unconfigured', 'dev', 'off'].includes(s.status);
+  const notSetUp = s => ['unconfigured', 'dev', 'off', 'manual'].includes(s.status);
   const describe = s =>
     ({
+      manual:
+        'This Mac version cannot update itself yet: it is not signed by Apple. Download new versions from the releases page on GitHub.',
       unconfigured:
         'Automatic updates are not set up yet. Once a release feed is configured, Technically Not checks for new versions and offers to install them.',
       dev: 'This copy runs from source, so it updates when the project files change. Automatic updates apply to the installed app.',
@@ -84,7 +86,7 @@
         ) +
         '</div><p class="set-foot">Updates are verified before they install. Nothing installs while Technically Not is running unless you choose Restart to update.</p>' +
         (window.tnaiNative?.openNotices
-          ? '<p class="set-foot">© 2026 Technically Not LLC. Technically Not uses open-source software by others. <a href="#" data-update="notices">Open-source notices</a></p>'
+          ? '<p class="set-foot">© 2026 Technically Not LLC. Technically Not is open source under the MIT licence and uses open-source software by others. <a href="#" data-update="notices">Open-source notices</a></p>'
           : '') +
         '</section></div>';
       mount.addEventListener('click', e => {
@@ -120,9 +122,11 @@
     check.textContent =
       state.status === 'checking'
         ? 'Checking for updates…'
-        : notSetUp(state)
-          ? 'Updates not set up'
-          : 'Check for updates';
+        : state.status === 'manual'
+          ? 'Updates by download only'
+          : notSetUp(state)
+            ? 'Updates not set up'
+            : 'Check for updates';
     check.title = check.disabled && notSetUp(state) ? describe(state) : '';
     mount.querySelector('[data-update="notes"]').hidden = !offered || !state.notes;
     const restart = mount.querySelector('[data-update="restart"]');

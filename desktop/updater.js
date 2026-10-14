@@ -26,6 +26,17 @@ function publicRepo() {
   return /^[\w.-]+\/[\w.-]+$/.test(value) ? value : '';
 }
 
+// True in a Mac build made without an Apple signature: the release workflow writes
+// "tnaiMacUnsigned": true into its package.json. Such a build only updates by a new download.
+function macUnsigned() {
+  try {
+    // The build's command line may hand the value over as the text "true".
+    return String(require('../package.json').tnaiMacUnsigned) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 // The folder electron-updater reads latest.yml and the installer from: the files of the newest
 // release of that repository.
 function feedOfRepo(repo) {
@@ -170,6 +181,16 @@ function init(push) {
   send = push;
   loadPrefs();
   feed = feedUrl();
+
+  // An unsigned Mac build (the release workflow sets package.json "tnaiMacUnsigned") cannot
+  // replace itself: macOS only lets a signed app install its own update. Its release carries no
+  // Mac update file, so a check could only fail; it says once where new versions are instead.
+  if (process.platform === 'darwin' && macUnsigned())
+    return set({
+      status: 'manual',
+      message:
+        'This Mac version cannot update itself yet. Download new versions from the releases page.',
+    });
 
   // No public repository set: there is nowhere to look. Said once, as a state; nothing is
   // requested, no timer runs and no error is shown.

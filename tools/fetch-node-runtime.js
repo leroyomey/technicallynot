@@ -42,6 +42,9 @@ const NODE_VERSION = '24.21.0';
 //     verified archive was unpacked (runtime.json) says what the program must hash to. That note
 //     lies beside the program, so on Mac and Linux a swap of both is not caught; the fetch runs on
 //     the machine that builds for that platform, right before the build.
+//     On Mac the build must not sign the program again: signing rewrites its bytes, so it no
+//     longer hashes to the note and the package check fails. package.json's mac.signIgnore
+//     leaves it with the Apple signature Node's own release gave it.
 // For a new NODE_VERSION: open SHASUMS256.txt of that release, copy its five values into
 // publishedSha256, and set win-x64's programSha256 to the same value as its publishedSha256.
 const TARGETS = {
