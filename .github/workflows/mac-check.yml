@@ -1,0 +1,54 @@
+name: Mac check
+
+# Started by hand (Actions, "Mac check", Run workflow). Builds the Mac app for Apple Silicon from
+# the branch it is run on, without signing and without publishing anything, then starts it and
+# checks that it opens its window and a terminal. When it does not, the check prints where the app
+# is stuck. It exists to fix the Mac start without making a release each time.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mac:
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      # node-pty's spawn-helper must stay executable inside the app, or no terminal can start.
+      - name: Install
+        run: |
+          npm ci
+          node node_modules/electron/install.js
+          chmod 755 node_modules/node-pty/prebuilds/darwin-*/spawn-helper
+
+      - name: Release mark and open-source notices
+        run: node tools/prebuild.js
+
+      - name: Node runtime for the app (checked against its SHA-256)
+        run: node tools/fetch-node-runtime.js mac-arm64
+
+      # The app folder only (no dmg): it is all the start check needs.
+      - name: Build the app (unsigned)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          npx electron-builder --mac dir --arm64 --publish never \
+            "-c.mac.identity=-" "-c.mac.notarize=false" \
+            "-c.extraMetadata.tnaiPublicRepo=$GITHUB_REPOSITORY" \
+            "-c.extraMetadata.tnaiMacUnsigned=true"
+
+      - name: Package check (no development files, maps or keys inside)
+        run: node tools/check-package.js dist/mac-arm64
+
+      - name: The built app starts (a terminal panel echoes)
+        timeout-minutes: 10
+        run: node tools/desktop-check/packaged-check.mjs --exe "dist/mac-arm64/TechnicallyNot.ai.app/Contents/MacOS/TechnicallyNot.ai"

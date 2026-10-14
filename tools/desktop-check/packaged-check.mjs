@@ -7,7 +7,7 @@
  * macOS/Linux): node packaged-check.mjs --exe <app executable> [--no-sandbox] — launches it itself
  * with a throwaway profile and a free port, then stops it.
  */
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -30,10 +30,15 @@ if (exeAt >= 0) {
 
   // Linux CI only: an unpacked build's chrome-sandbox isn't setuid there
   const extra = argv.includes('--no-sandbox') ? ['--no-sandbox'] : [];
+
+  // macOS: Electron's own log goes to the job's output too, so a start that stops before the window
+  // says where (0.3.65 and 0.3.71: the Mac app opened no page and printed nothing).
+  const env =
+    process.platform === 'darwin' ? { ...process.env, ELECTRON_ENABLE_LOGGING: '1' } : process.env;
   app = spawn(
     argv[exeAt + 1],
     [`--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, ...extra],
-    { stdio: ['ignore', 'inherit', 'inherit'] }
+    { stdio: ['ignore', 'inherit', 'inherit'], env }
   );
   app.on('exit', code => console.log('app exited with ' + code));
 }
@@ -56,6 +61,25 @@ const finish = code => {
   }, 500);
 };
 
+// macOS only: when the app never opens its page, print where its main thread is stuck. `sample` is
+// part of macOS; three seconds of it name the function the start waits in.
+function printMainThread() {
+  if (process.platform !== 'darwin' || !app?.pid) return;
+  try {
+    const report = execFileSync('sample', [String(app.pid), '3'], {
+      encoding: 'utf8',
+      timeout: 30000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const start = report.indexOf('Call graph:');
+    const lines = report.slice(start >= 0 ? start : 0).split('\n');
+    console.error('Where the app is stuck (sample of its main process, first 120 lines):');
+    console.error(lines.slice(0, 120).join('\n'));
+  } catch (error) {
+    console.error('sample did not run: ' + String(error?.message || error).split('\n')[0]);
+  }
+}
+
 let targets = [];
 for (let i = 0; i < 60; i++) {
   try {
@@ -69,6 +93,7 @@ for (let i = 0; i < 60; i++) {
 const page = targets.find(t => t.type === 'page');
 if (!page) {
   console.error('FAIL: the app opened no page on DevTools port ' + port);
+  printMainThread();
   finish(1);
   await wait(2000);
 }
