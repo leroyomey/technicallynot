@@ -39,6 +39,14 @@ jobs:
           node node_modules/electron/install.js
           chmod 755 node_modules/node-pty/prebuilds/darwin-*/spawn-helper
 
+      # A release first runs the app from source in a window test; it may leave something behind.
+      - name: Window test from source (as a release does)
+        if: inputs.both_chips
+        timeout-minutes: 10
+        run: |
+          npm run check
+          node tools/desktop-check/check.js shell-echo
+
       # A release builds the voice engine into the app; the first run without it started fine, so
       # this is the step to try when the start hangs.
       - name: Build the voice engine (Apple Silicon)
