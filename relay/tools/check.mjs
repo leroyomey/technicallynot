@@ -2,7 +2,7 @@
 //   npm run check -- https://your-relay.example.workers.dev
 // It reads the secret from the file `npm run setup-secret` saved (never from the command line and
 // never printed), connects two made-up devices, passes one message between them and prints what
-// worked. It changes nothing on the relay beyond two device records that are forgotten later.
+// worked. At its end it removes the two made-up devices again, so nothing is left on the relay.
 import { createHmac, randomBytes } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -128,6 +128,17 @@ try {
 
   a.socket.close();
   b.socket.close();
+  await wait(1500);
+
+  // Clean up: each made-up device removes its own record, so the Devices page of the user's
+  // computers does not list "Computer · check-…" afterwards.
+  for (const device of [deviceA, deviceB]) {
+    const removed = await fetch(address + '/remote/forget?d=' + device, {
+      method: 'POST',
+      headers: proof('forget:' + device, device),
+    });
+    check('the made-up device ' + device + ' is removed again', removed.status === 200);
+  }
 } catch (error) {
   check('the check ran to its end', false, error.message);
 }

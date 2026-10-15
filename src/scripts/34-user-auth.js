@@ -1,16 +1,13 @@
-// Technically Not · 34-user-auth.js — The Technically Not account and the plan lock. Top-bar
-// account control (Sign in / avatar + menu: account, plan line such as "Pro" or "No active
-// subscription", Subscribe or Manage subscription, Check subscription, Sign out), the sign-in
-// dialog (Continue with Google or GitHub in the browser, or email + password with an authenticator
-// code when the account has one; which installed browser opens Google/GitHub (Windows, remembered
-// per viewer; Default browser otherwise), waiting-for-browser with Copy sign-in link, errors; over
-// the account's computer limit, a list of its computers with Sign out and continue on each), and
-// the full-window lock shown while the desktop process says the app is locked (signed out, no
-// subscription, plan not confirmed): Sign in, Subscribe, Check again, Sign out. The desktop process
-// (desktop/user-auth.js) talks to the accounts server, verifies the signed plan pass and refuses
-// new panels while locked; this file only sees public state. In a browser, sign-in is shown as
-// unavailable and nothing locks. window.TnaiAuth { session, state, onChange, signIn, signInEmail,
-// signOut, cancel, check, open, openSite, replaceDevice, ready }.
+// Technically Not · 34-user-auth.js — The Technically Not account. Top-bar account control (Sign
+// in / avatar + menu: account, Sign out), the sign-in dialog (Continue with Google or GitHub in the
+// browser, or email + password with an authenticator code when the account has one; which
+// installed browser opens Google/GitHub (Windows, remembered per viewer; Default browser
+// otherwise), waiting-for-browser with Copy sign-in link, errors; over the account's computer
+// limit, a list of its computers with Sign out and continue on each). The desktop process
+// (desktop/user-auth.js) talks to the accounts server; this file only sees public state. The free
+// app has no accounts server, so the control stays hidden there. In a browser, sign-in is shown as
+// unavailable. window.TnaiAuth { session, state, onChange, signIn, signInEmail, signOut, cancel,
+// open, openSite, replaceDevice, ready }.
 (() => {
   const top = document.querySelector('.top-right');
   if (!top) return;
@@ -29,8 +26,6 @@
 
   // display name hidden too (01), only initials show
   const maskName = s => (window.tnaiMaskName || String)(s || '');
-  const day = sec =>
-    new Date(sec * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
   // ---------- State ----------
   const OFF = 'Sign-in works in the Technically Not desktop app.';
@@ -44,8 +39,6 @@
     github: { available: false, reason: native ? '' : OFF },
     signedIn: false,
     user: null,
-    plan: null,
-    lock: { enforced: false, locked: false },
     checking: false,
     problem: '',
     flow: null,
@@ -54,40 +47,14 @@
   const publicSession = () => ({
     signedIn: !!state.signedIn,
     user: state.user ? { ...state.user, providers: [...(state.user.providers || [])] } : null,
-    plan: state.plan ? { ...state.plan } : null,
-    locked: !!state.lock?.locked,
   });
-
-  // A window that STARTED locked had its startup reads (projects, files, git, skills, agent CLIs…)
-  // refused by the desktop process, so once it unlocks it reloads to load them for real. A lock
-  // later in the session doesn't reload (unsaved edits stay). Tests set __tnaiNoUnlockReload.
-  let firstNative = true,
-    startedLocked = false,
-    toldPastDue = false;
 
   function setState(next) {
     if (!next) return;
-    if (native && firstNative) {
-      firstNative = false;
-      startedLocked = !!next.lock?.locked;
-    }
     const before = JSON.stringify(publicSession());
     state = next;
     renderControl();
-    renderLock();
     if (!overlay.hidden) renderDialog();
-
-    // A failed payment is said once per app start (and again if it comes back after being paid);
-    // the account menu keeps the line and the button.
-    if (!pastDue()) toldPastDue = false;
-    else if (!toldPastDue) {
-      toldPastDue = true;
-      toastSafe(
-        'Your payment didn’t go through. Update your card' +
-          cardBy() +
-          ' to keep building: account menu › Update card.'
-      );
-    }
     if (JSON.stringify(publicSession()) !== before)
       listeners.forEach(fn => {
         try {
@@ -96,11 +63,6 @@
           console.warn(e);
         }
       });
-    if (startedLocked && !next.lock?.locked) {
-      startedLocked = false;
-      if (window.__tnaiNoUnlockReload) window.__tnaiUnlockReload = true;
-      else location.reload();
-    }
   }
   const refresh = async () => {
     if (!native) return state;
@@ -108,41 +70,6 @@
     if (r?.ok) setState(r.value);
     return state;
   };
-
-  // One line about the plan, for the account menu and the lock.
-  function planLine() {
-    const p = state.plan;
-    if (!state.signedIn) return null;
-    if (!p)
-      return {
-        text: state.checking ? 'Checking your plan…' : 'Plan not confirmed yet',
-        note: state.problem,
-      };
-    if (!p.current)
-      return {
-        text: 'Plan not confirmed since ' + day(p.expires),
-        note: state.problem || 'Reconnect to check your subscription.',
-      };
-    const offline = state.problem ? ' · offline, confirmed until ' + day(p.expires) : '';
-
-    // kept for good once a founder yearly plan was active
-    const founder = p.founder ? ' · ★ Founder' : '';
-    if (p.plan === 'none') return { text: 'No active subscription' + founder, note: state.problem };
-    return {
-      text:
-        (p.plan === 'team' ? 'Team' : 'Pro') +
-        founder +
-        (pastDue() ? ' · payment problem, update your card' + cardBy() : '') +
-        offline,
-      note: '',
-    };
-  }
-  const paid = () => state.plan?.current && state.plan.plan !== 'none';
-
-  // A failed payment keeps the plan for 7 days (the server's graceEnds): the plan line, the menu
-  // button and one toast name the date.
-  const pastDue = () => paid() && state.plan.status === 'past_due';
-  const cardBy = () => (state.plan?.graceEnds ? ' by ' + day(state.plan.graceEnds) : '');
 
   // ---------- Top-bar control ----------
   const control = document.createElement('div');
@@ -175,13 +102,10 @@
       control.innerHTML = `<button type="button" class="tnai-user-signin" data-auth="open" title="${state.flow ? 'Signing in…' : 'Sign in to Technically Not'}"${state.flow ? ' aria-busy="true"' : ''}>${window.TnaiIcon('user')}<span class="pg-sr">${state.flow ? 'Signing in…' : 'Sign in'}</span></button>`;
       return;
     }
-    const line = planLine();
     control.innerHTML = `<button type="button" class="avatar tnai-user-avatar" data-auth="menu" aria-haspopup="menu" aria-expanded="${menuOpen}" title="${esc(u.name ? maskName(u.name) : mask(u.email))}">${esc(initials(u))}</button>
 <div class="tnai-user-menu" role="menu"${menuOpen ? '' : ' hidden'}>
 <div class="tnai-user-menu-head"><span class="avatar">${esc(initials(u))}</span><div><b>${esc(u.name ? maskName(u.name) : mask(u.email) || 'Technically Not account')}</b><small>${esc(u.name ? mask(u.email) : '')}</small></div></div>
-<div class="tnai-user-menu-label">Plan</div><div class="tnai-user-plan" data-plan>${esc(line?.text || '')}${line?.note ? `<small>${esc(line.note)}</small>` : ''}${state.weakStorage ? '<small data-weak-storage>No system keyring: this sign-in is saved without strong protection. Install GNOME Keyring or KWallet to protect it.</small>' : ''}</div>
-<button type="button" class="tnai-user-item" data-auth="site" data-site="${paid() ? 'account' : 'subscribe'}" role="menuitem">${pastDue() ? 'Update card' : paid() ? 'Manage subscription' : 'Subscribe to Pro'}</button>
-<button type="button" class="tnai-user-item" data-auth="check" role="menuitem"${state.checking ? ' disabled' : ''}>${state.checking ? 'Checking…' : 'Check subscription'}</button>
+${state.weakStorage ? '<div class="tnai-user-plan"><small data-weak-storage>No system keyring: this sign-in is saved without strong protection. Install GNOME Keyring or KWallet to protect it.</small></div>' : ''}
 <button type="button" class="tnai-user-item tnai-user-signout" data-auth="signout" role="menuitem">Sign out</button></div>`;
     placeMenu();
   }
@@ -205,10 +129,6 @@
     if (!b || b.disabled) return;
     if (b.dataset.auth === 'open') open(state.flow ? 'waiting' : 'choose');
     else if (b.dataset.auth === 'menu') setMenu(!menuOpen);
-    else if (b.dataset.auth === 'site') {
-      setMenu(false);
-      openSite(b.dataset.site);
-    } else if (b.dataset.auth === 'check') check();
     else if (b.dataset.auth === 'signout') {
       setMenu(false);
       signOut();
@@ -373,7 +293,6 @@ ${needCode ? '<label class="tnai-signin-field"><span>Authenticator code</span><i
     if (view === 'devices' || view === 'code') view = 'choose';
     overlay.hidden = true;
     overlay.innerHTML = '';
-    lockFocus();
   };
 
   // Back to the sign-in choices from the computer list (the unused ticket is dropped in the desktop
@@ -483,7 +402,6 @@ ${needCode ? '<label class="tnai-signin-field"><span>Authenticator code</span><i
       status = { kind: 'info', text: v.message || 'Sign-in cancelled. Nothing was changed.' };
       if (!overlay.hidden) renderDialog();
     }
-    lockFocus();
     return v;
   }
 
@@ -534,7 +452,7 @@ ${needCode ? '<label class="tnai-signin-field"><span>Authenticator code</span><i
       return { status: 'error', error: { code: 'not-configured', message: status.text } };
     }
 
-    // a sign-in started from the lock screen, before the dialog listed them
+    // a sign-in started before the dialog listed them
     if (!browsers.length) await loadBrowsers();
     waitingFor = provider;
     copied = false;
@@ -611,152 +529,9 @@ ${needCode ? '<label class="tnai-signin-field"><span>Authenticator code</span><i
     return r?.value || null;
   }
 
-  // ---------- Lock (desktop, only when the build enforces a plan) ----------
-  const lock = document.createElement('div');
-  lock.className = 'tnai-auth-overlay tnai-lock-overlay';
-  lock.hidden = true;
-  document.body.append(lock);
-  const TITLES = {
-    'signed-out': 'Sign in to Technically Not',
-    'no-plan': 'Subscribe to keep building',
-    expired: 'Reconnect to check your subscription',
-    offline: 'Reconnect to check your subscription',
-    checking: 'Checking your subscription',
-    clock: 'Your PC clock is behind',
-    'update-required': 'Update Technically Not',
-    unverified: 'Your subscription couldn’t be confirmed',
-    payment: 'Your payment didn’t go through',
-    device: 'This computer was signed out',
-  };
-
-  // Plan lapse: a lock while signed in (`lapsed`)
-  // can be set aside with Keep reading, so projects, files, summaries and open permission prompts
-  // stay usable; main still refuses prompts, new panels and typing, and a refused one
-  // (auth:refused) or a new lock reason brings the lock back. lapse.closeAt: when open PowerShell
-  // panels close (plan-lapse.js).
-  let reading = '',
-    lapse = { closeAt: 0, panes: [] },
-    lockOn = false;
-  const hhmm = ms => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-  function renderLock() {
-    const l = state.lock || {},
-      locked = !!(native && l.locked);
-    if (!locked || !l.lapsed || reading !== l.reason) reading = '';
-
-    // The lock went on (any reason): one event, 'tnai:lock', on which open pop-outs dock (23 Build
-    // panels, 38 composer). Nothing is stopped.
-    if (locked && !lockOn) {
-      lockOn = true;
-      window.dispatchEvent(new CustomEvent('tnai:lock'));
-    } else if (!locked) lockOn = false;
-    const on = locked && !reading;
-    document.body.classList.toggle('tnai-locked', on);
-    if (!on) {
-      if (!lock.hidden) {
-        lock.hidden = true;
-        lock.innerHTML = '';
-      }
-      return;
-    }
-    const line = planLine(),
-      u = state.user;
-
-    // A lapse shows Keep reading instead of Quit (the window's × still quits), so the row keeps its
-    // four buttons.
-    const quit =
-      window.tnaiNative?.frame?.control && !l.lapsed
-        ? `<button type="button" class="tnai-auth-secondary" data-lock="quit">Quit</button>`
-        : '';
-    const read = l.lapsed
-      ? `<button type="button" class="tnai-auth-secondary" data-lock="read">Keep reading</button>`
-      : '';
-
-    // One button that fixes this reason: Subscribe, Update card, or Check again (clock, offline,
-    // expired, unverified, update).
-    const checkBtn = cls =>
-      `<button type="button" class="${cls}" data-lock="check"${state.checking ? ' disabled' : ''}>${state.checking ? 'Checking…' : 'Check again'}</button>`;
-    const fix =
-      l.reason === 'no-plan'
-        ? `<button type="button" class="tnai-auth-primary" data-lock="subscribe">Subscribe</button>`
-        : l.reason === 'payment'
-          ? `<button type="button" class="tnai-auth-primary" data-lock="account">Update card</button>`
-          : checkBtn('tnai-auth-primary');
-    const buttons =
-      quit +
-      (state.signedIn
-        ? `<button type="button" class="tnai-auth-secondary" data-lock="signout">Sign out</button>${/data-lock="check"/.test(fix) ? '' : checkBtn('tnai-auth-secondary')}${read}${fix}`
-        : `<button type="button" class="tnai-auth-secondary" data-lock="subscribe">See plans</button>${read}<button type="button" class="tnai-auth-primary" data-lock="signin">Sign in</button>`);
-    const note = l.lapsed
-      ? 'Agents that are working finish their current task. Your projects and files stay readable: choose Keep reading to look at them. New prompts, agents and terminals start again once this is fixed.' +
-        (lapse.closeAt > Date.now() && lapse.panes?.length
-          ? ' Open PowerShell threads close at ' + hhmm(lapse.closeAt) + '.'
-          : '')
-      : 'Threads that were already running keep running. New agents and terminals start once the app is unlocked.';
-    const focused = lock.contains(document.activeElement)
-      ? document.activeElement.dataset.lock
-      : '';
-    lock.innerHTML = `<section class="tnai-auth-modal tnai-lock" role="dialog" aria-modal="true" aria-labelledby="tnaiLockTitle" data-reason="${esc(l.reason)}"><div class="tnai-auth-logo">a</div>
-<h2 id="tnaiLockTitle">${esc(TITLES[l.reason] || 'Technically Not is locked')}</h2><p data-lock-message>${esc(l.message)}</p>
-${u ? `<div class="tnai-auth-status info" data-lock-account>Signed in as ${esc(u.name ? maskName(u.name) + ' · ' + mask(u.email) : mask(u.email))}${line?.text ? ' · ' + esc(line.text) : ''}${state.problem ? '<br>' + esc(state.problem) : ''}</div>` : ''}
-<p class="tnai-auth-note" data-lock-note>${esc(note)}</p>
-<div class="tnai-auth-actions">${buttons}</div></section>`;
-    lock.hidden = false;
-    (
-      (focused && lock.querySelector(`[data-lock="${focused}"]`)) ||
-      (overlay.hidden ? lock.querySelector('.tnai-auth-primary') : null)
-    )?.focus();
-  }
-  lock.addEventListener('click', event => {
-    const act = event.target.closest('[data-lock]:not(:disabled)')?.dataset.lock;
-    if (act === 'signin') open();
-    else if (act === 'subscribe') openSite(state.signedIn ? 'subscribe' : 'pricing');
-    else if (act === 'account') openSite('account');
-    else if (act === 'read') {
-      reading = state.lock?.reason || '';
-      renderLock();
-    } else if (act === 'check') check();
-    else if (act === 'signout') signOut();
-
-    // same close as the window's × (warns if terminals run)
-    else if (act === 'quit') window.tnaiNative.frame.control('close').catch(() => {});
-  });
-
-  // While locked, focus and keys stay in the lock or the sign-in dialog (the window buttons still
-  // work).
-  const inDialogs = el => !!el?.closest?.('.tnai-lock-overlay,.tnai-auth-overlay,.win-ctrls');
-  const lockFocus = () => {
-    if (!lock.hidden && overlay.hidden && !inDialogs(document.activeElement))
-      lock.querySelector('button')?.focus();
-  };
-  document.addEventListener('focusin', event => {
-    if (!lock.hidden && !inDialogs(event.target)) lockFocus();
-  });
-  window.addEventListener(
-    'keydown',
-    event => {
-      if (!lock.hidden && !inDialogs(event.target)) {
-        event.stopImmediatePropagation();
-        event.preventDefault();
-        lockFocus();
-      }
-    },
-    true
-  );
-
   if (native) {
     native.onChange(next => setState(next));
     native.onNotice(n => toastSafe(n?.message || ''));
-    native.onLapse?.(next => {
-      lapse = next || { closeAt: 0, panes: [] };
-      if (!lock.hidden) renderLock();
-    });
-    native.onRefused?.(() => {
-      if (reading) {
-        reading = '';
-        renderLock();
-      }
-    });
   }
   renderControl();
   refresh();

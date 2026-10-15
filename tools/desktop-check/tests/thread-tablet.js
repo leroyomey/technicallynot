@@ -246,12 +246,52 @@ const menuButton = () => document.querySelector('.top .tnt-menu-btn'),
   sideButton = () => document.querySelector('.tnt-head-acts .tnt-fold-side'),
   term = () => document.getElementById('terminalView');
 
+// The rename pencils against their neighbors (issue sweep item 18): the open thread's pencil
+// (120) and each card's pencil on All threads (135) sit right after the name, on its center
+// line, with the icon in the middle of the box. The room after the name is measured only
+// without touch, where the pencil keeps its small box.
+const pencils = (tag, touch) => {
+  const pairs = [...document.querySelectorAll('.tnt-head-rename, .tat-rename')]
+    .filter(shown)
+    .map(pencil => ({
+      pencil,
+      title: pencil.parentElement.querySelector(
+        pencil.classList.contains('tat-rename') ? 'b' : 'h1'
+      ),
+    }))
+    .filter(pair => shown(pair.title));
+  const out = [];
+  for (const { pencil, title } of pairs) {
+    const p = box(pencil),
+      t = box(title),
+      icon = box(pencil.querySelector('svg'));
+    const gap = p.left - t.right;
+    if (!touch && (gap < 1 || gap > 10)) out.push('room after the name ' + n(gap));
+    if (Math.abs(p.top + p.height / 2 - (t.top + t.height / 2)) > 1.5)
+      out.push('off the name’s center line by ' + n(p.top + p.height / 2 - (t.top + t.height / 2)));
+    if (
+      Math.abs(icon.left + icon.width / 2 - (p.left + p.width / 2)) > 1 ||
+      Math.abs(icon.top + icon.height / 2 - (p.top + p.height / 2)) > 1
+    )
+      out.push('icon off the middle of its box');
+  }
+  check(
+    pairs.length > 0 && out.length === 0,
+    tag +
+      ': ' +
+      pairs.length +
+      ' rename pencil(s) beside their names' +
+      (out.length ? ' (' + out.join(', ') + ')' : '')
+  );
+};
+
 // The states of one size. Each leaves the app as it found it: on Threads, the thread open, the
 // list shown, the side column closed.
 const walk = async (tag, touch, pictures) => {
   const state = async label => {
     await frame();
     audit(tag + ' ' + label, touch);
+    if (label === 'thread' || label === 'all-threads') pencils(tag + ' ' + label, touch);
     if (pictures)
       await shot('tablet-' + tag.replace(/\s+/g, '-') + '-' + label.replace(/\s+/g, '-'));
   };

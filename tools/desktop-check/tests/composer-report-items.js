@@ -60,7 +60,9 @@ try {
       },
     },
   ];
-  window.TnaiRoute?.('overview');
+
+  // the prompt box under the open thread on the Threads page (the old Overview is gone)
+  window.TnaiThreads.open();
   await wait(200);
 
   type('@i');

@@ -1336,7 +1336,15 @@ function handle(req, res) {
             if (o) locks.shellStart(paneId, msg.tool_use_id, o, input.timeout);
           } else if (ev === 'PostToolUse' && SHELL_TOOLS.has(msg.tool_name))
             locks.shellEnd(paneId, msg.tool_use_id);
-          else if (ev === 'Stop' || ev === 'StopFailure') locks.shellStop(paneId);
+          else if (
+            (ev === 'PostToolUse' || ev === 'PostToolUseFailure') &&
+            LOCK_TOOLS.has(msg.tool_name)
+          ) {
+            // the edit is on disk: the watcher's report of it is the holder's own change
+            const f = input.file_path || input.notebook_path;
+            const o = typeof f === 'string' && f ? await span.rest(lockOwner(paneId)) : null;
+            if (o) locks.editDone(o.project, f, paneId);
+          } else if (ev === 'Stop' || ev === 'StopFailure') locks.shellStop(paneId);
         } catch (e) {
           console.warn('[tnai] shell lock tracking failed:', e?.message || e);
         }

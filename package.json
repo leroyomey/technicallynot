@@ -1,11 +1,10 @@
 {
   "name": "tnai",
   "productName": "TechnicallyNot.ai",
-  "version": "0.3.72",
-  "tnaiBuild": 78,
+  "version": "0.3.73",
+  "tnaiBuild": 79,
   "tnaiPublicRepo": "",
   "tnaiAccountsUrl": "",
-  "tnaiEnforcePlan": false,
   "description": "Technically Not: a free, open-source visual AI software-building workspace (Windows desktop app).",
   "license": "MIT",
   "homepage": "https://github.com/leroyomey/technicallynot",
@@ -188,5 +187,9 @@
     "electron": "^44.4.5",
     "electron-builder": "^26.15.3",
     "prettier": "3.9.10"
+  },
+  "overrides": {
+    "http-cache-semantics": "^4.3.0",
+    "global-agent": "^4.1.3"
   }
 }

@@ -26,6 +26,11 @@ const port = Number(process.env.TNAI_MESH_PORT) || 0;
 // the real CLI (and anything it starts) must not inherit Technically Not's node mode
 delete process.env.ELECTRON_RUN_AS_NODE;
 
+// The arguments as tnai.cmd received them, before Node split them (node-helper.js cmdShim);
+// undefined when tnai was not started through tnai.cmd. Not handed on to anything started here.
+const cmdArgs = process.env.TNAI_CMD_ARGS;
+delete process.env.TNAI_CMD_ARGS;
+
 // One JSON line to Technically Not, one JSON line back. keep: the connection stays open (a
 // registered launch ends when it closes).
 function ask(message, keep = false) {
@@ -130,7 +135,10 @@ function stdinFor() {
   if (process.platform !== 'win32') return 'inherit';
   try {
     const st = fs.fstatSync(0);
-    if (st.isFIFO() || st.isFile()) return 'inherit';
+
+    // The FIFO test reads the mode bits, as pipedText does: on Windows isFIFO() is false for a
+    // pipe (mode 0o010000; the console reads as 0o020000), measured in a ConPTY 2026-10-14.
+    if ((st.mode & 0o170000) === 0o010000 || st.isFile()) return 'inherit';
   } catch {}
   try {
     return fs.openSync('\\\\.\\CONIN$', 'r+');
@@ -237,7 +245,9 @@ async function launchAgent() {
 const USAGE = [
   'tnai: talk to the other AI agents working in this project inside Technically Not.',
   '  tnai agents [--all]          list the live agents in this project (and the latest closed ones that can be revived; --all: every closed one)',
-  "  tnai send NAME|ID message... type a message into that agent's input (a closed agent is revived first)",
+  "  tnai send NAME|ID message... type a message into that agent's input (a closed agent is revived first;",
+  '                               a working Claude Code agent reads it after its next step, without being interrupted)',
+  '  tnai send --later NAME message...   the message can wait: a working agent gets it when its task ends',
   '  tnai send NAME -             the message from a pipe, for text with <, > or double quotes (Windows cmd.exe breaks those as arguments):',
   '                               \'text with <x> and "quotes"\' | tnai send NAME -   (tnai intervene NAME - and tnai ask NAME - too)',
   '  tnai new claude|codex|opencode|cursor task...   start a fresh agent in a new panel (it can have its own sub-agents) and give it the task; use your own CLI unless the user named another',
@@ -280,7 +290,7 @@ const USAGE = [
   '  tnai preview close [URL]                  close the Live preview tab(s) you opened (all of yours, or the one at URL), e.g. once you stop its server',
   '  tnai show FILE.html [phone|tablet|desktop]   show one HTML file of this project in Live preview without a server (a chart, a table, a mock-up); it must hold everything itself: no other file, no network',
   '  tnai shot preview [URL] [phone|tablet|desktop]   save a PNG of that localhost page (default: the Live preview tab you opened, else the active one) and print its path, to look at the UI you built',
-  "  tnai skill save PATH [--distinct]   save a folder with SKILL.md (or a SKILL.md file; needs name + description frontmatter) to Technically Not's skill library, off until the user turns it on;\n" +
+  "  tnai skill save PATH [--distinct]   save a folder with SKILL.md (or a SKILL.md file; needs name + description frontmatter) to Technically Not's skill library, on for every session from the start (the user can switch it off);\n" +
     '                               refused when it covers the same topic as a library skill (merge into that one), unless --distinct',
   '  tnai skill match TEXT        which skills Technically Not would name for a sentence the user might say (test that a skill you wrote is picked up)',
   '  tnai skill overlaps [PATH]   groups of library / project skills on the same topic (to merge), or which skills one SKILL.md overlaps',
@@ -438,6 +448,75 @@ async function runTests(words) {
   return code || 1;
 }
 
+// A Windows command line split into arguments the way Node splits its own (backslashes count only
+// before a double quote; "" inside quotes is one literal quote). → [{ text, start }], where start
+// is where the argument begins in the line.
+function splitCmdLine(line) {
+  const words = [];
+  let index = 0;
+  while (index < line.length) {
+    while (line[index] === ' ' || line[index] === '\t') index++;
+    if (index >= line.length) break;
+    const start = index;
+    let text = '';
+    let quoted = false;
+    while (index < line.length && (quoted || (line[index] !== ' ' && line[index] !== '\t'))) {
+      let slashes = 0;
+      while (line[index] === '\\') {
+        slashes++;
+        index++;
+      }
+      if (line[index] === '"') {
+        text += '\\'.repeat(Math.floor(slashes / 2));
+        if (slashes % 2) text += '"';
+        else if (quoted && line[index + 1] === '"') {
+          text += '"';
+          index++;
+        } else quoted = !quoted;
+        index++;
+      } else {
+        text += '\\'.repeat(slashes);
+        if (index < line.length && (quoted || (line[index] !== ' ' && line[index] !== '\t')))
+          text += line[index++];
+      }
+    }
+    words.push({ text, start });
+  }
+  return words;
+}
+
+// True when PowerShell would have put double quotes around this argument for a .cmd file: it has
+// a space or tab outside its own double quotes (PowerShell's legacy rule for batch files).
+function powershellWraps(text) {
+  let quotes = 0;
+  for (let index = 0; index < text.length; index++) {
+    if (text[index] === '"' && text[index - 1] !== '\\') quotes++;
+    else if (/\s/.test(text[index]) && quotes % 2 === 0) return true;
+  }
+  return false;
+}
+
+// The message text that follows the first `skip` arguments, rebuilt from what tnai.cmd received
+// (cmdArgs), or null to keep Node's split. Needed for double quotes: PowerShell hands a .cmd the
+// argument 'say "hi"' as "say "hi"" and Node's split makes that `say hi`. Kept as Node split it
+// when the text has no double quote, uses backslash escapes (then Node's split is already right),
+// or does not split into the same words Node got (then cmdArgs is not this command's line).
+function cmdMessage(skip) {
+  if (cmdArgs === undefined || !cmdArgs.includes('"') || cmdArgs.includes('\\"')) return null;
+  const words = splitCmdLine(cmdArgs);
+  const same =
+    words.length === args.length && words.every((word, index) => word.text === args[index]);
+  if (!same || words.length <= skip) return null;
+  const tail = cmdArgs.slice(words[skip].start).trimEnd();
+
+  // One pair of quotes around the whole text is PowerShell's (or the user's in cmd.exe) only when
+  // the text inside would have needed it: in "hello" and "bye" the outer quotes belong to the
+  // words.
+  const inner = tail.slice(1, -1);
+  const wrapped = tail.length >= 2 && tail.startsWith('"') && tail.endsWith('"');
+  return wrapped && powershellWraps(inner) ? inner : tail;
+}
+
 // A piped or redirected stdin as text; null when nothing was piped in (stdin is the console). The
 // FIFO test reads the mode bits: on Windows Node's isFIFO() is false for a pipe whose mode says
 // FIFO (Node 24, 2026-10-04).
@@ -472,6 +551,11 @@ async function tnai() {
     return 2;
   }
 
+  // `tnai send --later NAME message`: the message can wait, so a working agent gets it as its next
+  // prompt instead of after its next step (agent-mesh.js).
+  const later = sub === 'send' && rest[0] === '--later';
+  if (later) rest.shift();
+
   // `tnai send|intervene NAME -`: the message comes through stdin, so no shell parses it (tnai.cmd
   // hands %* to cmd.exe, where < > are redirection).
   if ((sub === 'send' || sub === 'intervene') && rest.length === 2 && rest[1] === '-') {
@@ -505,11 +589,29 @@ async function tnai() {
       rest.splice(0, rest.length, words[0], ...(wait === null ? [] : ['--wait', wait]), text);
     }
   }
+
+  // A message typed as arguments through tnai.cmd keeps its double quotes (cmdMessage). The skip
+  // counts the command word, the NAME and, for ask, a --wait SEC before the question.
+  if ((sub === 'send' || sub === 'intervene') && rest.length >= 2) {
+    const text = cmdMessage(later ? 3 : 2);
+    if (text !== null) rest.splice(1, rest.length, text);
+  }
+  if (sub === 'ask' && rest.length >= 2) {
+    let before = 1;
+    while (rest[before] === '--wait' && rest.length > before + 2) before += 2;
+    const text = cmdMessage(before + 1);
+    if (text !== null && rest.length > before) rest.splice(before, rest.length, text);
+  }
   let message;
   if (sub === 'agents' && (!rest.length || (rest.length === 1 && rest[0] === '--all')))
     message = { op: 'agents' };
   else if (sub === 'send' && rest.length >= 2)
-    message = { op: 'send', to: rest[0], text: rest.slice(1).join(' ') };
+    message = {
+      op: 'send',
+      to: rest[0],
+      text: rest.slice(1).join(' '),
+      ...(later ? { later } : {}),
+    };
   else if (sub === 'intervene' && rest.length >= 2)
     message = { op: 'intervene', to: rest[0], text: rest.slice(1).join(' ') };
   else if (sub === 'new' && rest.length >= 2) {
@@ -525,7 +627,10 @@ async function tnai() {
   } else if (sub === 'read' && rest.length >= 1)
     message = { op: 'read', from: rest[0], lines: Number(rest[1]) || 40 };
   else if (sub === 'close' && rest.length >= 1) {
+    // names: each word split at commas (`tnai close A,B`); words: each word whole, so an agent
+    // whose own name has a comma still closes by name (agent-mesh.js tries the whole word first)
     const names = [],
+      words = [],
       opts = { user: false, quietOver: 0, self: false, successor: '' };
     for (let i = 0; i < rest.length; i++) {
       if (rest[i] === '--user') opts.user = true;
@@ -533,7 +638,10 @@ async function tnai() {
       else if (rest[i] === '--quiet-over') opts.quietOver = parseFloat(rest[++i]) || 0;
       else if (/^--successor(=|$)/.test(rest[i]))
         opts.successor = rest[i].includes('=') ? rest[i].slice(12) : rest[++i] || '';
-      else names.push(...rest[i].split(',').filter(Boolean));
+      else {
+        names.push(...rest[i].split(',').filter(Boolean));
+        words.push(rest[i]);
+      }
     }
     if (
       (!names.length && !opts.quietOver && !opts.self) ||
@@ -542,7 +650,7 @@ async function tnai() {
       process.stderr.write(USAGE + '\n');
       return 2;
     }
-    message = { op: 'close', names, ...opts };
+    message = { op: 'close', names, words, ...opts };
   } else if (sub === 'rename' && rest.length >= 1) message = { op: 'rename', name: rest.join(' ') };
   else if (
     sub === 'clear-closed' &&

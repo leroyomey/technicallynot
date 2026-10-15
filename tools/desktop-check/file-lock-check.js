@@ -50,6 +50,7 @@ let familyImpl = (a, b) => familyPairs.has(a + '|' + b) || familyPairs.has(b + '
 let teamImpl = () => false;
 let treeImpl = () => false; // lead tree block below: main.js passes sameTree
 let waitingImpl = () => false; // main.js passes agent-links.js waiting(holder, requester)
+const busyPanes = new Set(); // main.js passes agent-turns.js busy(paneId): its task is running
 
 locks.init((channel, payload) => events.push([channel, payload]), {
   notify: (paneId, text) => notifyImpl(paneId, text),
@@ -57,6 +58,7 @@ locks.init((channel, payload) => events.push([channel, payload]), {
   team: (a, b) => teamImpl(a, b),
   tree: (a, b) => treeImpl(a, b),
   waiting: (a, b) => waitingImpl(a, b),
+  busy: paneId => busyPanes.has(paneId),
   now: () => t,
 });
 
@@ -290,6 +292,7 @@ const changesFor = project =>
       };
     const to = id => notifyCalls.filter(([p]) => p === id).map(([, x]) => x);
     locks.acquire(P, 'src/held.js', { ...A, edit: true }); // A holds it through its edit hook
+    locks.editDone(P, 'src/held.js', 'A'); // and its edit finished (PostToolUse)
     tick(10e3);
     locks.shellStart('B', 'b1', own(B));
     await locks.diskChanges(P, [{ path: 'src/held.js', type: 'change', at: t }]);
@@ -314,6 +317,7 @@ const changesFor = project =>
     notifyCalls.length = 0;
     locks.acquire(P, 'src/mine.js', { ...A, edit: true });
     await locks.diskChanges(P, [{ path: 'src/mine.js', type: 'change', at: t }]);
+    locks.editDone(P, 'src/mine.js', 'A');
     tick(10e3);
     locks.shellStart('A', 'a1', own(A));
     await locks.diskChanges(P, [{ path: 'src/mine.js', type: 'change', at: t }]);
@@ -331,6 +335,29 @@ const changesFor = project =>
     check(
       to('A').length === 1 && /not through your own edits/.test(to('A')[0]),
       'change with no command running: edit-hook holder told it was not its own'
+    );
+
+    // The holder's own edit is never taken for someone else's: not while its edit call still runs
+    // (a permission prompt between the hook and the write), not when the batch is applied seconds
+    // after it came in (the disk and git asked first), and not when the edit's end is reported
+    // after the watcher's batch.
+    notifyCalls.length = 0;
+    locks.acquire(P, 'src/own-slow.js', { ...A, edit: true });
+    tick(30e3);
+    await locks.diskChanges(P, [{ path: 'src/own-slow.js', type: 'change', at: t }]);
+    locks.editDone(P, 'src/own-slow.js', 'A');
+    check(to('A').length === 0, 'own edit: a write landing late in its edit call tells nobody');
+    tick(10e3);
+    locks.acquire(P, 'src/own-late.js', { ...A, edit: true });
+    locks.editDone(P, 'src/own-late.js', 'A');
+    const lateApply = locks.diskChanges(P, [{ path: 'src/own-late.js', type: 'change', at: t }]);
+    tick(8e3);
+    await lateApply;
+    check(to('A').length === 0, 'own edit: a batch applied 8 s after it came in tells nobody');
+    locks.editDone(P, 'src/held.js', 'B');
+    check(
+      locks.list(P).find(l => l.file === 'src/held.js')?.last < t,
+      "own edit: another agent's finished edit does not count as the holder's"
     );
     locks.acquire(P, 'src/codex.js', C);
     tick(10e3);
@@ -750,6 +777,19 @@ const changesFor = project =>
       'waiter: the holder taking another file does not end the other agent’s wait'
     );
 
+    // its task ends: an agent at rest waits for nothing (a freed file never passes to it)
+    locks.acquire(P, 'src/wait-f.js', { ...H, edit: true });
+    locks.acquire(P, 'src/wait-f.js', W);
+    check(waiterOf('src/wait-f.js') === 'Waiter', 'waiter: refused, shown as waiting');
+    before = pushes();
+    locks.taskEnded('WW');
+    check(waiterOf('src/wait-f.js') === '', 'waiter: gone once the waiting agent’s task ended');
+    check(pushes() > before, 'waiter: the views are told when its task ended');
+    check(
+      locks.list(P).some(l => l.file === 'src/wait-f.js' && l.paneId === 'WH'),
+      'waiter: the holder keeps its lock when the waiting agent’s task ends'
+    );
+
     // time alone never ends a wait: it goes with the lock
     tick(19 * 60e3);
     check(waiterOf('src/wait-d.js') === 'Third', 'waiter: still shown after 19 quiet minutes');
@@ -760,6 +800,68 @@ const changesFor = project =>
       !locks.list(P).some(l => /^src\/wait-/.test(l.file)) && !locks.list(proj2).length,
       'waiter: nothing left after the panels closed'
     );
+  }
+
+  // --- A task that ends frees the agent's files, and a waiting agent that still works gets them
+  // ---
+  {
+    const P = proj1;
+    const H = { paneId: 'TH', name: 'Resting', provider: 'Claude Code' };
+    const W = { paneId: 'TW', name: 'Busy', provider: 'Claude Code' };
+    const I = { paneId: 'TI', name: 'Idle', provider: 'Codex' };
+    const holderOf = file => locks.list(P).find(l => l.file === file)?.paneId || '';
+
+    // no one waits: the files are simply free once the task ends
+    locks.acquire(P, 'src/task-a.js', { ...H, edit: true });
+    locks.acquire(P, 'src/task-b.js', { ...H, edit: true });
+    locks.taskEnded('TH');
+    check(
+      holderOf('src/task-a.js') === '' && holderOf('src/task-b.js') === '',
+      'task end: every file of the agent is free'
+    );
+
+    // a working agent waits: it gets the file, is told, and a third agent is refused
+    locks.acquire(P, 'src/task-a.js', { ...H, edit: true });
+    locks.acquire(P, 'src/task-a.js', W);
+    busyPanes.add('TW');
+    notifyCalls.length = 0;
+    locks.taskEnded('TH');
+    check(holderOf('src/task-a.js') === 'TW', 'task end: the working waiter is next in line');
+    check(
+      notifyCalls.some(
+        ([paneId, text]) => paneId === 'TW' && /src\/task-a\.js is free now/.test(text)
+      ),
+      'task end: the waiter is told the file is its now'
+    );
+    check(!locks.acquire(P, 'src/task-a.js', I).ok, 'task end: a third agent cannot jump the line');
+    check(
+      locks.acquire(P, 'src/task-a.js', { ...W, edit: true }).ok,
+      'task end: the waiter edits it'
+    );
+
+    // an idle waiter is not handed the file and not told (a notice would start a new task)
+    locks.taskEnded('TW');
+    locks.acquire(P, 'src/task-c.js', { ...H, edit: true });
+    locks.acquire(P, 'src/task-c.js', I);
+    notifyCalls.length = 0;
+    locks.taskEnded('TH');
+    check(holderOf('src/task-c.js') === '', 'task end: an idle waiter is not handed the file');
+    check(!notifyCalls.some(([paneId]) => paneId === 'TI'), 'task end: an idle waiter is not told');
+
+    // `tnai unlock` passes the file on the same way
+    locks.acquire(P, 'src/task-d.js', { ...H, edit: true });
+    locks.acquire(P, 'src/task-d.js', W);
+    locks.release(P, ['src/task-d.js'], 'TH');
+    check(holderOf('src/task-d.js') === 'TW', 'unlock: the working waiter gets the file');
+
+    // another agent's task ending leaves this agent's files alone
+    locks.taskEnded('TH');
+    check(holderOf('src/task-d.js') === 'TW', 'task end: only the ended agent’s files are freed');
+    busyPanes.clear();
+    locks.releasePane('TH');
+    locks.releasePane('TW');
+    locks.releasePane('TI');
+    check(!locks.list(P).some(l => /^src\/task-/.test(l.file)), 'task end: nothing left after');
   }
 
   console.log(ok ? '\nAll file-lock checks passed.' : '\nSome file-lock checks FAILED.');

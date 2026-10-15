@@ -139,6 +139,9 @@
     const shows = session.running ? 'stop' : 'start';
     if (shows === card.powerShows) return;
     card.powerShows = shows;
+
+    // 44-page-colors.css reads it: green for Start, red for Stop
+    card.power.dataset.shows = shows;
     const label = shows === 'stop' ? 'Stop this agent' : 'Start this agent again';
     card.power.innerHTML = icon(shows === 'stop' ? 'square-stop' : 'play', 14);
     card.power.title = label;
@@ -187,10 +190,15 @@
     const side = headButton('tat-act-side', 'panel-right', 'Open with Files, Helpers and Details');
     const power = headButton('tat-act-power', 'square-stop', 'Stop this agent');
     power.hidden = true;
+
+    // the blur (120 keeps which threads are blurred and paints this button)
+    const blur = headButton('tat-act-blur', 'eye', 'Blur this thread');
+    blur.dataset.iconSize = '14';
+    blur.setAttribute('aria-pressed', 'false');
     const more = headButton('tat-act-more', 'ellipsis', 'More for this thread');
     more.setAttribute('aria-haspopup', 'menu');
     more.setAttribute('aria-expanded', 'false');
-    head.append(dot, text, chips, handoff, side, power, more, open);
+    head.append(dot, text, chips, handoff, side, power, blur, more, open);
     const body = make('div', 'tnt-talk tat-body');
     body.setAttribute('role', 'log');
 
@@ -224,6 +232,7 @@
       age,
       power,
       powerShows: '',
+      blur,
       body,
       plain,
       asks,
@@ -380,7 +389,15 @@
     card.can = can;
     paintHelpers(paneId, card);
     paintPower(paneId, card);
+    paintBlur(paneId, card);
     window.TnaiThreadView?.paintAge?.(card.age, paneId);
+  }
+
+  // A blurred thread (120) is blurred on its card too, with the card head kept sharp.
+  function paintBlur(paneId, card) {
+    const store = window.TnaiThreadBlur;
+    card.el.classList.toggle('tat-blurred', !!store?.on(paneId));
+    store?.paintButton(card.blur, paneId);
   }
 
   // Only the threads on screen and one to each side are read; the others let go of their
@@ -583,9 +600,19 @@
     paintNewButton();
   }
 
+  // Many pushes in one moment are one redraw. The timer beside the frame is for a window the user's
+  // other windows cover: it draws no frames, and the cards must still follow the thread list, which
+  // redraws the same way (119). Found 2026-10-14 (issue 20): a rename reached the list but not the
+  // card, and the cards were not laid out, in a test window that drew no frames.
   let queued = 0;
   const soon = () => {
-    if (!queued) queued = requestAnimationFrame(render);
+    if (queued) return;
+    const run = () => {
+      cancelAnimationFrame(queued.frame);
+      clearTimeout(queued.timer);
+      render();
+    };
+    queued = { frame: requestAnimationFrame(run), timer: setTimeout(run, 120) };
   };
 
   // ---------- moving ----------
@@ -659,7 +686,7 @@
   // the press was one of them.
   function pressCardButton(target, paneId, card) {
     const pressed = target.closest(
-      '.tat-act-handoff, .tat-act-side, .tat-act-power, .tat-act-more'
+      '.tat-act-handoff, .tat-act-side, .tat-act-power, .tat-act-blur, .tat-act-more'
     );
     if (!pressed || !card) return false;
     const more = window.TnaiThreadMore;
@@ -670,6 +697,8 @@
       if (window.TnaiThreads?.show?.(paneId)) window.TnaiThreadSide?.open?.();
     } else if (pressed.classList.contains('tat-act-power')) {
       more?.stopOrStart?.(paneId, card.el);
+    } else if (pressed.classList.contains('tat-act-blur')) {
+      window.TnaiThreadBlur?.toggle(paneId);
     } else if (more?.isOpen?.()) {
       more.close(true);
     } else {
@@ -707,6 +736,13 @@
     if (!card?.viewing) return;
     event.preventDefault();
     leaveHelper(cardEl.dataset.pane, card);
+  });
+
+  // a thread was blurred or shown again, here or in its top row: its card follows
+  window.addEventListener('tnai:thread-blur', event => {
+    const paneId = event.detail?.paneId;
+    const card = paneId && cards.get(paneId);
+    if (card) paintBlur(paneId, card);
   });
 
   // a helper started, ended or changed its state: the bubbles follow

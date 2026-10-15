@@ -1,8 +1,10 @@
 // Technically Not tools · desktop-check/tests/composer-layout.js — Composer layout with several
-// screenshots attached and a long prompt, on Overview and the Agents page: the chips sit on their
-// own row above the text, the text box keeps its width, New agent's "Own worktree" stays in the
-// picker row and is never drawn over a key hint when that row is full. Screenshots
-// desktop-composer-*.png. Returns {ok, log}.
+// screenshots attached and a long prompt, on the Threads page and on every page of the three-dots
+// menu that shows the prompt box: the chips sit on their own row above the text, the text box
+// keeps its width, New agent's "Own worktree" stays in the picker row and is never drawn over a
+// key hint when that row is full. Screenshots desktop-composer-*.png. Moved 2026-10-14 from the
+// old Overview and Agents pages (pressed through the old navigation) to the Threads page and the
+// pages opened by their own route. Returns {ok, log}.
 const log = [],
   wait = ms => new Promise(r => setTimeout(r, ms));
 let ok = true;
@@ -71,12 +73,18 @@ try {
     prompt.value = t;
     prompt.dispatchEvent(new Event('input', { bubbles: true }));
   };
-  const nav = {
-    usage: '.side-item[data-settings-tab="usage"]',
-    skills: '.side-item[data-ai-tool="skills"]',
+
+  // Each page is opened the way the three-dots menu opens it: the Threads page by its own call,
+  // Usage as a tab of Settings, the others by their route.
+  const openPage = {
+    threads: () => window.TnaiThreads.open(),
+    usage: () => window.TnaiSettings.open('usage'),
+    'live-preview': () => window.TnaiRoute('live-preview'),
+    skills: () => window.TnaiRoute('skills'),
+    settings: () => window.TnaiRoute('settings'),
   };
-  for (const view of ['overview', 'agents', 'usage', 'live-preview', 'skills', 'settings']) {
-    document.querySelector(nav[view] || `.side-item[data-view="${view}"]`)?.click();
+  for (const view of Object.keys(openPage)) {
+    openPage[view]();
     await wait(600);
     const br = box.getBoundingClientRect();
     if (!br.width || !br.height) {
@@ -94,12 +102,12 @@ try {
 
     // A row with no room (the fit rule; fit-sizes found the route hint cut to "Chosen → Sol · Ter…"
     // and "Access" drawn over "Ctrl+K commands" in a 768 px window, 2026-10-06): the route hint
-    // leaves whole, then the two low key hints, and all come back. Overview is not fitted this way:
-    // its hint takes the free room and ends in "…" by design.
+    // leaves whole, then the two low key hints, and all come back. (The old Overview was left out
+    // here, its hint ended in "…" by design; that page is gone.)
     const fitRow = document.querySelector('.composer .hints'),
       rh = fitRow?.querySelector(':scope>.tnai-route-hint'),
       pk = fitRow?.querySelector(':scope>.tnai-pickers');
-    if (fitRow && rh && pk && view !== 'overview') {
+    if (fitRow && rh && pk) {
       const vis = el => el.getClientRects().length > 0,
         state = () =>
           (vis(rh) ? 'hint' : 'no hint') +

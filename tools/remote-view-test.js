@@ -927,7 +927,7 @@ function watched(more = {}) {
     'gone'
   );
   ends(
-    'test 5: the panel holds no agent any more, or the plan locked (no ticket): "gone"',
+    'test 5: the panel holds no agent any more (no ticket): "gone"',
     b => {
       delete b.tickets.p1;
     },

@@ -74,8 +74,14 @@ const RUNTIME_VARIABLE = 'TNAI_RUNTIME';
 //   environment) is told so, in words that are true of both.
 //   DisableDelayedExpansion: with delayed expansion switched on in the user's cmd, a "!" in a path
 //   would be read as the start of a variable.
+//   TNAI_CMD_ARGS (tnai only): the arguments as cmd.exe received them, before Node splits them.
+//   PowerShell hands a .cmd an argument such as 'say "hi"' as "say "hi"", and Node's split then
+//   drops the inner quotes; agent-shim.js rebuilds the message from this text. The line has no
+//   double quote of its own before %*, like the program line, so cmd.exe reads %* the same way
+//   in both lines (a quote before it would flip which parts cmd.exe treats as quoted).
 function cmdShim(name, helper) {
   const lines = ['@echo off', 'setlocal DisableDelayedExpansion'];
+  if (name === 'tnai') lines.push('set TNAI_CMD_ARGS=%*');
   const script = ' "%~dp0tnai-shim.js" ' + name + ' %*';
   if (helper.asNode) {
     lines.push('set "ELECTRON_RUN_AS_NODE=1"');

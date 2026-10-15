@@ -117,7 +117,7 @@ function projectKey() {
 }
 
 async function list() {
-  await requireRepo();
+  const facts = await requireRepo();
 
   // The git calls below take a while. When the user opens another project meanwhile, this
   // list belongs to the project before, and its worktrees must not be watched again.
@@ -208,8 +208,28 @@ async function list() {
       stale,
     });
   }
-  if (projectKey() === startedIn) watch(items.filter(i => !i.missing).map(i => i.dir));
+  if (projectKey() === startedIn) {
+    watch(items.filter(i => !i.missing).map(i => i.dir));
+    pruneRecords(facts.top, out);
+  }
   return { current, items };
+}
+
+// Records of this repository's worktrees that git no longer lists and whose folder is gone (removed
+// outside Technically Not, or by a `git worktree prune`) are dropped, so worktrees.json does not
+// grow forever. A worktree git still lists stays recorded even when its folder is missing: Remove
+// needs its record. `listing` is the `git worktree list --porcelain` text list() just read.
+function pruneRecords(top, listing) {
+  const listed = new Set();
+  for (const line of listing.split(/\r?\n/)) {
+    const head = /^worktree (.+)$/.exec(line);
+    if (head) listed.add(key(path.resolve(head[1])));
+  }
+  const records = readRecords();
+  const kept = records.filter(
+    r => key(r.repo) !== key(top) || listed.has(key(r.dir)) || fs.existsSync(r.dir)
+  );
+  if (kept.length !== records.length) writeRecords(kept);
 }
 
 // Worktree files live outside the project folder, so watch them too: the worktree counts (35's
@@ -349,25 +369,52 @@ async function create(paneId, agent) {
   if (!inside(dir))
     throw fail('Worktree folder is outside Technically Not’s app data.', 'SecurityError');
   fs.mkdirSync(path.dirname(dir), { recursive: true });
-  await git(['worktree', 'add', '-b', branch, dir, 'HEAD'], { timeout: WRITE_MS });
-  await linkModules(facts.top, dir);
-  writeRecords([
-    ...readRecords()
-      .filter(r => r.paneId !== paneId)
-      .map(r => (r.shared ? { ...r, shared: r.shared.filter(id => id !== paneId) } : r)),
-    {
-      branch,
-      dir,
-      paneId: String(paneId || ''),
-      agent: String(agent || ''),
-      repo: facts.top,
-      createdAt: Date.now(),
-    },
-  ]);
+  try {
+    await git(['worktree', 'add', '-b', branch, dir, 'HEAD'], { timeout: WRITE_MS });
+    await linkModules(facts.top, dir);
+    writeRecords([
+      ...readRecords()
+        .filter(r => r.paneId !== paneId)
+        .map(r => (r.shared ? { ...r, shared: r.shared.filter(id => id !== paneId) } : r)),
+      {
+        branch,
+        dir,
+        paneId: String(paneId || ''),
+        agent: String(agent || ''),
+        repo: facts.top,
+        createdAt: Date.now(),
+      },
+    ]);
+  } catch (error) {
+    // Nothing half-made stays behind: without its record the worktree and its new branch would be
+    // left with no owner, and nothing would ever offer to remove them.
+    await undoCreate(dir, branch);
+    throw error;
+  }
   changed();
   watchRecorded();
   return { cwd: dir, branch };
 }
+
+// Undoes a create() that failed part way: the links first (nothing below may reach the project
+// folder's node_modules), then the worktree, its folder and its branch. The branch was made just
+// now with a random name, so no other work is on it. Each step runs on its own and never throws.
+async function undoCreate(dir, branch) {
+  try {
+    if (inside(dir) && fs.existsSync(dir)) unlinkModules(dir);
+  } catch {}
+  try {
+    await git(['worktree', 'remove', '--force', dir], { timeout: WRITE_MS, okCodes: [0, 128] });
+  } catch {}
+  try {
+    if (inside(dir) && fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+  } catch {}
+  try {
+    await git(['worktree', 'prune'], { timeout: WRITE_MS, okCodes: [0, 1] });
+    await git(['branch', '-D', branch], { timeout: WRITE_MS, okCodes: [0, 1] });
+  } catch {}
+}
+
 const holds = (r, paneId) =>
   !!paneId && (r.paneId === paneId || (Array.isArray(r.shared) && r.shared.includes(paneId)));
 const ofRepo = (r, top) => key(r.repo) === key(top) && inside(r.dir) && fs.existsSync(r.dir);

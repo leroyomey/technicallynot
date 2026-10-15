@@ -182,7 +182,8 @@ G.send = (paneId, t) => {
   return true;
 }; // the offer only needs the send to succeed
 const ask = async () => {
-  window.TnaiRoute?.('overview');
+  // The prompt box of the Threads page (a route to the old Overview lands there too).
+  window.TnaiThreads.open();
   await wait(150);
   P.focus();
   P.value = '@' + nameA + ', @' + nameB + ': compare notes';

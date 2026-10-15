@@ -65,8 +65,6 @@ function world() {
     question: new Set(),
     draft: new Set(),
     speaking: false,
-    locked: false,
-    lockThrows: false,
     interrupted: {},
     abortSays: { ok: true },
     submitSays: { ok: true, state: 'sent' },
@@ -147,10 +145,6 @@ function world() {
     submit: (...a) => {
       w.calls.submit.push(a);
       return typeof w.submitSays === 'function' ? w.submitSays(...a) : w.submitSays;
-    },
-    locked: () => {
-      if (w.lockThrows) throw new Error('no plan');
-      return w.locked ? { message: 'locked' } : null;
     },
     abort: async id => {
       w.calls.abort.push(id);
@@ -287,12 +281,6 @@ const yes = () => true,
       "a held prompt ends through `done` with the delivery's word",
       done.join() === 'unconfirmed'
     );
-    check(
-      '31: the guard handed on also asks the plan lock',
-      opts.remote.guard() === true &&
-        ((w.locked = true), opts.remote.guard() === false) &&
-        ((w.locked = false), opts.remote.guard() === true)
-    );
     let asked = 0;
     const g = () => {
       asked++;
@@ -310,33 +298,6 @@ const yes = () => true,
       'a guard that says anything but true is a no',
       w.calls.submit[1][2].remote.guard() === false && asked === 1
     );
-    w.locked = true;
-    const n = w.calls.submit.length;
-    check(
-      '31: plan locked: refused before the delivery is called',
-      (await w.actions.prompt({
-        key: 'rc3',
-        panelId: 'p1',
-        text: 'x',
-        from: '',
-        guard: yes,
-        done: () => {},
-      })) === 'refused' && w.calls.submit.length === n
-    );
-    w.locked = false;
-    w.lockThrows = true;
-    check(
-      '31: a lock that cannot be asked is a lock',
-      (await w.actions.prompt({
-        key: 'rc4',
-        panelId: 'p1',
-        text: 'x',
-        from: '',
-        guard: yes,
-        done: () => {},
-      })) === 'refused' && w.calls.submit.length === n
-    );
-    w.lockThrows = false;
     const words = [];
     for (const says of [
       { ok: true, state: 'queued' },
@@ -368,18 +329,6 @@ const yes = () => true,
   // ---- an interrupt (review test 21) ----
   {
     const refusals = [
-      [
-        'the plan is locked',
-        w => {
-          w.locked = true;
-        },
-      ],
-      [
-        'the lock cannot be asked',
-        w => {
-          w.lockThrows = true;
-        },
-      ],
       [
         'no agent runs in that panel',
         w => {
@@ -598,7 +547,6 @@ const yes = () => true,
         turns: { busy: () => true, stopped: () => '' },
         attention: { blocker: () => null, hasDraft: () => false },
         submit: () => null,
-        locked: () => null,
         abort: async () => null,
         panelKey: async () => '',
       });
@@ -625,17 +573,14 @@ const yes = () => true,
       refused.every(x => x === 'refused') && w.calls.stop.length === 0,
       refused
     );
-    w.locked = true;
-    const a = w.actions.stop('p1', yes);
-    w.locked = false;
     let asked = 0;
     const b = w.actions.stop('p1', () => {
       asked++;
       return false;
     });
     check(
-      '22, 31: plan locked, or the guard says no: refused, nothing stopped',
-      a === 'refused' && b === 'refused' && asked === 1 && w.calls.stop.length === 0
+      '22: the guard says no: refused, nothing stopped',
+      b === 'refused' && asked === 1 && w.calls.stop.length === 0
     );
     check(
       '22: an agent the app started: stopped once, "done"',
@@ -874,7 +819,6 @@ const yes = () => true,
         turns: {},
         attention: {},
         submit: async () => null,
-        locked: () => null,
         abort: async () => null,
         panelKey: async () => '',
         parentsOf: n => (n === 'under-remote' ? ['sub-pane', 'r1'] : []),
@@ -1124,17 +1068,14 @@ const yes = () => true,
       );
       const g = opts.remote.guard;
       const still = g() === true;
-      w.locked = true;
-      const lock = g();
-      w.locked = false;
       w.sessions.n1 = session('Terminal');
       const shell = g();
       w.sessions.n1 = session('Claude Code');
       const back = g();
       check(
-        "20, 31: the first prompt's guard is asked at every write: the plan lock, that the panel still runs an agent the app started, and the right",
-        still && lock === false && shell === false && back === true,
-        [still, lock, shell, back]
+        "20: the first prompt's guard is asked at every write: that the panel still runs an agent the app started, and the right",
+        still && shell === false && back === true,
+        [still, shell, back]
       );
     }
     for (const [state, want] of [
@@ -1218,25 +1159,6 @@ const yes = () => true,
     }
     {
       const w = world();
-      w.spawnSays = async name => {
-        const r = await opens(w, 'n1')(name);
-        w.locked = true;
-        return r;
-      };
-      check(
-        '31: the plan locked during the wait: stopped, "failed", no first prompt',
-        (await w.actions.start({
-          cli: 'Claude Code',
-          text: 'Go',
-          from: '',
-          guard: guardFor(KEY),
-        })) === 'failed' &&
-          w.calls.submit.length === 0 &&
-          w.calls.stop.join() === 'n1'
-      );
-    }
-    {
-      const w = world();
       w.folders = { 'C:\\proj': KEY, 'C:\\other': OTHER };
       let on = true;
       const remote = { from: 'Desk', guard: k => on && k === KEY };
@@ -1246,17 +1168,10 @@ const yes = () => true,
       on = false;
       const off = await w.actions.mayStart(remote, 'C:\\proj');
       on = true;
-      w.locked = true;
-      const locked = await w.actions.mayStart(remote, 'C:\\proj');
-      w.locked = false;
       check(
-        "review 13, 7: just before the process is made the request's guard is asked again with the folder it starts in: yes; another project, no folder, the switch off meanwhile, the plan locked: no",
-        yes1 === true &&
-          wrongFolder === false &&
-          noFolder === false &&
-          off === false &&
-          locked === false,
-        [yes1, wrongFolder, noFolder, off, locked]
+        "review 13, 7: just before the process is made the request's guard is asked again with the folder it starts in: yes; another project, no folder, the switch off meanwhile: no",
+        yes1 === true && wrongFolder === false && noFolder === false && off === false,
+        [yes1, wrongFolder, noFolder, off]
       );
       check(
         'review 13, 7: without a guard, or with one that throws or says something that is not true: no',
@@ -1290,17 +1205,6 @@ const yes = () => true,
     }
     {
       const w = world();
-      w.locked = true;
-      check(
-        '31: plan locked at the start: refused, the window is not even asked',
-        (await w.actions.start({
-          cli: 'Claude Code',
-          text: '',
-          from: '',
-          guard: guardFor(KEY),
-        })) === 'refused' && w.calls.spawn.length === 0
-      );
-      w.locked = false;
       check(
         'a start without a guard is refused',
         (await w.actions.start({ cli: 'Claude Code', text: '', from: '' })) === 'refused' &&
@@ -1644,7 +1548,6 @@ const yes = () => true,
         turns: {},
         attention: {},
         submit: async () => null,
-        locked: () => null,
         abort: async () => null,
         panelKey: async () => '',
         parentsOf: node => (node === 'n-r2' ? ['r2'] : ['p-own']),
@@ -1847,7 +1750,6 @@ const yes = () => true,
           turns: {},
           attention: {},
           submit: async () => null,
-          locked: () => null,
           abort: async () => null,
           panelKey: async () => '',
         }).startOptions({ paneId: 'new', agent: cli, mode: 'run', access: 'full', remote: 'mark' })

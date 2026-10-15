@@ -29,10 +29,6 @@ const until = async (fn, ms = 15000) => {
 const G = window.TnaiAgents,
   N = window.tnaiNative,
   T = window.TnaiTeam;
-const go = async view => {
-  view === 'overview' ? window.TnaiThreads.open() : window.TnaiRoute(view);
-  await wait(300);
-};
 let paneId = '';
 
 async function screen() {

@@ -190,7 +190,9 @@ attention.init((channel, payload) => events.push([channel, payload]), {
     return { ok: true, state: 'sent' };
   },
   window: () => null,
-  cli: id => ({ N: 'Claude Code', O: 'Codex' })[id] || null,
+  cli: id =>
+    ({ N: 'Claude Code', O: 'Codex', CE: 'Claude Code', CQ: 'Claude Code', XE: 'Codex' })[id] ||
+    null,
 });
 const last = () => [...events].reverse().find(([c]) => c === 'attention:change')?.[1];
 const delivered = () => events.filter(([c]) => c === 'attention:delivered').map(([, p]) => p);
@@ -653,6 +655,47 @@ const delivered = () => events.filter(([c]) => c === 'attention:delivered').map(
     'an idle agent is not held'
   );
 
+  // Speed audit item 3: when a Claude Code task ends, prompts held only for that task go after
+  // END_SETTLE_MS (150 ms), not the 800 ms settle. Codex, and a prompt first held for a question,
+  // keep the full settle.
+  working.add('CE');
+  working.add('XE');
+  working.add('CQ');
+  attention.holdIfBlocked('CE', { text: 'ce', ifBusy: true });
+  attention.holdIfDraft('CE', { text: 'ce-msg', from: 'Claude Code · Sable' });
+  attention.holdIfBlocked('XE', { text: 'xe', ifBusy: true });
+  perms.push({ id: 'pq', paneId: 'CQ', tool: 'Bash', detail: 'npm test', at: Date.now() });
+  attention.permissionChanged({ paneId: 'CQ' });
+  attention.holdIfBlocked('CQ', { text: 'cq', ifBusy: true });
+  perms.length = 0;
+  attention.permissionChanged({ paneId: 'CQ', done: true });
+  await sleep(50);
+  const sentTo = id => sent.filter(s => s[0] === id).map(s => s[1]);
+  finish('CE');
+  finish('XE');
+  finish('CQ');
+  await sleep(400);
+  check(
+    sentTo('CE').join(',') === 'ce',
+    'Claude Code task ended: a prompt held only for its task goes within 400 ms (sent: ' +
+      sentTo('CE').join(',') +
+      ')'
+  );
+  check(
+    sentTo('XE').length === 0 && sentTo('CQ').length === 0,
+    'Codex, and a Claude Code prompt first held for a question, still wait the full settle'
+  );
+  await sleep(700);
+  check(
+    sentTo('XE').join(',') === 'xe' && sentTo('CQ').join(',') === 'cq',
+    'Codex and the question-held prompt go after the full settle'
+  );
+  await sleep(900);
+  check(
+    sentTo('CE').join(',') === 'ce,ce-msg',
+    'the next held one for Claude Code follows in order (sent: ' + sentTo('CE').join(',') + ')'
+  );
+
   // The app's own typed-in messages (file-lock and team notices, a sub-agent's task or report) are
   // never merged into the user's unsent text either, and nothing is typed into a panel while the
   // user dictates (a message landed in the prompt being written).
@@ -735,10 +778,13 @@ const delivered = () => events.filter(([c]) => c === 'attention:delivered').map(
   );
   const src = f =>
     require('fs').readFileSync(require('path').join(__dirname, '..', '..', f), 'utf8');
+
+  // main.js sends three app notices this way: the file-lock notice, the team notice and (since
+  // 0.3.72) the note that an agent was renamed
   check(
-    (src('desktop/main.js').match(/holdIfDraft: APP_NOTICE/g) || []).length === 2 &&
+    (src('desktop/main.js').match(/holdIfDraft: APP_NOTICE/g) || []).length === 3 &&
       /submit\(paneId, body, \{ holdIfDraft:/.test(src('desktop/agent-graph.js')),
-    'file-lock notice, team notice and graph prompts are sent with holdIfDraft'
+    'file-lock notice, team notice, rename note and graph prompts are sent with holdIfDraft'
   );
   const v70 = src('src/scripts/70-voice-prompt.js');
   check(

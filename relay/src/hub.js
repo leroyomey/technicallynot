@@ -51,6 +51,7 @@ export class RelayHub {
     if (url.pathname === '/ask') return this.ask(url);
     if (url.pathname === '/connect') return this.connect(url);
     if (url.pathname === '/presence') return this.presence();
+    if (url.pathname === '/drop') return this.drop(url);
 
     // asked by the Worker only (index.js ticketKeyOf); no call of a device is passed on to it
     if (url.pathname === '/key') return json(200, { k: await this.ticketKey() });
@@ -247,6 +248,17 @@ export class RelayHub {
       else left++;
     }
     return left;
+  }
+
+  // One device's record is removed at a user's word (the app's Remove on an unpaired computer, or
+  // check.mjs cleaning up after itself). A connected device is not removed: it would only come
+  // back at once, and the user would see the Remove do nothing.
+  async drop(url) {
+    const d = url.searchParams.get('d');
+    if (!d) return json(400, { error: 'invalid_device' });
+    if (this.online().includes(d)) return json(409, { error: 'online' });
+    const had = await this.ctx.storage.delete('d:' + d);
+    return json(200, { ok: true, removed: !!had });
   }
 
   async presence() {

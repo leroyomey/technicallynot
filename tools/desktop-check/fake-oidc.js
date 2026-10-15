@@ -1,5 +1,5 @@
 // Technically Not tools · desktop-check/fake-oidc.js — TEST ONLY (tools/ is never packaged). A
-// local fake Google-like OpenID provider for the plan-lock self-test, at /google: discovery,
+// local fake Google-like OpenID provider for the account-signin self-test, at /google: discovery,
 // PKCE-checked code exchange, RS256 ID tokens (JWKS at /google/jwks). Its next answer is scripted
 // with plan(); tamper = badsig | aud | nonce | expired. Also a fake GitHub OAuth App at /github:
 // /login/oauth/authorize, /login/oauth/access_token (client secret + PKCE checked), /api/user and

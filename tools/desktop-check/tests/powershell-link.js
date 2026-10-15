@@ -224,6 +224,14 @@ try {
         String(focused?.className || '').slice(0, 40) +
         ', on screen ' +
         !!focused?.getClientRects().length +
+        '; new thread ' +
+        first.paneId +
+        ', open thread ' +
+        window.TnaiThreads.selected() +
+        ', thread view terminal ' +
+        (window.TnaiThreadView?.term?.()?.tnaiPaneId ?? 'none') +
+        ', focus inside it ' +
+        !!window.TnaiThreadView?.term?.()?.element?.contains(focused) +
         ')'
     );
   }

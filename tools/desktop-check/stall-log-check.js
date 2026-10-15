@@ -35,7 +35,7 @@ const check = (cond, label) => {
   check(out === 42, 'a timed function still returns its own result');
   check(
     lines.length === 1 &&
-      /blocked ~\d+ ms at \S+ · longest named section: ipc demo:block (29\d|3\d\d) ms · own CPU \d+ ms of \d+ ms( · garbage collection [^·]*)? · heap \d+ of \d+ MB$/.test(
+      /blocked ~\d+ ms at \S+ · longest named section: ipc demo:block (29\d|3\d\d) ms · own CPU \d+ ms of \d+ ms( · in callbacks \d+ ms)?( · garbage collection [^·]*)? · heap \d+ of \d+ MB$/.test(
         lines[0]
       ),
     'a named section that blocks 300 ms is named in the stall line: ' + (lines[0] || 'no line')
@@ -45,7 +45,7 @@ const check = (cond, label) => {
   // block of our own code would be near it; that side is not tested: it would need a busy loop,
   // which the checks never run on the user's PC).
   const cpu =
-    /own CPU (\d+) ms of (\d+) ms(?: · garbage collection [^·]*)? · heap \d+ of \d+ MB$/.exec(
+    /own CPU (\d+) ms of (\d+) ms(?: · in callbacks \d+ ms)?(?: · garbage collection [^·]*)? · heap \d+ of \d+ MB$/.exec(
       lines[0] || ''
     );
   check(
@@ -58,7 +58,7 @@ const check = (cond, label) => {
   await wait(400);
   check(
     lines.length === 2 &&
-      / · no named section · own CPU \d+ ms of \d+ ms( · garbage collection [^·]*)? · heap \d+ of \d+ MB$/.test(
+      / · no named section · own CPU \d+ ms of \d+ ms( · in callbacks \d+ ms)?( · garbage collection [^·]*)? · heap \d+ of \d+ MB$/.test(
         lines[1]
       ),
     'a block outside any named section says so, and a 5 ms section is not blamed: ' +
@@ -151,6 +151,34 @@ const check = (cond, label) => {
   check(
     !fired && slept === 'later',
     'clearTimeout, clearInterval and util.promisify(setTimeout) work as before'
+  );
+
+  // A child process's event names the program it ran and its listener, also a once-listener (gone
+  // after the emit).
+  const beforeChild = lines.length;
+  await new Promise(resolve => {
+    const child = require('child_process').spawn(process.execPath, ['-e', ''], {
+      windowsHide: true,
+    });
+    child.once('close', function slowCloseListener() {
+      sleep(300);
+      resolve();
+    });
+  });
+  await wait(700);
+
+  // the process start itself may log a stall of its own first (a busy PC), so any new line counts
+  const childLine = lines
+    .slice(beforeChild)
+    .find(line =>
+      / · longest named section: event ChildProcess\.close node .*slowCloseListener.* (29\d|3\d\d) ms · /.test(
+        line
+      )
+    );
+  check(
+    !!childLine,
+    'a slow child process event names the program and the listener: ' +
+      (childLine || lines.slice(beforeChild).join(' | ') || 'no line')
   );
 
   // Garbage collection: Node's own record of a pause reaches the stall log (needs `node

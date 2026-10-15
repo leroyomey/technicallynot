@@ -1396,6 +1396,9 @@
       ),
       add(
         el('div', 'dv-acts'),
+        // On the user's own relay an unpaired computer that is not connected can be removed from
+        // the list (an old computer, a test device), without a command.
+        own?.set && !o.online ? btn('Remove', '', e => ask('relay-forget', e, o)) : null,
         btn('Pair', 'dv-pri', e => {
           opener = e.currentTarget;
           act('pair', o.id);
@@ -1404,6 +1407,14 @@
     );
     return card;
   }
+
+  // Why Remove did not remove an unpaired computer from the user's own relay.
+  const RELAY_FORGET_ERR = {
+    online: 'It is connected to your relay right now. Close Technically Not on it first.',
+    paired: 'It is paired with this computer. Use Forget on its card instead.',
+    not_found: 'Your relay is older than this app. Deploy it again, then try once more.',
+    failed: 'It could not be removed. Try again.',
+  };
   const LOG = {
     paired: e => ['Paired with ' + e.name, 'Six digits typed on each'],
     forgot: e => ['Forgot ' + e.name],
@@ -2075,6 +2086,39 @@
             dialog();
           })
         )
+      );
+    } else if (local?.kind === 'relay-forget') {
+      // An unpaired computer on the user's own relay (an old computer, a test device): its record
+      // on the relay is removed. Nothing here or on it is paired, so nothing else changes.
+      const pc = local.pc;
+      title.textContent = 'Remove ' + pc.name + ' from your relay?';
+      const err = el('p', 'dv-hint dv-warn', '');
+      err.setAttribute('role', 'alert');
+      const remove = async () => {
+        err.textContent = '';
+        let r;
+        try {
+          r = await native.forgetRelayDevice(pc.id);
+        } catch {
+          r = { ok: false };
+        }
+        if (!r || r.ok === false) {
+          err.textContent = RELAY_FORGET_ERR[r?.error] || RELAY_FORGET_ERR.failed;
+          return;
+        }
+        local = null;
+        if (r.state && r.state.self) apply(r.state);
+        dialog();
+      };
+      add(
+        box,
+        el(
+          'p',
+          '',
+          `It is not paired with this computer and is no longer listed here. If it connects to your relay again, it shows up again.`
+        ),
+        err,
+        add(acts, btn('Cancel', 'dv-pri', close), btn('Remove', 'dv-danger', remove))
       );
     } else if (local?.kind === 'forget-paused') {
       const pc = local.pc;

@@ -235,6 +235,37 @@
   display: none;
 }
 
+/* The blur button and a blurred card (135, the store is 120's): the same lime as the open
+   thread's top row, and the card's conversation out of sight while its head stays sharp. */
+.tat-head .tat-act.tat-act-blur,
+.tat-head .tat-act.tat-act-blur:hover {
+  color: var(--pg-privacy);
+}
+.tat-head .tat-act.tat-act-blur[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--pg-privacy) 18%, transparent);
+}
+.tat-card > :is(.tat-body, .tat-helper-note, .tat-plain, .tat-asks) {
+  transition: filter 220ms var(--pg-ease);
+}
+.tat-card.tat-blurred > :is(.tat-body, .tat-helper-note, .tat-plain, .tat-asks) {
+  filter: blur(9px);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* no scrollbar left as a soft ghost bar under the blur: taken away, as in 29 */
+.tat-card.tat-blurred > :is(.tat-body, .tat-asks) {
+  overflow-y: hidden;
+}
+.tat-card.tat-blurred > :is(.tat-body, .tat-helper-note, .tat-plain, .tat-asks) * {
+  scrollbar-width: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tat-card > :is(.tat-body, .tat-helper-note, .tat-plain, .tat-asks) {
+    transition: none;
+  }
+}
+
 /* the conversation: 30's own look, in a narrower column */
 .tat-body.tnt-talk {
   padding: 4px var(--inset) 0;

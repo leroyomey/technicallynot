@@ -207,6 +207,50 @@
   display: block;
 }
 
+/* The blur button (120): the one top-row button in a color of its own (--pg-privacy, lime), so
+   it is found at a glance. While the thread is blurred it holds a soft wash of that color. */
+.tnt-view .tnt-icon-btn.tnt-icon-btn.tnt-head-blur,
+.tnt-view .tnt-icon-btn.tnt-icon-btn.tnt-head-blur:hover:not(:disabled) {
+  color: var(--pg-privacy);
+}
+.tnt-view .tnt-icon-btn.tnt-icon-btn.tnt-head-blur[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--pg-privacy) 18%, transparent);
+}
+
+/* A blurred thread: what it says is out of sight, just enough that nothing can be read; the top
+   row stays sharp. The blur comes and goes softly, and nothing under it can be pressed. */
+.tnt-view :is(.tnt-talk, .tnt-term, .tnt-plain, .tnt-asks) {
+  transition: filter 220ms var(--pg-ease);
+}
+.tnt-view.tnt-blurred :is(.tnt-talk, .tnt-term, .tnt-plain, .tnt-asks) {
+  filter: blur(9px);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* A scrollbar under the blur stays as a soft bar along the edge, a ghost of a line. It is taken
+   away, not made clear: a scrollbar keeps its old paint after only its color changes, so a
+   cleared one still showed blurred (learned 2026-10-14, test thread-blur). The conversation stops
+   scrolling instead (nothing under the blur can be pressed anyway); scrollbar-gutter keeps its
+   room, so its width and its place do not move. Smaller scroll areas inside lose their bar, and
+   the terminal's own bar (xterm draws it as page elements) is hidden. */
+.tnt-view.tnt-blurred .tnt-talk {
+  overflow-y: hidden;
+}
+.tnt-view.tnt-blurred :is(.tnt-talk, .tnt-term, .tnt-plain, .tnt-asks) * {
+  scrollbar-width: none;
+}
+.tnt-view.tnt-blurred
+  .tnt-term
+  :is(.xterm-scrollable-element > .scrollbar, .xterm-decoration-overview-ruler) {
+  visibility: hidden;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tnt-view :is(.tnt-talk, .tnt-term, .tnt-plain, .tnt-asks) {
+    transition: none;
+  }
+}
+
 /* The pencil beside the name (120): a small icon button in the name's own line. Its box is 24px
    with a negative margin of 1px above and below, so it takes no more height than the name and
    the row does not move; 4px less room on its left keeps it beside the name, not apart from it.

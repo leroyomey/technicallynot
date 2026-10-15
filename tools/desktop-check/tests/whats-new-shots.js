@@ -22,8 +22,7 @@ const shot = async name => {
     wait(300),
   ]);
   await wait(1500);
-  console.log('TNAI_SHOT:' + name);
-  await wait(4000);
+  await (window.TnaiTest?.shot?.(name) ?? wait(4000));
 };
 const until = async (fn, ms = 6000) => {
   const end = Date.now() + ms;

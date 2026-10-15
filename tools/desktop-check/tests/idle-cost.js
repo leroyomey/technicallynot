@@ -1,11 +1,13 @@
 /*
  * Technically Not tools · desktop-check/tests/idle-cost.js — What the app costs while nothing
  * happens (the installed app's graphics process averaged about half a core over
- * 11.5 hours). A measurement, not a pass/fail gate: on Overview and on the Terminal page, with no
+ * 11.5 hours). A measurement, not a pass/fail gate: on the Threads page and on All threads, with no
  * agent working, it reads the app's own CPU use (percent of one core, per process kind) over
- * SECONDS seconds, four ways: as shipped; with every animation and transition paused; with the
- * glass blur off; with both. The difference tells which of the two keeps the graphics process busy.
- * It changes nothing in the app (the two switches are a style element this test adds and removes).
+ * SECONDS seconds, five ways: as shipped (the test window is not in front, so the ground's drift
+ * is paused by `html.tnai-away`); with the drift running, as in a window in front; the same with
+ * the glass blur off; with every animation and transition paused; with that and the blur off.
+ * The difference tells which of them keeps the graphics process busy.
+ * It changes nothing in the app (the switches are a style element this test adds and removes).
  * Limits: the test profile has one idle shell and no working agents, so status motion that only
  * runs for working agents is not in it; a test window behind other windows may be drawn less often
  * by Chromium, so the log says whether the window was shown and in front. No load is put on the PC:
@@ -31,12 +33,17 @@ const main = (cmd, ...args) =>
   });
 const SECONDS = 12;
 const style = document.createElement('style');
+
+// The ground's drift as it runs while the window is in front (the test window never is)
+const DRIFT = 'html body::before{animation-play-state:running!important}';
+const NO_BLUR =
+  '*,*::before,*::after{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}';
 const CASES = {
   'as shipped': '',
+  'drift running': DRIFT,
+  'drift running, blur off': DRIFT + NO_BLUR,
   'motion paused':
     '*,*::before,*::after{animation-play-state:paused!important;transition:none!important}',
-  'blur off':
-    '*,*::before,*::after{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}',
   'motion paused and blur off':
     '*,*::before,*::after{animation-play-state:paused!important;transition:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}',
 };
@@ -67,12 +74,10 @@ try {
       innerHeight
   );
   const results = {};
-  for (const [page, sel] of Object.entries({
-    overview: 'overview',
-    terminal: 'terminal',
-  })) {
-    // the route the three-dots menu's rows call ('overview' is the Threads page)
-    window.TnaiRoute(sel);
+  for (const page of ['threads', 'all threads']) {
+    // what the three-dots menu's "Threads" row calls
+    window.TnaiThreads.open();
+    if (page === 'all threads') await window.TnaiTest.openAllThreads(500);
     await wait(2500);
     for (const [name, css] of Object.entries(CASES)) {
       style.textContent = css;
@@ -102,11 +107,11 @@ try {
     style.textContent = '';
   }
   check(
-    Object.keys(results).length === 8 &&
+    Object.keys(results).length === 10 &&
       Object.values(results).every(
         c => typeof c.graphics === 'number' || typeof c.window === 'number'
       ),
-    'idle cost measured on Overview and Terminal, four ways each, ' + SECONDS + ' s each'
+    'idle cost measured on Threads and All threads, five ways each, ' + SECONDS + ' s each'
   );
 } catch (error) {
   check(false, 'threw: ' + (error.stack || error.message));

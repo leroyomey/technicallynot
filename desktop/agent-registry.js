@@ -1,7 +1,10 @@
 // Technically Not desktop · agent-registry.js — Known agent CLIs: how to find them, check their
 // account login, and launch them.
 'use strict';
-const { execFile } = require('child_process');
+const processStarter = require('./process-starter');
+
+// Claude ids their vendor retired or deprecated, and the successor of each (model-retirements.js).
+const { currentClaudeModel, isRetiredClaude } = require('./model-retirements');
 
 // `id` matches the connection value used by the terminal pane picker (src/scripts/05).
 // Only CLIs with a verified command are listed. Anything else in the picker stays disabled.
@@ -73,9 +76,10 @@ const AGENTS = [
     startArgs: o =>
       o.resumeId ? ['--resume', o.resumeId] : o.sessionId ? ['--session-id', o.sessionId] : [],
     // Model and effort picked under the composer (46); checked in claude 2.1 `--help` (full model
-    // names; effort low…max) and its /model, /effort commands.
+    // names; effort low…max) and its /model, /effort commands. A saved pick of a retired or
+    // deprecated model starts on its successor (model-retirements.js), never on a failing id.
     pickArgs: o => [
-      ...(o.model ? ['--model', o.model] : []),
+      ...(o.model ? ['--model', currentClaudeModel(o.model)] : []),
       ...(o.effort ? ['--effort', o.effort] : []),
     ],
     // Access level under the composer (46); claude 2.1.289
@@ -634,25 +638,25 @@ function parseOpenCode(out) {
       };
 }
 
+// The processes start in a worker thread (process-starter.js): a start holds the thread that
+// starts it, now and then 150 to 800 ms on a busy PC, and the CLI update check and accounts.list
+// start 4 to 6 at once (stall log 2026-10-10 to 2026-10-14, `timer tick cli-updates.js`). Every
+// command run here only reads, so it may run again if the worker ends meanwhile.
 // `more` (only OpenCode's model list passes it): { maxBuffer, cwd } for a longer output or a run
 // inside the project folder.
-function run(file, args, timeout = 20000, verbatim = false, env = null, more = null) {
-  return new Promise(resolve => {
-    execFile(
-      file,
-      args,
-      {
-        timeout,
-        windowsHide: true,
-        maxBuffer: more?.maxBuffer || 1 << 20,
-        windowsVerbatimArguments: verbatim,
-        env: env ? { ...process.env, ...env } : process.env,
-        ...(more?.cwd ? { cwd: more.cwd } : {}),
-      },
-      (error, stdout, stderr) =>
-        resolve({ ok: !error, out: String(stdout || '') + String(stderr || '') })
-    );
+async function run(file, args, timeout = 20000, verbatim = false, env = null, more = null) {
+  const options = {
+    timeout,
+    windowsHide: true,
+    maxBuffer: more?.maxBuffer || 1 << 20,
+    windowsVerbatimArguments: verbatim,
+    env: env ? { ...process.env, ...env } : { ...process.env },
+    ...(more?.cwd ? { cwd: more.cwd } : {}),
+  };
+  const { error, stdout, stderr } = await processStarter.start(file, args, options, {
+    rerun: true,
   });
+  return { ok: !error, out: stdout + stderr };
 }
 
 // Gemini CLI 0.61 sign-in from its own files in <GEMINI_CLI_HOME or ~>/.gemini, tokens never read:
@@ -1563,7 +1567,10 @@ const cache = new Map(); // id -> { path, installed }
 
 // Model lists for the composer's model/effort dropdowns (46), read from each CLI's own source,
 // never guessed. `group` = optgroup. Claude Code: the current models of the model table built into
-// claude 2.1.282 (id = its first-party id; 3.x models left out as retired).
+// claude 2.1.282 (id = its first-party id). Retired and deprecated models are left out (Anthropic's
+// deprecations page, read 2026-10-14: Opus 4, Opus 4.1 and Sonnet 4 retired, Sonnet 4.5 retires
+// 2026-11-30); the list of them is model-retirements.js, and tools/model-retirements-test.js fails
+// when a row here or in the public list names one.
 const CLAUDE_MODELS = [
   ['claude-fable-5-1', 'Fable 5.1', 'Fable'],
   ['claude-fable-5', 'Fable 5', 'Fable'],
@@ -1575,13 +1582,9 @@ const CLAUDE_MODELS = [
   ['claude-opus-4-7', 'Opus 4.7', 'Opus'],
   ['claude-opus-4-6', 'Opus 4.6', 'Opus'],
   ['claude-opus-4-5-20251101', 'Opus 4.5', 'Opus'],
-  ['claude-opus-4-1-20250805', 'Opus 4.1', 'Opus'],
-  ['claude-opus-4-20250514', 'Opus 4', 'Opus'],
   ['claude-sonnet-5-5', 'Sonnet 5.5', 'Sonnet'],
   ['claude-sonnet-5', 'Sonnet 5', 'Sonnet'],
   ['claude-sonnet-4-6', 'Sonnet 4.6', 'Sonnet'],
-  ['claude-sonnet-4-5-20250929', 'Sonnet 4.5', 'Sonnet'],
-  ['claude-sonnet-4-20250514', 'Sonnet 4', 'Sonnet'],
   ['claude-haiku-5-5', 'Haiku 5.5', 'Haiku'],
   ['claude-haiku-4-5-20251001', 'Haiku 4.5', 'Haiku'],
 ]; // Haiku 5.5: out 2026-10-07, taken by claude 2.1.293
@@ -1629,6 +1632,7 @@ function validClaudeRows(data) {
         m &&
         typeof m.id === 'string' &&
         /^claude-[a-z0-9-]{1,60}$/.test(m.id) &&
+        !isRetiredClaude(m.id) &&
         typeof m.label === 'string' &&
         m.label.length <= 40 &&
         typeof m.group === 'string' &&

@@ -19,6 +19,11 @@
       pc('5a4b3c2d-2222', 'Work PC · Windows', { online: false, session: false, state: 'offline', heard: t - 3 * 36e5, detail: false })],
     others: [{ id: '77aa88bb-3333', name: 'Spare laptop · Windows', lastSeen: t - 36e5, online: false }], pairing: null, ended: null, stopping: false, waiting: [],
     log: [{ at: t - 12e4, kind: 'saw', name: 'Laptop · Windows', agent: 'Moss' }, { at: t - 864e5, kind: 'paired', name: 'Laptop · Windows' }, { at: t - 3 * 864e5, kind: 'paired', name: 'Work PC · Windows' }] };
+  // ?relay=1: on the user's own relay, with an old unpaired computer and one that is connected (Remove shows on the first only)
+  const relay = new URLSearchParams(location.search).get('relay') === '1';
+  // with pick=remove the paired computers are left out, so the unpaired cards fit the first screen
+  if (relay && /[?&]pick=remove/.test(location.search)) st.computers = [];
+  if (relay) st.others.push({ id: 'check-29a1b2c3d4e5', name: 'Computer', lastSeen: t - 5 * 864e5, online: false }, { id: 'b7c6d5e4-4444', name: 'Computer', lastSeen: t, online: true });
   if (s === 'paused') Object.assign(st.computers[0], { state: 'paused', items: [], asks: [{ id: '5a4b3c2d-2222', name: 'Work PC · Windows', kind: 'forget' }] });
   if (s === 'stopping') { st.stopping = true; st.waiting = [{ r: 'r1', kind: 'stop', status: 'sent', to: '5a4b3c2d-2222', toName: 'Work PC · Windows', about: null, aboutName: '' }]; }
   const push = () => listeners.forEach(fn => fn(structuredClone(st))), ok = () => { push(); return { ok: true, value: structuredClone(st) }; };
@@ -41,10 +46,14 @@
     forget: async id => { const c = find(id); st.computers = st.computers.filter(x => x !== c); st.log.unshift({ at: Date.now(), kind: 'forgot', name: c.name }); return ok(); },
     choose: async (id, choice) => { const c = find(id); if (choice === 'forget') st.computers = st.computers.filter(x => x !== c); else Object.assign(c, { state: 'live', asks: [] }); st.log.unshift({ at: Date.now(), kind: choice === 'keep' ? 'kept' : 'forgot', name: c.name }); return ok(); },
     stopEverywhere: async () => { st.stopping = true; st.waiting = st.computers.map((c, i) => ({ r: 'r' + i, kind: 'stop', status: 'sent', to: c.id, toName: c.name, about: null, aboutName: '' })); return ok(); },
+    ownRelay: async () => (relay ? { available: true, set: true, url: 'https://my-relay.example.workers.dev' } : { available: true, set: false }),
+    forgetRelayDevice: async id => { const o = st.others.find(x => x.id === id); if (o?.online) return { ok: false, error: 'online' }; st.others = st.others.filter(x => x !== o); push(); return { ok: true, state: structuredClone(st) }; },
     finishAnyway: async () => { Object.assign(st, { stopping: false, waiting: [], computers: [], on: false }); return ok(); }, dismiss: async r => { st.waiting = st.waiting.filter(w => w.r !== r); return ok(); },
   } };
 })();
 </script>
 <script src="src/scripts/111-devices-page.js"></script>
-<script>TnaiDevices.mount(document.getElementById('page'));</script>
+<script>TnaiDevices.mount(document.getElementById('page'));
+// ?relay=1&pick=remove-dialog: the Remove question open, for a picture
+if (/[?&]pick=remove/.test(location.search)) setTimeout(() => { const card = document.querySelector('[data-pc^="check"]'); if (/dialog/.test(location.search)) [...card.querySelectorAll('button')].find(b => b.textContent === 'Remove')?.click(); }, 50);</script>
 </body></html>

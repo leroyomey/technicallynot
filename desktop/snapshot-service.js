@@ -32,6 +32,7 @@ const clip = require('./snapshot-clip');
 // the developer self-test switch, never on in a release build
 const { selfTest } = require('./build-info');
 const attachments = require('./attachment-service');
+const shelf = require('./snapshot-shelf');
 
 // The shortcut is the user's choice (Settings › Keyboard, 62-snapshot-shortcut.js), kept in
 // userData/snapshot-shortcut.json.
@@ -45,7 +46,6 @@ let accelerator = DEFAULT,
   registered = null; // registered: the accelerator this app holds right now
 let state = { accelerator: label(DEFAULT), isDefault: true, registered: false, error: null };
 let notify = () => {};
-let allowed = () => true;
 let session = null; // the open capture: { overlay, display, image, ready, finish, crop, region }
 const MAX_COMPOSED = 256 * 1024 * 1024; // a marked-up PNG larger than this is refused
 
@@ -58,11 +58,10 @@ let clipping = null,
   clipSoon = false; // the last clip's result (a promise); a clip is about to start
 const onPress = () => {
   if (clip.active()) return void clip.stop();
-  if (allowed())
-    start().then(
-      r => r?.error && failed(r.error),
-      e => failed(e?.message || 'snapshot failed')
-    );
+  start().then(
+    r => r?.error && failed(r.error),
+    e => failed(e?.message || 'snapshot failed')
+  );
 }; // while a clip records, the shortcut ends it
 
 // A snapshot that failed says why on the existing card (no thumbnail), instead of showing nothing.
@@ -129,10 +128,8 @@ const publish = ok =>
         ' is already used by another app, so the snapshot shortcut is off. Pick another in Settings › Keyboard.',
   });
 
-// allowed(): false while the plan lock is on (main.js), then the shortcut does nothing.
-function init(onState, options = {}) {
+function init(onState) {
   notify = onState || notify;
-  if (options.allowed) allowed = options.allowed;
   ipcMain.on('snapshot:ready', event => {
     if (session && event.sender === session.overlay.webContents) session.ready = true;
   });
@@ -375,6 +372,9 @@ async function start() {
         } catch (error) {
           result = { cancelled: true, error: 'clipboard write failed: ' + error.message };
         }
+
+        // the Snapshots box keeps it too, so several taken back to back can each be copied again
+        if (result.copied) shelf.addPicture(result.png, result.width, result.height);
         delete result.png;
       }
       if (result.copied) {
@@ -479,6 +479,7 @@ async function record(display, region) {
     return { cancelled: true, error: 'clipboard write failed: ' + error.message };
   } // a clip nobody can paste is not kept
   out.file = await copyClip(out.video, out.text);
+  shelf.addClip(out.video, out.frames, out.text);
   try {
     attachments.sweep();
 

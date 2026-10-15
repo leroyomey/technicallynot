@@ -68,9 +68,8 @@ const trust = async () => {
 };
 const started = [];
 try {
-  window.TnaiRoute('terminal');
-  await wait(400);
-  const S = (await G.open('Terminal'))?.paneId;
+  // The sender is a PowerShell thread, started the way "New thread" starts one.
+  const S = (await window.TnaiTest.startThread({ tool: 'Terminal' })).paneId;
   started.push(S);
   check(
     !!(await until(async () => />/.test(await screen(S)), 20000)),
@@ -98,10 +97,13 @@ try {
     }, 50000);
     check(!!typedIn, "the task reached Cursor's screen (" + (Date.now() - t0) + ' ms)');
 
-    // The user looks at the new panel now: its terminal view opens, replays the output so far and
-    // answers Cursor's color questions a second time. Those answers are written into the panel
-    // between our Enters (`replies` in the line below); they must not stop the retries.
-    window.TnaiRoute('terminal');
+    // The user looks at the new agent now: its thread opens on its CLI screen, which replays the
+    // output so far and answers Cursor's color questions a second time. Those answers are written
+    // into the panel between our Enters (`replies` in the line below); they must not stop the
+    // retries.
+    window.TnaiThreads.show(C);
+    await until(() => window.TnaiThreadView.shown() === C, 6000);
+    if (window.TnaiThreadView.mode() !== 'term') window.TnaiThreadView.setMode('term');
 
     // Started = Cursor's own record shows the task, or its screen shows it working / answering (the
     // echo of the task itself holds "pong" once).

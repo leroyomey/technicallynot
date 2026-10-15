@@ -1,8 +1,9 @@
 /*
  * Technically Not tools · desktop-check/tests/send-switch.js — Lag report check: switching pages
- * while a composer prompt goes out. 3 PowerShell panes stream output; a fake Claude Code pane
- * (agent-mesh.main.js's fake CLI, no credits) is the composer's target. Each round clicks the nav
- * through 7 pages every SWITCH_MS for WINDOW_MS; rounds: A no send, B a composer Send to the target
+ * while a composer prompt goes out. 3 PowerShell threads stream output; a fake Claude Code thread
+ * (agent-mesh.main.js's fake CLI, no credits) is the composer's target. Each round routes through
+ * 5 pages (Threads, All threads, Live preview, Skills, Settings) every SWITCH_MS for WINDOW_MS;
+ * rounds: A no send, B a composer Send to the target
  * at the start, C Ctrl+Enter (new agent) at the start. Records rAF frame gaps, long tasks,
  * per-click sync time, main stalls, and TnaiRoute calls the test did not make (the send moving the
  * page).
@@ -43,10 +44,11 @@ try {
 } catch {}
 const G = window.TnaiAgents;
 
-// The route the three-dots menu's rows call ('overview' is the Threads page).
+// The route the three-dots menu's rows call ('overview' is the Threads page, 'terminal' is All
+// threads: the route itself is pressed, as the menu does, because the time of each press is what
+// is measured). The Agents page is gone (2026-10-12): its route only lands on Threads.
 const SEL = {
   overview: 'overview',
-  agents: 'agents',
   terminal: 'terminal',
   preview: 'live-preview',
   skills: 'skills',

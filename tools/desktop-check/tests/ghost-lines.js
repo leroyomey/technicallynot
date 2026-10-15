@@ -186,18 +186,19 @@ for (const tab of window.TnaiSettings.tabs()) {
     await shot('ghost-agents-' + sec);
   }
 }
-for (const sel of [
-  '[data-view="overview"]',
-  '[data-view="agents"]',
-  '[data-view="live-preview"]',
-  '[data-view="terminal"]',
-  '[data-ai-tool="skills"]',
-]) {
-  const item = document.querySelector('.side-item' + sel);
-  if (!item) continue;
-  item.click();
+
+// The pages of the thread layout, each opened the way the three-dots menu opens it (the old
+// navigation's Overview, Agents and Terminal pages are gone since 2026-10-12).
+const PAGES = [
+  { name: 'threads', go: () => window.TnaiThreads?.open?.() },
+  { name: 'all-threads', go: () => window.TnaiTest.openAllThreads() },
+  { name: 'live-preview', go: () => window.TnaiLivePreviewPage?.open?.() },
+  { name: 'skills', go: () => window.TnaiRoute('skills') },
+];
+for (const entry of PAGES) {
+  await entry.go();
   await wait(900);
-  report('Page ' + sel, document.querySelector('.layout'));
-  await shot('ghost-page-' + /"([a-z-]+)"/.exec(sel)[1]);
+  report('Page ' + entry.name, document.querySelector('.layout'));
+  await shot('ghost-page-' + entry.name);
 }
 return { ok, log };

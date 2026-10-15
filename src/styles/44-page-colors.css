@@ -1,0 +1,68 @@
+/* Technically Not · page colors: each place that has its own page, popover, column or screen has
+   one color, and the icon of every control that leads there is drawn in it, so a user knows
+   where an icon goes by its color alone.
+
+   Only the glyph takes the color: no chip, no fill, and the words beside an icon keep their
+   own color. Every other icon stays neutral. The colors are the --pg-page-* tokens: Dark in
+   07-purple-glass.css, Light in 31-thread-pages.css. Hover keeps the color (the button's own
+   hover fill still shows); a disabled control is left out, so its icon stays muted.
+   Test: `thread-more` (the computed color of each icon in Dark and Light, and its contrast). */
+
+/* Start and Stop take the status colors, not a page color (Stop is red, green is for go): the
+   "..." menu's row (137), the thread's top-row on/off button (137) and an
+   All threads card's on/off button (135). --pg-work and --pg-err are set for Dark and Light. */
+.tnt-menu-row[data-row='start']:not(:disabled, [aria-disabled='true']) > svg,
+.tnt-head-power[data-shows='start']:not(:disabled, [aria-disabled='true']) > svg,
+.tat-act-power[data-shows='start']:not(:disabled, [aria-disabled='true']) > svg {
+  color: var(--pg-work);
+}
+
+.tnt-menu-row[data-row='stop']:not(:disabled, [aria-disabled='true']) > svg,
+.tnt-head-power[data-shows='stop']:not(:disabled, [aria-disabled='true']) > svg,
+.tat-act-power[data-shows='stop']:not(:disabled, [aria-disabled='true']) > svg {
+  color: var(--pg-err);
+}
+
+/* All threads: the thread's top-row button and the three-dots menu's row (124) */
+.tnt-view .tnt-head-page:not(:disabled, [aria-disabled='true']) > svg,
+.tnt-menu-row[data-place='all']:not(:disabled, [aria-disabled='true']) > svg {
+  color: var(--pg-page-all);
+}
+
+/* The side column (Files, Helpers, Details): the thread's top-row button (131) and an All
+   threads card's button (135) */
+.tnt-fold-side:not(:disabled, [aria-disabled='true']) > svg,
+.tat-act-side:not(:disabled, [aria-disabled='true']) > svg {
+  color: var(--pg-page-side);
+}
+
+/* CLI screen: its row in the thread's "..." menu (137), on the thread and on a card */
+.tnt-menu-row[data-row='screen']:not(:disabled, [aria-disabled='true']) > svg {
+  color: var(--pg-page-cli);
+}
+
+/* Your terminal: the three-dots menu's Terminal row */
+.tnt-menu-row[data-place='terminal']:not(:disabled, [aria-disabled='true']) > svg {
+  color: var(--pg-page-terminal);
+}
+
+/* Past conversations: the thread's top-row button and the button at the foot of the thread
+   list (138) */
+.tnh-open:not(:disabled, [aria-disabled='true']) > svg,
+.tnh-foot-btn:not(:disabled, [aria-disabled='true']) > svg {
+  color: var(--pg-page-past);
+}
+
+/* Handoff history: the thread's top-row button (120) and an All threads card's button (135) */
+.tnt-view .tnt-head-handoff:not(:disabled, [aria-disabled='true']) > svg,
+.tat-act-handoff:not(:disabled, [aria-disabled='true']) > svg {
+  color: var(--pg-page-handoff);
+}
+
+/* Live preview: the three-dots menu's row, the button that shows or hides the Live preview
+   column of All threads (127), and an address's button under Your terminal (147) */
+.tnt-menu-row[data-place='preview']:not(:disabled, [aria-disabled='true']) > svg,
+.tnt-fold-preview:not(:disabled, [aria-disabled='true']) > svg,
+.tnt-ownterm-port button[data-port]:not(:disabled, [aria-disabled='true']) > svg {
+  color: var(--pg-page-preview);
+}

@@ -232,7 +232,6 @@ function world() {
       // Stand-ins for the app's control actions: each counts its calls and answers what the test
       // set. panels: what agentNow says a panel runs.
       panels: {},
-      locked: false,
       clis: ['Claude Code', 'Codex'],
       started: 0,
       term: {},
@@ -288,7 +287,6 @@ function world() {
           return c.relate(mine, theirs);
         },
         agentNow: panelId => c.panels[panelId] || null,
-        planLocked: () => c.locked,
         clis: () => c.clis,
         remoteStarted: () => c.started,
         cancelHeld: key => {
@@ -2156,10 +2154,9 @@ const item = (paneId, kind, detail) => ({
       const pushes = A.changes;
       A.svc.windowLoaded();
       A.svc.windowNavigates({ isMainFrame: true, isSameDocument: false });
-      A.svc.lockChanged({ locked: true });
       await w.advance(10);
       check(
-        'review 16, 2.4: the window loading, loading again and the plan locking ask secure storage nothing and push nothing when remote was never used',
+        'review 16, 2.4: the window loading and loading again ask secure storage nothing and push nothing when remote was never used',
         asked === 0 && A.changes === pushes,
         [asked, A.changes - pushes]
       );
@@ -4119,13 +4116,6 @@ const item = (paneId, kind, detail) => ({
         waiting.o.guard('') === false &&
         opOf(slow.n).state === 'asked'
     );
-    B.locked = true;
-    const lockedStart = waiting.o.guard(KX);
-    B.locked = false;
-    check(
-      '20, 31: the plan locks during the wait: the guard says no; unlocked it holds again',
-      lockedStart === false && waiting.o.guard(KX) === true
-    );
     B.svc.setControl('a-1', false);
     check(
       '20: the switch went off during the wait: the guard says no, so no first prompt goes in',
@@ -4169,48 +4159,6 @@ const item = (paneId, kind, detail) => ({
       '30: one that took 50 s is still taken',
       B.did.submit.length === n30 + 1 && opOf(slowP.n).state === 'sent',
       opOf(slowP.n)
-    );
-
-    // 31. The plan lock on B.
-    await w.advance(61000);
-    B.locked = true;
-    B.svc.controlChanged();
-    await w.advance(5000);
-    check(
-      '31: plan locked on B: A is told there is nothing to control (the switch itself stays on), and sends nothing',
-      A.pc('b-2').canControl === false &&
-        A.pc('b-2').agents.every(r => r.can === false) &&
-        B.pc('a-1').control === true &&
-        ticket('p1') === '' &&
-        A.svc.prompt('b-2', 'p1', 'Fix it').sent === 'not_sent',
-      A.pc('b-2')
-    );
-    mark = sentBy('b-2');
-    const d31 = did(),
-      l31 = B.svc.controlLog().length,
-      r31 = seen.ctlReceives;
-    A.raw('b-2', { t: 'prompt', ...fresh(), n: num(), id: 'p1', to: known, text: 'Fix it' });
-    A.raw('b-2', { t: 'act', ...fresh(), n: num(), id: 'p1', to: known, do: 'interrupt' });
-    A.raw('b-2', { t: 'act', ...fresh(), n: num(), id: 'p1', to: known, do: 'stop' });
-    A.raw('b-2', { t: 'start', ...fresh(), n: num(), cli: 'claude', project: KX });
-    await w.advance(50);
-    check(
-      '31: plan locked: a prompt, an interrupt, a stop and a start with a ticket that was good are each refused before anything is taken: no action, no line',
-      sentBy('b-2') - mark === 4 &&
-        seen.ctlReceives - r31 === 4 &&
-        did() === d31 &&
-        B.svc.controlLog().length === l31,
-      [sentBy('b-2') - mark, did() - d31, B.svc.controlLog().length - l31]
-    );
-    B.locked = false;
-    B.svc.controlChanged();
-    await w.advance(5000);
-    check(
-      '31: unlocked: the agents can be pressed again, with the ticket they had',
-      A.pc('b-2').canControl === true &&
-        A.pc('b-2').agents.find(r => r.id === 'p1').can === true &&
-        ticket('p1') === known,
-      [ticket('p1'), known]
     );
 
     // 28. Many operations: the activity log keeps its pairing lines, the control list is bounded,
@@ -4524,22 +4472,6 @@ const item = (paneId, kind, detail) => ({
       B.pc('a-1')
     );
     note();
-
-    // the plan locks while a prompt is held
-    check('11: (setup) held', await holdOne());
-    B.locked = true;
-    const lockedGuard = hold.guard();
-    await w.advance(50);
-    check(
-      '31: the plan locks while a prompt is held: its guard says no at the write, it is dropped and A is told',
-      lockedGuard === false &&
-        B.svc.controlLog()[0].op === 'dropped' &&
-        opOf(heldOp.n).state === 'failed',
-      [lockedGuard, opOf(heldOp.n)]
-    );
-    B.locked = false;
-    B.svc.controlChanged();
-    await w.advance(5000);
 
     // signed out
     check('11: (setup) held', await holdOne());
@@ -5740,17 +5672,6 @@ const item = (paneId, kind, detail) => ({
     );
     await relist();
     check('(open on the new one)', (await open()).state === 'on');
-    B.locked = true;
-    B.svc.controlChanged();
-    await w.advance(50);
-    check(
-      'view test 4: the plan locks on the watched computer: the view ends at once',
-      model(A).state === 'ended' && B.svc.state().watching.length === 0,
-      model(A)
-    );
-    B.locked = false;
-    B.svc.controlChanged();
-    await relist();
 
     // test 18: the watched computer's user ends it
     await w.advance(61000);
@@ -6076,11 +5997,9 @@ const item = (paneId, kind, detail) => ({
         A.svc.windowNavigates({ isMainFrame: true, isSameDocument: true }),
         A.svc.windowNavigates(undefined, true, true),
         A.svc.windowNavigates(undefined, false, false),
-        A.svc.lockChanged({ locked: false }),
-        A.svc.lockChanged(null),
       ];
       check(
-        'review 16, 1.1: a frame inside the page, a move inside the page and a lock that is not on end nothing',
+        'review 16, 1.1: a frame inside the page and a move inside the page end nothing',
         kept.every(x => x === false) && model(A)?.state === 'on',
         [kept, model(A)?.state]
       );
@@ -6111,38 +6030,20 @@ const item = (paneId, kind, detail) => ({
         [did, model(A)]
       );
     }
-    await w.advance(61000);
-    check('(open)', (await open()).state === 'on');
-    {
-      const did = A.svc.lockChanged({ locked: true });
-      await w.advance(500);
-      check(
-        "review 16, 1.1: the plan lock comes on: this computer's view ends, on both",
-        did === true && model(A) === null && (B.svc.state().watching || []).length === 0,
-        [did, model(A)]
-      );
-    }
 
-    // in main.js, which only runs inside the app: that the three are wired is read from its text
+    // in main.js, which only runs inside the app: that the two are wired is read from its text
     // (the rules themselves ran above)
     {
       const mainJs = require('fs').readFileSync(
-          require('path').join(__dirname, '..', 'desktop', 'main.js'),
-          'utf8'
-        ),
-        free = mainJs.slice(
-          mainJs.indexOf('const LOCK_FREE = new Set(['),
-          mainJs.indexOf('const LAPSE_READ')
-        );
+        require('path').join(__dirname, '..', 'desktop', 'main.js'),
+        'utf8'
+      );
       check(
-        "review 15, 5 (read from main.js): ending a view is on the list of calls a locked plan lets through; the plan locking and this window loading again end this computer's own view; the window is asked again for a watched panel after it loaded",
-        free.includes("'remote:unview'") &&
-          /remote\.lockChanged\(payload\?\.lock\)/.test(mainJs) &&
-          // `[^;]*?`: the call is the first statement of that listener, however it is laid out
-          /did-start-navigation', \(details, _url, inPlace, mainFrame\)[^;]*?\bremote\.windowNavigates\(details, inPlace, mainFrame\)/.test(
-            mainJs
-          ) &&
-          /did-finish-load[^;]*?\bremote\.windowLoaded\(\)/.test(mainJs)
+        "review 15, 5 (read from main.js): this window loading again ends this computer's own view; the window is asked again for a watched panel after it loaded",
+        // `[^;]*?`: the call is the first statement of that listener, however it is laid out
+        /did-start-navigation', \(details, _url, inPlace, mainFrame\)[^;]*?\bremote\.windowNavigates\(details, inPlace, mainFrame\)/.test(
+          mainJs
+        ) && /did-finish-load[^;]*?\bremote\.windowLoaded\(\)/.test(mainJs)
       );
     }
 

@@ -10,7 +10,7 @@ After you edit a code file, run:
 node tools/format-code.js path/to/file.js
 ```
 
-It formats the file and proves the program did not change. To see every file that is not formatted: `npm run format:check`. To format everything: `npm run format`.
+It formats the file and proves the program did not change. In the maintainers' own setup, Claude Code runs it by itself after each edit of a .js, .mjs, .cjs or .css file (a hook, since 2026-10-14); other agent tools and edits made by shell commands still run it by hand. To see every file that is not formatted: `npm run format:check`. To format everything: `npm run format`.
 
 ## What the formatter does
 

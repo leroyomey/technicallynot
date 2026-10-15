@@ -43,11 +43,28 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   check(notices._test.size('B') === 0, 'a typed notice is no longer held');
 
   typed.length = 0;
-  notices.hold('A', 'at task end', type('A', 'at task end'), 5000);
+
+  // The Stop hook calls flush before agent-turns.js marks the task ended, in the same run: the
+  // notice must be typed after that mark, or it is held as "still working" (speed audit item 2).
+  let endMarked = false,
+    sawEnd = null;
+  notices.hold(
+    'A',
+    'at task end',
+    () => {
+      sawEnd = endMarked;
+      typed.push(['A', 'at task end']);
+    },
+    5000
+  );
   notices.flush('A');
+  const typedAtOnce = typed.length;
+  endMarked = true;
+  check(notices.take('A') === '', 'the task ended: what is still held is not handed over again');
+  await sleep(10);
   check(
-    typed.length === 1 && notices.take('A') === '',
-    'the task ended: what is still held is typed in at once, and not handed over again'
+    typedAtOnce === 0 && typed.length === 1 && sawEnd === true,
+    'the task ended: what is still held is typed right after the hook marked the task ended, not before it'
   );
 
   typed.length = 0;

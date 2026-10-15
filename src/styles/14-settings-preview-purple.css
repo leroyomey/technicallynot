@@ -596,13 +596,6 @@
   font: 11px var(--pg-sans);
   overflow-wrap: anywhere;
 }
-:root:not(#pg) .tnai-user-menu-label {
-  margin: 9px 6px 4px;
-  color: var(--pg-text-4);
-  font: 400 10.5px var(--pg-sans);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
 :root:not(#pg) .tnai-user-plan {
   padding: 2px 6px 6px;
   color: var(--pg-text);
@@ -648,16 +641,6 @@
   z-index: 1300;
   background: var(--pg-scrim);
   backdrop-filter: blur(8px);
-}
-:root:not(#pg) .tnai-auth-overlay.tnai-lock-overlay {
-  z-index: 1290;
-}
-:root:not(#pg) body.tnai-locked .win-ctrls {
-  position: relative;
-  z-index: 1295;
-  background: var(--pg-panel);
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
 }
 :root:not(#pg) .tnai-auth-modal {
   width: min(420px, calc(100vw - 48px));

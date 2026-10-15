@@ -128,7 +128,7 @@ No other usage statistics were found in the code. If you find a request that is 
 - Used daily on Windows. Linux builds exist and are tried less. The Mac build is new (first released in 0.3.72), not signed by Apple and tried least.
 - The thread layout is new. It is made for a desktop window; a layout of its own for tablet-sized windows is not built yet.
 - The several-computers feature is new and has been tried on few machines.
-- The tree still holds code for an account system and a plan check. They are switched off (`tnaiAccountsUrl` is empty and `tnaiEnforcePlan` is `false` in `package.json`): the app asks for no sign-in, shows no sign-in control and calls no accounts server.
+- The tree still holds code for an account system and a plan check, and no plan lock. They are switched off (`tnaiAccountsUrl` is empty in `package.json`): the app asks for no sign-in, shows no sign-in control and calls no accounts server.
 - Automatic updates need a release address. A build of your own has none unless you set one.
 - Some pages of the app are prototypes. Controls without a working feature are grayed out.
 

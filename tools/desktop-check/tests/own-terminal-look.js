@@ -23,8 +23,7 @@ const until = async (fn, ms = 8000) => {
 };
 const shot = async name => {
   await wait(400);
-  console.log('TNAI_SHOT:' + name);
-  await wait(700);
+  await (window.TnaiTest?.shot?.(name) ?? wait(700));
 };
 const agents = window.TnaiAgents;
 const threads = window.TnaiThreads;

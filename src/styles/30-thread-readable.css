@@ -272,6 +272,26 @@
   display: none;
 }
 
+/* a run of actions (122 paintRun): one line that sums it up, its groups behind a press */
+.tnt-did[data-run='true'] > .tnt-run-head {
+  cursor: pointer;
+}
+.tnt-did[data-run='true'] > .tnt-run-head > svg:last-child {
+  display: block;
+}
+.tnt-did[data-open='true'] > .tnt-run-head > svg:last-child {
+  rotate: 90deg;
+}
+.tnt-did[data-run='true'] > .tnt-run-head:hover {
+  color: var(--pg-text-2);
+}
+.tnt-did[data-run='true'][data-open='false'] > .tnt-grp {
+  display: none;
+}
+.tnt-did[data-run='true']:not([data-single='true']) > .tnt-grp {
+  padding-left: 20px;
+}
+
 /* under a heading the lines stand in from it, and the heading has said the verb and the icon */
 .tnt-grp[data-many='true'] > .tnt-grp-list {
   padding-left: 20px;
@@ -849,6 +869,71 @@ code.tnt-act-what {
   gap: 6px;
   padding: 0 var(--inset) 8px;
 }
+
+/* Folded by default: one quiet line with the count, the busiest holders and who waits; a press
+   opens the list of files under it (123). */
+.tnt-shared-sum {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  height: 26px;
+  margin: 0;
+  padding: 0 8px 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--pg-panel);
+  box-shadow: none;
+  color: var(--pg-text-2);
+  font: 12px var(--pg-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tnt-shared-sum:hover {
+  background: var(--pg-panel-hover);
+}
+.tnt-shared-sum:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 2px;
+}
+.tnt-shared-sum em {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pg-text-3);
+  font-style: normal;
+  text-overflow: ellipsis;
+}
+.tnt-shared-sum b {
+  flex: none;
+  color: var(--pg-wait);
+  font-weight: 400;
+}
+.tnt-shared-sum > svg {
+  flex: none;
+  color: var(--pg-text-4);
+  transition: rotate 0.2s var(--pg-ease);
+}
+.tnt-shared-sum[aria-expanded='true'] > svg {
+  rotate: 90deg;
+}
+.tnt-shared-list {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: 6px;
+  animation: tnt-rise 0.16s var(--pg-ease);
+}
+.tnt-shared-list[hidden] {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tnt-shared-sum > svg {
+    transition: none;
+  }
+  .tnt-shared-list {
+    animation: none;
+  }
+}
 .tnt-shared-file {
   display: inline-flex;
   align-items: center;
@@ -1122,16 +1207,17 @@ code.tnt-act-what {
   white-space: normal;
 }
 
-/* "Last report" and "Latest" (122 `jumpBar`): they float over the conversation's bottom right
-   edge, at the reading column's edge. The bar has no height, so it takes no room; each button shows
-   only while the reader is away from where it leads. */
+/* "Last report" and "Latest" (122 `jumpBar`): they float over the conversation's bottom left
+   edge, at the reading column's edge, so they never cover the right-aligned buttons of a prompt or
+   card (Send now, Remove). The bar has no height, so it takes no room; each button
+   shows only while the reader is away from where it leads. */
 .tnt-jump {
   position: sticky;
   bottom: 12px;
   z-index: 2;
   display: flex;
   align-items: flex-end;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 8px;
   width: min(100%, var(--tnt-read-w, 780px));
   height: 0;

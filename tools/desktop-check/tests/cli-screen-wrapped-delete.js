@@ -154,13 +154,16 @@ try {
 
   // 1. Drag from row 2 (col 20) up to row 1 (col 60), Backspace.
   check(!!(await type()), 'typed text wraps to ' + (input()?.length || 0) + ' rows');
-  if (!input()) {
+
+  // Too few rows says nothing about why (once 1 row, then a TypeError on the missing second):
+  // the screen's rows are printed so the next failure names the cause.
+  if (!input() || input().length < 2) {
     rows().forEach(
       (d, i) =>
         d.textContent.trim() &&
         log.push('info row ' + i + ' ' + JSON.stringify(d.textContent.slice(0, 60)))
     );
-    throw new Error('no input rows');
+    throw new Error(input() ? 'the input did not wrap to a second row' : 'no input rows');
   }
   let [r1, r2] = input();
   const row1 = r1.textContent.replace(/^❯ /, '').replace(/\s+$/, ''),

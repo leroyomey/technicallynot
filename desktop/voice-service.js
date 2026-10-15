@@ -416,10 +416,13 @@ function clean(text) {
 // A sentence the decoder looped inside a longer clip (one sentence once came back five
 // times): three or more copies in a row, where the first may carry a lead-in ("All right, X. X.
 // X.") and the last is often cut off by the decoder's length limit ("X. X. X. If you're do").
-// One copy is kept with its lead-in, and the cut-off copy is dropped. Two copies stay: a person
-// may say a sentence twice. Sentences shorter than LOOP_CHARS are never folded.
+// One copy is kept with its lead-in, and the cut-off copy is dropped. Two copies of a short
+// sentence stay: a person may say one twice. A long one (LONG_CHARS or more) said twice in a row,
+// word for word, is the decoder looping once, and folds too. Sentences shorter than LOOP_CHARS
+// are never folded.
 const LOOP_MIN = 3,
-  LOOP_CHARS = 12;
+  LOOP_CHARS = 12,
+  LONG_CHARS = 50;
 const sentenceKey = s =>
   s
     .toLowerCase()
@@ -428,7 +431,7 @@ const sentenceKey = s =>
 
 function unloop(text) {
   const parts = text.match(/[^.!?]+(?:[.!?]+|$)/g) || [];
-  if (parts.length < LOOP_MIN) return text;
+  if (parts.length < 2) return text;
   const keys = parts.map(sentenceKey);
   const out = [];
   let i = 0;
@@ -451,7 +454,7 @@ function unloop(text) {
       keys[end].length > 0 &&
       next.startsWith(keys[end]);
     const copies = end - i + (cut ? 1 : 0);
-    if (copies >= LOOP_MIN) {
+    if (copies >= LOOP_MIN || (copies >= 2 && next.length >= LONG_CHARS)) {
       out.push(parts[i]);
       i = cut ? end + 1 : end;
     } else {

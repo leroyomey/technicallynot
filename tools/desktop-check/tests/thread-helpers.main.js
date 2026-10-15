@@ -58,6 +58,17 @@ module.exports = win => {
       written.push(file);
       return file;
     },
+    // more lines at the end of a transcript writeTranscript made (a turn that follows)
+    appendTranscript(paneId, lines) {
+      const record = sessionStore.get(String(paneId));
+      const file = written.find(each => record?.sessionId && each.includes(record.sessionId));
+      if (!file) return false;
+      fs.appendFileSync(
+        file,
+        lines.map(line => JSON.stringify({ cwd: record.cwd, ...line })).join('\n') + '\n'
+      );
+      return true;
+    },
     cleanup() {
       for (const file of written.splice(0)) fs.rmSync(file, { force: true });
       return true;

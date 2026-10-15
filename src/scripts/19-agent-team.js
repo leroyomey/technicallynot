@@ -242,9 +242,43 @@
             agentId: e.agentId || '',
           });
         break;
-      case 'bg-end':
+      case 'bg-end': {
         p.bg = p.bg.filter(b => b.taskId !== e.taskId);
+
+        // the same id can be a background sub-agent: its hand-back taken into a running reply, or
+        // listed "completed" after a compact (desktop/agent-turns.js), comes with no SubagentStop
+        const s = bySub(e.taskId);
+        if (s && s.status !== 'done' && s.status !== 'failed') {
+          Object.assign(s, {
+            status: /fail|error|kill/i.test(e.status || '') ? 'failed' : 'done',
+            endedAt: e.at,
+          });
+          retire(p, s);
+        }
         break;
+      }
+
+      // After a compact Claude Code lists every background task it still runs
+      // (desktop/agent-turns.js): the lead's own background commands and background sub-agents from
+      // before the compact that it no longer lists have ended. Entries of a sub-agent are not in
+      // the lead's list, so they stay.
+      case 'bg-sweep': {
+        const running = new Set(e.running || []);
+        const ended = x => (x.startedAt || 0) <= e.before && !running.has(x.agentId || x.taskId);
+        p.bg = p.bg.filter(b => b.agentId || !ended(b));
+        for (const s of p.subs)
+          if (
+            s.background &&
+            !s.parent &&
+            s.agentId &&
+            (s.status === 'running' || s.status === 'starting') &&
+            ended(s)
+          ) {
+            Object.assign(s, { status: 'done', endedAt: e.at });
+            retire(p, s);
+          }
+        break;
+      }
       case 'sub-note': {
         // a background sub-agent (or background task) handed back to the lead, which now works on
         // in the same task

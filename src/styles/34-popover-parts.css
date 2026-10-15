@@ -125,3 +125,82 @@
   background: transparent;
   font-family: var(--pg-sans);
 }
+
+/* The Snapshots box (151-snapshot-shelf.js): the worktree box's popover with a grid of small
+   pictures, three to a row, each with its time and icon buttons under it. */
+.snap-shelf {
+  width: min(440px, calc(100vw - 16px));
+  max-height: min(78vh, 620px);
+}
+.snap-shelf .snap-lead {
+  margin: 0 0 8px;
+}
+.snap-shelf .who {
+  justify-content: space-between;
+}
+.snap-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 7px;
+}
+.snap-tile {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.snap-pic {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--pg-panel-2);
+  box-shadow: inset 0 0 0 1px var(--pg-line);
+}
+.snap-pic img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.snap-badge {
+  position: absolute;
+  left: 5px;
+  bottom: 5px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--pg-panel-solid) 82%, transparent);
+  color: var(--pg-text-2);
+  font-size: 10.5px;
+}
+.snap-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  min-width: 0;
+}
+.snap-foot small {
+  color: var(--pg-text-3);
+  font: 400 11px var(--pg-mono);
+  white-space: nowrap;
+}
+.snap-acts {
+  display: flex;
+  gap: 3px;
+}
+.pgo-qpop .snap-act {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+}
+.pgo-qpop .snap-act[data-act='remove']:hover {
+  border-color: var(--pg-err) !important;
+  color: var(--pg-err) !important;
+  background: none !important;
+}
+.snap-shelf .snap-note:empty {
+  display: none;
+}

@@ -255,6 +255,7 @@ const STANDING_ROWS = [
   'Skills',
   'Usage and accounts',
   'Devices and own relay',
+  'Snapshots',
   'Settings',
 ];
 
@@ -293,7 +294,7 @@ const measureMenu = look => {
   check(
     rowNames.join() === STANDING_ROWS.join(),
     look +
-      ': the rows are the nine named ones in their order, Alerts is not among them (' +
+      ': the rows are the ten named ones in their order, Alerts is not among them (' +
       rowNames.join(', ') +
       ')'
   );

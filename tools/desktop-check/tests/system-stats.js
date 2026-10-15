@@ -113,12 +113,10 @@ try {
   );
   window.TnaiTheme?.set('light');
   await wait(400);
-  console.log('TNAI_SHOT:system-stats-light');
-  await wait(1500);
+  await (window.TnaiTest?.shot?.('system-stats-light') ?? wait(1500));
   window.TnaiTheme?.set('dark');
   await wait(400);
-  console.log('TNAI_SHOT:system-stats-dark');
-  await wait(1200);
+  await (window.TnaiTest?.shot?.('system-stats-dark') ?? wait(1200));
   window.TnaiTheme?.set('light');
 
   // Purple breakpoints (07 / 81): sparklines from 1600 px, numbers only from 1340, hidden below.
@@ -135,8 +133,7 @@ try {
     );
     fits(w + 'x' + h);
   }
-  console.log('TNAI_SHOT:system-stats-1440');
-  await wait(1200);
+  await (window.TnaiTest?.shot?.('system-stats-1440') ?? wait(1200));
   await main('setSize', 1024, 768);
   await wait(600);
   check(!shown(chip()), '1024x768: chip hidden (no room)');

@@ -510,6 +510,7 @@
   }
   window.TnaiVoice = { keys: () => keyParts(hotkey), command, named, hints };
   const MIN_SECONDS = 0.35;
+  const START_QUIET_S = 0.4; // the start tone's time, not counted as something said (press)
   const say = message => (typeof toast === 'function' ? toast(message) : console.info(message));
 
   const style = document.createElement('style');
@@ -625,6 +626,12 @@
   let pending = 0,
     queue = Promise.resolve(); // clips being transcribed, delivered in the order they were said
   let holding = null; // what is holding it down: 'pointer' | 'key' | 'chord' | 'toggle'
+
+  // The last clip's tail is being recorded (finish() waits for the end of the last word, up to 0.7
+  // s): the mic is still busy. A press in that time is kept here and starts the moment the mic is
+  // free, instead of being dropped with no sign. { source, to, mainDown, released }
+  let stopping = false;
+  let queuedPress = null;
   let gen = 0; // bumped by cancel(): stale awaits drop their result
   let unLevel = null,
     installed = false;
@@ -914,6 +921,24 @@
     clearTimeout(restTimer);
     restTimer = null;
     if (micReady && installed && !busy && appFocused()) recorder.warm?.(READY_MS);
+    if (installed && !busy && !pending && usedRecently()) warmEngine();
+  }
+
+  // The engine server stops after an hour unused, and Parakeet takes about 4 s to start (Accurate
+  // about 1 s; measured 2026-10-14). A press that found it stopped started it then, so a short
+  // prompt waited for that start after the key was let go: the text came late. For someone who used
+  // voice in the last day it is started when the app opens or comes back to the front (keepReady
+  // runs then), out of sight, so the next press finds it ready. warmEngine does nothing while the
+  // server already runs, so this never keeps it longer.
+  const USED_STORE = 'tnai.voice-used.v1';
+  const USED_MS = 24 * 60 * 60 * 1000;
+
+  function usedRecently() {
+    try {
+      return Date.now() - Number(localStorage.getItem(USED_STORE) || 0) < USED_MS;
+    } catch {
+      return false;
+    }
   }
 
   // Focus moving between the app's own windows blurs one before the next has it: look again a
@@ -933,7 +958,15 @@
   // ---- hold → record → transcribe → insert
   // -------------------------------------------------------------------------------------
   async function press(source, to = { kind: 'composer' }) {
-    if (busy) return;
+    if (busy) {
+      if (stopping && !queuedPress) {
+        queuedPress = { source, to, mainDown, released: false };
+
+        // desktop-check (voice-prompt): presses kept this way
+        window.TnaiVoice._queuedPresses = (window.TnaiVoice._queuedPresses || 0) + 1;
+      }
+      return;
+    }
     busy = true;
     holding = source;
     target = to;
@@ -954,6 +987,9 @@
       } catch {}
     } // stuck from an earlier attempt
     warmEngine();
+    try {
+      localStorage.setItem(USED_STORE, String(Date.now()));
+    } catch {}
     try {
       await recorder.start();
     } catch (err) {
@@ -977,6 +1013,11 @@
       return;
     } // a quick tap
     setState('listening');
+
+    // The start tone can reach the mic: a hold with only the tone in it came back from Parakeet as
+    // "Yeah.". So its first 0.4 s don't count as something said; the audio is kept, so words said
+    // in it still reach the engine when more is said after.
+    if (voiceSounds) recorder.quietStart?.(START_QUIET_S);
     cue(true);
     pin();
     startParts();
@@ -991,7 +1032,25 @@
     });
   }
 
+  // The press kept during the stop tail starts now that the mic is free. Let go before that, it was
+  // a quick tap and is told so, as a tap at any other time is.
+  function startQueued() {
+    const queued = queuedPress;
+    queuedPress = null;
+    if (!queued || busy) return;
+    if (queued.released) {
+      say('Hold the mic button while you talk');
+      return;
+    }
+    mainDown = queued.mainDown;
+    press(queued.source, queued.to);
+  }
+
   function release(source) {
+    if (queuedPress && queuedPress.source === source) {
+      queuedPress.released = true;
+      return;
+    }
     if (!busy || holding !== source) return;
     holding = null;
 
@@ -1009,6 +1068,7 @@
     unpin();
     stopLevel();
     setState('transcribing');
+    stopping = true;
     const earlier = parts;
     parts = [];
     let words = [];
@@ -1043,6 +1103,7 @@
       clip = await recorder.stop();
     } catch {}
     cue(false);
+    stopping = false;
     if (my !== gen) return;
     micCheck(clip);
     lostCheck(clip);
@@ -1056,6 +1117,7 @@
       keepClip(clip, earlier, '');
       idle();
       say("Didn't catch anything");
+      startQueued();
       return;
     }
 
@@ -1153,6 +1215,7 @@
 
       // after the words are typed in: by then the input holds them as unsent text
       .finally(() => speaking(false));
+    startQueued();
   }
 
   // A mic that keeps coming in very quiet (far away, input volume low, the wrong device): one bell
@@ -1262,6 +1325,8 @@
     if (!busy) return;
     const wasListening = btn.dataset.state === 'listening';
     gen++;
+    stopping = false;
+    queuedPress = null;
     try {
       recorder.cancel();
     } catch {}
@@ -1574,7 +1639,7 @@
   btn.addEventListener('click', event => {
     event.preventDefault();
     if (event.detail !== 0 || heldKey) return;
-    if (!busy) pressVoice('toggle');
+    if (!busy || (stopping && !queuedPress)) pressVoice('toggle');
     else release('toggle');
   });
 
@@ -1613,6 +1678,9 @@
       'keydown',
       event => {
         if (picking) return;
+
+        // Esc drops a press kept during the stop tail, before it starts.
+        if (event.key === 'Escape' && queuedPress) queuedPress = null;
         if (event.key === 'Escape' && busy && btn.dataset.state !== 'transcribing') {
           event.preventDefault();
           event.stopImmediatePropagation();
@@ -1639,7 +1707,10 @@
           event.stopImmediatePropagation();
         }
         if (event.repeat) return;
-        if (busy) {
+
+        // (While the last clip's tail is recorded, press() keeps the press for when the mic is
+        // free.)
+        if (busy && !stopping) {
           if (holding === 'chord') release('chord');
           return;
         } // a fresh press while "held": its keyup was lost, so this ends it

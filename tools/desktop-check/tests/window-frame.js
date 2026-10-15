@@ -11,8 +11,7 @@ const check = (cond, label) => {
   if (!cond) ok = false;
 };
 const shot = async name => {
-  console.log('TNAI_SHOT:' + name);
-  await wait(500);
+  await (window.TnaiTest?.shot?.(name) ?? wait(500));
 };
 
 try {

@@ -47,11 +47,11 @@ Packed into the installer (21 packages):
 - tiny-typed-emitter 2.1.0: MIT
 - universalify 2.0.1: MIT
 
-Used only to build, format and test (274 packages, none of them inside the installer), by licence:
+Used only to build, format and test (267 packages, none of them inside the installer), by licence:
 
-- MIT: 206
-- ISC: 35
-- BSD-3-Clause: 9
+- MIT: 202
+- ISC: 34
+- BSD-3-Clause: 7
 - BlueOak-1.0.0: 7
 - BSD-2-Clause: 6
 - Apache-2.0: 6

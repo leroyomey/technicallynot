@@ -832,6 +832,65 @@ function readSubs(t) {
 // match → the oldest one (the CLI may reword a long paste).
 let taskNoted = null; // main.js → agent-hooks.js taskNote
 let spawnRefused = null; // main.js → agent-hooks.js note ('spawn-refused')
+let compactTasks = null; // main.js → agent-hooks.js note ('bg-end', 'bg-sweep')
+
+// How long after a compact_boundary line its task_status lines may still arrive (Claude Code
+// writes them right after it, in the same burst).
+const COMPACT_TASKS_MS = 2000;
+
+// After a compact Claude Code writes one task_status attachment per background task it still holds
+// (status "running", or "completed" for one whose hand-back came while it compacted) and fires no
+// hook for either, so the window's sub-agents and background commands would stay listed for
+// hours. A task it no longer lists has ended: on 136 real compacts every task still open before
+// the compact was listed after it. "completed" ends that task at once (bg-end); the full list ends
+// every other entry from before the compact (bg-sweep), once the burst is in.
+function readCompactTasks(t, lines) {
+  const r = t.reader;
+  for (const line of lines) {
+    if (line.includes('"compact_boundary"')) {
+      const j = parse(line);
+      if (j?.type !== 'system' || j.subtype !== 'compact_boundary' || j.isSidechain) continue;
+      r.compactTasks = {
+        running: new Set(),
+        at: Date.parse(j.timestamp) || Date.now(),
+      };
+      const paneId = t.paneId;
+
+      // the lines still unread then go through readClaude first, so the list is whole
+      setTimeout(() => {
+        const cur = turns.get(paneId);
+        if (cur?.reader === r) readClaude(cur);
+        const done = r.compactTasks;
+        r.compactTasks = null;
+        if (!done) return;
+        try {
+          compactTasks?.(paneId, {
+            kind: 'bg-sweep',
+            running: [...done.running],
+            before: done.at,
+          });
+        } catch {}
+      }, COMPACT_TASKS_MS).unref?.();
+      continue;
+    }
+    if (!line.includes('"task_status"')) continue;
+    const j = parse(line),
+      a = j?.attachment;
+    if (j?.type !== 'attachment' || a?.type !== 'task_status' || j.isSidechain || !a.taskId)
+      continue;
+    if (a.status === 'running') {
+      r.compactTasks?.running.add(String(a.taskId));
+      continue;
+    }
+    try {
+      compactTasks?.(t.paneId, {
+        kind: 'bg-end',
+        taskId: String(a.taskId),
+        status: String(a.status || ''),
+      });
+    } catch {}
+  }
+}
 
 function takenMidTurn(t, text) {
   consume(t.paneId, text);
@@ -915,6 +974,7 @@ function readClaude(t, lines) {
           taskNoted?.(t.paneId, j.content);
         } catch {}
     }
+  readCompactTasks(t, lines);
   startedWaiting(t, lines);
 
   // A refused or failed Agent launch (permission denied, auto-mode check with no verdict) never
@@ -1651,6 +1711,7 @@ module.exports = {
     send = sender;
     if (typeof opts.taskNoted === 'function') taskNoted = opts.taskNoted;
     if (typeof opts.spawnRefused === 'function') spawnRefused = opts.spawnRefused;
+    if (typeof opts.compactTasks === 'function') compactTasks = opts.compactTasks;
   },
   claudeHook(paneId, h) {
     try {

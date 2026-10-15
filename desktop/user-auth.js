@@ -1,28 +1,24 @@
 /*
  * Technically Not desktop · user-auth.js — The Technically Not account (accounts server,
- * package.json `tnaiAccountsUrl`) and the plan lock. Sign-in: "Continue with Google" (OAuth code +
- * PKCE S256 + state + nonce in the system browser, 127.0.0.1 loopback redirect; the Google ID token
- * goes to POST /auth/exchange, which verifies it), "Continue with GitHub" (OAuth App code + PKCE
- * S256 + state, same loopback; the code and verifier go to POST /auth/exchange, which swaps them
- * with GitHub's client secret on the server) or email + password (POST /auth/login). Each returns
- * an app token (180 days, rotated through /auth/refresh), kept encrypted with Electron safeStorage
- * in userData/tnai-account.bin together with the last valid signed plan pass (plan-pass.js). The
- * pass is fetched at start, every 12 h, on window focus after 1 h (30 s while locked), and on Check
- * again. Lock: only when the build has an accounts URL AND package.json `tnaiEnforcePlan` is true;
- * then signed out, plan 'none', no valid pass, a pass past its exp (on a clock that only moves
- * forward), or a PC clock set back → locked, and main.js refuses pty:start (`gate()`). A lock while
- * signed in is a lapse (plan-lapse.js): running turns finish, files stay readable, PowerShell
- * panels close after a notice. Tokens never leave the main process; the renderer gets public state
- * over IPC `auth:*`. Computers: every app sign-in sends `device_id`
- * (random, made once, userData/tnai-device.json, kept across sign-out) and `device_name` ("<host> ·
- * Windows"). Over the account's computer limit the server answers 409 device_limit with the list
- * and a one-time ticket (kept here, never sent to the renderer); the user picks one to sign out and
- * POST /auth/device-replace finishes the sign-in.
+ * package.json `tnaiAccountsUrl`). Sign-in: "Continue with Google" (OAuth code + PKCE S256 + state
+ * + nonce in the system browser, 127.0.0.1 loopback redirect; the Google ID token goes to POST
+ * /auth/exchange, which verifies it), "Continue with GitHub" (OAuth App code + PKCE S256 + state,
+ * same loopback; the code and verifier go to POST /auth/exchange, which swaps them with GitHub's
+ * client secret on the server) or email + password (POST /auth/login). Each returns an app token
+ * (180 days, rotated through /auth/refresh), kept encrypted with Electron safeStorage in
+ * userData/tnai-account.bin together with the last valid signed plan pass (plan-pass.js). The pass
+ * is fetched at start, every 12 h, on window focus after 1 h, and on a check; its exp is read on a
+ * clock that only moves forward. Nothing locks: the app has no plan lock. Tokens never leave the
+ * main process; the renderer gets public state over IPC `auth:*`. Computers: every app sign-in
+ * sends `device_id` (random, made once, userData/tnai-device.json, kept across sign-out) and
+ * `device_name` ("<host> · Windows"). Over the account's computer limit the server answers 409
+ * device_limit with the list and a one-time ticket (kept here, never sent to the renderer); the
+ * user picks one to sign out and POST /auth/device-replace finishes the sign-in.
  *
  * Accounts switched off: a build whose package.json `tnaiAccountsUrl` is empty (the free app) has
- * no accounts server. Then nothing here contacts a server, nothing locks, public state carries
- * `off: true` (the window hides its sign-in control), and a sign-in saved by an earlier version is
- * removed at start without being read. Test: node tools/free-app-test.js.
+ * no accounts server. Then nothing here contacts a server, public state carries `off: true` (the
+ * window hides its sign-in control), and a sign-in saved by an earlier version is removed at start
+ * without being read. Test: node tools/free-app-test.js.
  */
 'use strict';
 const fs = require('fs');
@@ -42,9 +38,6 @@ const pkg = require('../package.json');
 let release = buildInfo.release;
 const SELFTEST = !!process.env.TNAI_SELFTEST && !buildInfo.release;
 const devCopy = () => !app.isPackaged && !release;
-
-// the PC clock may be this far behind the highest time seen before the app locks with 'clock'
-const CLOCK_SLACK_MS = 10 * 60e3;
 const GOOGLE_ISSUER = 'https://accounts.google.com';
 const GITHUB_AUTHORIZE = 'https://github.com/login/oauth/authorize';
 const FLOW_TIMEOUT_MS = 5 * 60 * 1000;
@@ -52,14 +45,8 @@ const HOUR = 3600e3,
   DAY = 24 * HOUR;
 const CHECK_EVERY_MS = 12 * HOUR,
   FOCUS_AFTER_MS = HOUR,
-  FOCUS_LOCKED_AFTER_MS = 30e3,
   ROTATE_AFTER_MS = 7 * DAY,
   VERSION_EVERY_MS = 20e3;
-
-// Plan statuses (pass `status`) that mean the card payment failed, and those that mean the
-// subscription ended (the lock names which).
-const PAYMENT_FAILED = new Set(['past_due', 'unpaid', 'incomplete', 'incomplete_expired']),
-  ENDED = new Set(['canceled', 'disputed']);
 const SITE = 'https://technicallynot.ai';
 const SITE_PAGES = {
   pricing: '/pricing',
@@ -229,21 +216,15 @@ let checkTimer = null,
   expiryTimer = null,
   clockTimer = null,
   writing = Promise.resolve();
-let lockMemo = null; // { at, lock }: the last lock state (gateCached)
-
-// the server ended this computer's session (401 on a check): locked 'device' until a sign-in, a
-// sign-out or a restart
-let signedOutByServer = false;
 let versionAt = 0; // last GET /entitlements/version (focus probe, VERSION_EVERY_MS apart)
 
 const fail = (code, message) => Object.assign(new Error(message), { code, tnai: true });
 
 // ---------- Configuration ----------
-// Accounts URL + enforcement: package.json (build time). From source (npm start, self-tests)
-// TNAI_ACCOUNTS_URL / TNAI_ENFORCE_PLAN override them a dev copy (npm start) skips the lock unless
-// TNAI_DEV_UNLOCK=0 (self-tests: only with TNAI_DEV_UNLOCK=1), and TNAI_PASS_TEST_KEY (SPKI base64)
-// verifies passes from a local server's throwaway key; an installed or release build ignores all
-// four. Google client: env > userData/auth-config.json > resources/auth-config.json.
+// Accounts URL: package.json (build time). From source (npm start, self-tests) TNAI_ACCOUNTS_URL
+// overrides it, and TNAI_PASS_TEST_KEY (SPKI base64) verifies passes from a local server's
+// throwaway key; an installed or release build ignores both. Google client: env >
+// userData/auth-config.json > resources/auth-config.json.
 function readJson(file) {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8')) || {};
@@ -262,17 +243,8 @@ function config() {
     for (const name of envNames) if (process.env[name]) return String(process.env[name]).trim();
     return String(user[key] ?? shipped[key] ?? '').trim();
   };
-  const enforceEnv = env('TNAI_ENFORCE_PLAN');
   const c = {
     apiUrl: (env('TNAI_ACCOUNTS_URL') ?? String(pkg.tnaiAccountsUrl || '')).replace(/\/+$/, ''),
-    enforce: enforceEnv !== undefined ? enforceEnv === '1' : pkg.tnaiEnforcePlan === true,
-    devUnlock:
-      dev &&
-      (process.env.TNAI_SELFTEST
-        ? process.env.TNAI_DEV_UNLOCK === '1'
-        : // a dev copy never asks for sign-in; self-tests opt in,
-          // TNAI_DEV_UNLOCK=0 turns the lock back on
-          process.env.TNAI_DEV_UNLOCK !== '0'),
     googleClientId: pick(['TNAI_GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_ID'], 'googleClientId'),
     googleClientSecret: pick(
       ['TNAI_GOOGLE_CLIENT_SECRET', 'GOOGLE_CLIENT_SECRET'],
@@ -463,12 +435,11 @@ const deviceBody = () => ({ device_id: thisDevice().id, device_name: thisDevice(
 
 // ---------- Clock that only moves forward ----------
 // account.highWater (ms): the highest time seen (now, the signed pass's iat, the server's time),
-// kept encrypted with the pass and raised on every check, every hour and on quit. A PC clock more
-// than 10 min behind it locks with 'clock', and the pass exp is checked against max(now,
-// highWater), so setting the clock back never revives an old pass. A fresh pass from the server
-// (newer iat) may lower it again, so a clock that was once set ahead recovers.
+// kept encrypted with the pass and raised on every check, every hour and on quit. The pass exp is
+// checked against max(now, highWater), so setting the clock back never revives an old pass. A
+// fresh pass from the server (newer iat) may lower it again, so a clock that was once set ahead
+// recovers.
 const clockNow = a => Math.max(Date.now(), a?.highWater || 0);
-const clockBehind = a => !!a?.highWater && Date.now() < a.highWater - CLOCK_SLACK_MS;
 
 function raiseClock(a, ...times) {
   const hw = Math.max(
@@ -491,81 +462,15 @@ function serverTimeOf(r) {
 function tickClock() {
   const a = load();
   if (!a) return;
-  const before = lockState().reason;
   if (raiseClock(a)) save().catch(() => {});
-  if (lockState().reason !== before) changed();
 }
 
-// ---------- Plan + lock (the only thing that decides whether new panels may start) ----------
+// ---------- Plan pass ----------
 function passState(c = config()) {
   const a = load();
   return a
     ? planPass.verify(a.pass, { publicKey: c.publicKey, sub: a.user.id, now: clockNow(a) / 1000 })
     : { ok: false, reason: 'signed-out' };
-}
-
-function lockState(c = config(), v = passState(c)) {
-  const enforced = !apiProblem(c) && c.enforce;
-  if (!enforced) return { enforced: false, locked: false, reason: '', message: '' };
-  if (c.devUnlock)
-    return {
-      enforced: true,
-      locked: false,
-      devUnlock: true,
-      reason: 'dev-unlock',
-      message: 'Unlocked: a dev copy needs no sign-in.',
-    };
-
-  // lapsed: every lock but a plain sign-out. Files, projects and summaries stay readable, and
-  // running turns may finish (main.js, plan-lapse.js).
-  const lock = (reason, message) => ({
-    enforced: true,
-    locked: true,
-    lapsed: reason !== 'signed-out',
-    reason,
-    message,
-  });
-  if (!load())
-    return signedOutByServer
-      ? lock(
-          'device',
-          'This computer was signed out of your account: another computer took its place, or it was signed out on technicallynot.ai. Sign in again to keep building.'
-        )
-      : lock('signed-out', 'Sign in to your Technically Not account to use the app.');
-  if (clockBehind(load())) return lock('clock', 'Your PC clock is behind; fix it or reconnect.');
-  if (problem?.code === 'update-required') return lock('update-required', problem.message);
-  if (v.ok && v.claims.plan === 'none' && PAYMENT_FAILED.has(v.claims.status))
-    return lock(
-      'payment',
-      'Your last payment didn’t go through, so your subscription stopped. Update your card to keep building.'
-    );
-  if (v.ok && v.claims.plan === 'none' && ENDED.has(v.claims.status))
-    return lock(
-      'no-plan',
-      'Your Technically Not subscription ended. Subscribe again to keep building.'
-    );
-  if (v.ok)
-    return v.claims.plan === 'none'
-      ? lock(
-          'no-plan',
-          'Your account has no active subscription. Subscribe to Technically Not Pro to keep building.'
-        )
-      : { enforced: true, locked: false, reason: '', message: '' };
-  if (v.reason === 'expired')
-    return lock(
-      'expired',
-      'Reconnect to check your subscription. Technically Not couldn’t confirm your plan for 7 days.'
-    );
-  if (busy || (!lastCheck && !problem)) return lock('checking', 'Checking your subscription…');
-  if (problem?.code === 'offline')
-    return lock(
-      'offline',
-      'Reconnect to check your subscription. Technically Not can’t reach the accounts server.'
-    );
-  return lock(
-    'unverified',
-    'Technically Not couldn’t confirm your subscription. Check again, or sign out and sign in again.'
-  );
 }
 
 function publicState() {
@@ -577,8 +482,6 @@ function publicState() {
     google = googleProblem(c),
     github = githubProblem(c);
   scheduleExpiry(v);
-  const lock = lockState(c, v);
-  lockMemo = { at: Date.now(), lock };
   return {
     // off: accounts are switched off in this build, so the window hides its sign-in control
     off: accountsOff(c),
@@ -602,14 +505,13 @@ function publicState() {
     checkedAt: a?.checkedAt || null,
     checking: busy,
     problem: problem?.message || '',
-    lock,
     flow: flow ? { provider: flow.provider } : null,
     weakStorage,
   };
 }
 const changed = () => send('auth:changed', publicState());
 
-// When the pass reaches its exp the state changes by itself (locked if enforced): one timer for
+// When the pass reaches its exp the state changes by itself: one timer for
 // that moment, no polling.
 function scheduleExpiry(v) {
   clearTimeout(expiryTimer);
@@ -617,32 +519,6 @@ function scheduleExpiry(v) {
   if (!v.ok) return;
   const ms = v.claims.exp * 1000 - clockNow(load()) + 500;
   if (ms > 0 && ms < 2 ** 31 - 1) expiryTimer = setTimeout(changed, ms);
-}
-
-// main.js pty:start: while locked no agent CLI or terminal starts. Panels already running keep
-// running (the renderer's lock covers them).
-function gate() {
-  const l = lockState();
-  lockMemo = { at: Date.now(), lock: l };
-  return l.locked
-    ? { ok: false, code: 'locked', message: 'Technically Not is locked: ' + l.message }
-    : { ok: true };
-}
-
-// main.js's IPC guard and the agent mesh ask on every call (keystrokes, file reads): the last lock
-// state, recomputed at most every 250 ms and at once whenever publicState() runs (every
-// auth:changed, sign-in, check, pass expiry).
-function gateCached() {
-  if (!lockMemo || Date.now() - lockMemo.at > 250) lockMemo = { at: Date.now(), lock: lockState() };
-  const l = lockMemo.lock;
-  return l.locked
-    ? {
-        ok: false,
-        code: 'locked',
-        lapsed: !!l.lapsed,
-        message: 'Technically Not is locked: ' + l.message,
-      }
-    : { ok: true };
 }
 
 // ---------- Accounts server ----------
@@ -758,7 +634,6 @@ function check() {
       if (r.status === 401) {
         account = null;
         problem = null;
-        signedOutByServer = true;
         await save();
         send('auth:notice', {
           message:
@@ -767,8 +642,8 @@ function check() {
         return;
       }
 
-      // Below the server's MIN_APP_VERSION: locked now, even with a pass that hasn't run out (the
-      // kill switch for old builds).
+      // Below the server's MIN_APP_VERSION: the account names an update as required (the server's
+      // switch for old builds).
       if (r.status === 426 && r.body?.error === 'update_required') {
         problem = { code: 'update-required', message: SERVER_MESSAGES.update_required };
         return;
@@ -845,8 +720,7 @@ function check() {
 
 function onFocus() {
   if (!load() || busy) return;
-  const wait = lockState().locked ? FOCUS_LOCKED_AFTER_MS : FOCUS_AFTER_MS;
-  if (Date.now() - lastCheck > wait) check();
+  if (Date.now() - lastCheck > FOCUS_AFTER_MS) check();
   else probeVersion();
 }
 
@@ -1014,7 +888,7 @@ async function finishSignIn(r, what) {
   if (!r.ok || typeof r.body.token !== 'string' || !r.body.token || !r.body.user?.id)
     throw serverError(r, what);
   pendingDevice = null;
-  signedOutByServer = false;
+
   account = {
     token: r.body.token,
     rotatedAt: Date.now(),
@@ -1211,7 +1085,7 @@ async function signOut() {
   account = null;
   problem = null;
   lastCheck = 0;
-  signedOutByServer = false;
+
   clearTimeout(checkTimer);
   checkTimer = null;
   await save();
@@ -1330,7 +1204,9 @@ function init(ipcMain, sendToWindow, windowGetter) {
       linuxStorage();
       app.on('browser-window-focus', onFocus);
       clockTimer = setInterval(tickClock, HOUR);
-      app.on('before-quit', () => {
+      app.on('before-quit', event => {
+        // the user cancelled the macOS quit question: the clock keeps running
+        if (require('./quit-guard').cancelled(event)) return;
         clearInterval(clockTimer);
         const a = load();
         if (a && raiseClock(a)) saveSync();
@@ -1341,19 +1217,14 @@ function init(ipcMain, sendToWindow, windowGetter) {
     .catch(() => {});
 }
 
-// The signed-in account's app token, for main-process callers only (updater.js: an Authorization
-// header on paid update downloads). Never sent to the renderer.
-const appToken = () => load()?.token || null;
-
 // A signed-in call to the accounts server for other main-process modules (own-relay-wiring.js),
 // with the same token + headers as GET /entitlements; the token stays in this file. null (nothing
-// sent) when the build has no accounts URL, nobody is signed in, or, unless allowLocked, the plan
-// is locked. Throws { code: 'offline' } when the server can't be reached; otherwise { ok, status,
-// body }.
-async function accountCall(method, route, body, { allowLocked = false } = {}) {
+// sent) when the build has no accounts URL or nobody is signed in. Throws { code: 'offline' } when
+// the server can't be reached; otherwise { ok, status, body }.
+async function accountCall(method, route, body) {
   const c = config(),
     a = load();
-  if (apiProblem(c) || !a || (!allowLocked && lockState(c).locked)) return null;
+  if (apiProblem(c) || !a) return null;
   const r = await api(method, route, { token: a.token, body, bare: true });
   return { ok: r.ok, status: r.status, body: r.body };
 }
@@ -1367,16 +1238,13 @@ const apiBase = () => {
 module.exports = {
   init,
   publicState,
-  gate,
-  gateCached,
-  appToken,
   accountCall,
   thisDevice,
   apiBase,
 };
 
-// Self-test hooks (tools/desktop-check/tests/plan-lock.main.js): swap the browser, simulate an app
-// restart. Absent in normal use.
+// Self-test hooks (tools/desktop-check/tests/account-signin.main.js): swap the browser, simulate an
+// app restart. Absent in normal use.
 if (SELFTEST)
   module.exports._test = {
     setBrowser: fn => {
@@ -1384,7 +1252,6 @@ if (SELFTEST)
     },
     windowsBrowserCommand,
     restart: () => {
-      signedOutByServer = false;
       versionAt = 0;
       account = undefined;
       device = null;

@@ -135,8 +135,11 @@ try {
   );
   const libRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tnai-skill-lib-'));
   try {
+    // "hosting" is the fixture's keyword; the name word "deploy" is a stop word since 2026-10-14.
     assert.ok(
-      t.forPrompt('deploy it', libRoot, lib).includes('[' + lib[0].replace(/\\/g, '/') + ']'),
+      t
+        .forPrompt('pick a hosting plan', libRoot, lib)
+        .includes('[' + lib[0].replace(/\\/g, '/') + ']'),
       'library skill shows its full path'
     );
   } finally {

@@ -223,8 +223,11 @@
     }
 
     // Claude Code had not begun: the prompt was never worked on, so it is back in the box either
-    // way.
-    const putBack = (cancel || result.state === 'restored') && backToBox(text);
+    // way. Its attachment chips come back first (27 takeSent), so the words' @1… still point at
+    // them and a draft already in the box has its own @N shifted past them.
+    const back = cancel || result.state === 'restored';
+    const chips = back ? window.TnaiAttachments?.takeSent?.(paneId) || 0 : 0;
+    const putBack = back && (backToBox(text) || chips > 0);
     if (putBack && result.state === 'restored')
       say(name + ' had not started · your prompt is back in the box');
     else if (putBack) say('Stopped ' + name + ' · your prompt is back in the box to edit');

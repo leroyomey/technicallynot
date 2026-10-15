@@ -67,6 +67,10 @@
     'title="Show this thread on All threads" aria-label="Show on All threads">' +
     icon('square-terminal', 16) +
     '</button>' +
+    '<button type="button" class="tnt-icon-btn tnt-head-blur" aria-pressed="false" ' +
+    'title="Blur this thread" aria-label="Blur this thread">' +
+    icon('eye', 16) +
+    '</button>' +
     '<button type="button" class="tnt-icon-btn tnt-head-menu" aria-haspopup="menu" ' +
     'aria-expanded="false" title="More for this thread" aria-label="More for this thread">' +
     icon('ellipsis', 16) +
@@ -150,8 +154,59 @@
     setText(stateEl.querySelector('span'), thread.label || '');
     stateEl.hidden = !thread.label;
     paintAge(headEl.querySelector('.tnt-head-age'), pane);
+    paintBlur();
     return mode;
   }
+
+  // ---------- the blur: a thread kept out of sight ----------
+  // The user can blur one thread, so nobody looking at the screen can read it (a stream, a
+  // shared screen, someone beside them). The thread's top row stays sharp, so the button that
+  // brings the thread back is always in reach. The choice belongs to the thread and is kept
+  // across restarts. 135 blurs the same thread's card on All threads and has the same button.
+  const BLUR_KEY = 'tnai.thread-blur.v1';
+  const blurred = new Set(
+    safe(() => {
+      const saved = JSON.parse(localStorage.getItem(BLUR_KEY) || '[]');
+      return Array.isArray(saved) ? saved : [];
+    }, [])
+  );
+
+  function setBlur(paneId, on) {
+    if (!paneId || blurred.has(paneId) === !!on) return;
+    if (on) blurred.add(paneId);
+    else blurred.delete(paneId);
+    try {
+      localStorage.setItem(BLUR_KEY, JSON.stringify([...blurred]));
+    } catch {
+      // nothing is kept when storage is off; the blur still works until the app closes
+    }
+    paintBlur();
+    window.dispatchEvent(new CustomEvent('tnai:thread-blur', { detail: { paneId, on: !!on } }));
+  }
+
+  // Paints one blur button (this top row's, or an All threads card's) for one thread.
+  function paintBlurButton(button, paneId) {
+    if (!button) return;
+    const on = blurred.has(paneId);
+    if (button.getAttribute('aria-pressed') === String(on)) return;
+    button.setAttribute('aria-pressed', String(on));
+    button.innerHTML = icon(on ? 'eye-off' : 'eye', button.dataset.iconSize === '14' ? 14 : 16);
+    const label = on ? 'Show this thread again' : 'Blur this thread';
+    button.title = label;
+    button.setAttribute('aria-label', label);
+  }
+
+  function paintBlur() {
+    root.classList.toggle('tnt-blurred', !!pane && blurred.has(pane));
+    paintBlurButton(headEl.querySelector('.tnt-head-blur'), pane);
+  }
+
+  window.TnaiThreadBlur = {
+    on: paneId => blurred.has(paneId),
+    set: setBlur,
+    toggle: paneId => setBlur(paneId, !blurred.has(paneId)),
+    paintButton: paintBlurButton,
+  };
 
   // ---------- how long the agent's session has been open ----------
   // A clock beside the name. Its color says when a session has run long: a long
@@ -207,6 +262,10 @@
   // name is saved by the panel's own rename, so the list, the cards and the agents follow it.
   headEl.querySelector('.tnt-head-rename').addEventListener('click', () => {
     if (pane) window.TnaiThreadMore?.rename?.(pane);
+  });
+
+  headEl.querySelector('.tnt-head-blur').addEventListener('click', () => {
+    if (pane) setBlur(pane, !blurred.has(pane));
   });
 
   headEl.querySelector('.tnt-head-page').addEventListener('click', () => {
@@ -632,7 +691,7 @@
     goLive(current);
     toBottom(term);
     fit(true);
-    if (replay?.running) agents.ptySize?.repaint(paneId, term);
+    if (replay?.running) agents.ptySize?.repaint(paneId, term, replay.buffer?.length || 0);
   }
 
   function showTerm(paneId) {

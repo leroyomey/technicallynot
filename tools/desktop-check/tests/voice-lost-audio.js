@@ -1,6 +1,7 @@
 /*
- * Technically Not tools · desktop-check/tests/voice-lost-audio.js — the voice recorder says how
- * much audio a busy window lost, and the notification sound waits while the mic records. Uses this
+ * Technically Not tools · desktop-check/tests/voice-lost-audio.js — a busy window loses no audio
+ * of a voice prompt (the recorder reads the mic off the window's thread; it still says how much was
+ * lost, which is now none), and the notification sound waits while the mic records. Uses this
  * PC's real microphone for about four seconds; nothing is transcribed, kept or sent. With no
  * microphone it says so and checks only what needs none. The window is held up by a blocking
  * request to a local page that answers late (voice-lost-audio.main.js): no busy loop. Returns {ok,
@@ -77,18 +78,21 @@ try {
     const clip = await R.stop();
     check(heldMs >= 500, 'the window really was held up (' + heldMs + ' ms)');
     check(
-      clip && clip.lost && clip.lost.ms >= 200 && clip.lost.ms <= heldMs + 200,
-      'the recording reports the audio lost in that time: ' + JSON.stringify(clip && clip.lost)
+      clip && clip.lost && clip.lost.ms === 0,
+      'no audio is lost while the window is held up (the mic is read off its thread): ' +
+        JSON.stringify(clip && clip.lost)
     );
     check(
       clip && clip.lost && clip.lost.worstGapMs >= 400,
-      'and the longest pause between two blocks (' +
+      'the longest pause between two reads still shows the hold (' +
         (clip && clip.lost && clip.lost.worstGapMs) +
         ' ms)'
     );
     check(
-      Math.abs(clip.seconds - (1 + heldMs / 1000 - clip.lost.ms / 1000)) < 1.2,
-      'the clip is shorter by about what was lost (' + clip.seconds.toFixed(2) + ' s recorded)'
+      Math.abs(clip.seconds - (1 + heldMs / 1000)) < 0.5,
+      'the clip holds the whole time, the hold included (' +
+        clip.seconds.toFixed(2) +
+        ' s recorded)'
     );
 
     // 3: the next recording starts from zero again.
@@ -124,6 +128,29 @@ try {
       'a recording with no sound asked for plays none when it ends (' + tones + ')'
     );
   }
+
+  // 5: the engine is started when the app comes to the front, but only for someone who used voice
+  // in the last day (70 keepReady), so a press after an hour away does not wait for its start.
+  // 70 learns the engine is installed 3 to 8 s after the window loads (its first status check)
+  await wait(Math.max(0, 9000 - performance.now()));
+  await main('watchWarm', true);
+  localStorage.removeItem('tnai.voice-used.v1');
+  window.dispatchEvent(new Event('focus'));
+  await wait(300);
+  check(
+    (await main('warms')) === 0,
+    'no voice used lately: the app coming to the front starts no engine'
+  );
+  localStorage.setItem('tnai.voice-used.v1', String(Date.now()));
+  window.dispatchEvent(new Event('focus'));
+  await wait(300);
+  const warmed = await main('warms');
+  check(
+    warmed === 1,
+    'voice used today: the app coming to the front starts the engine (' + warmed + ')'
+  );
+  localStorage.removeItem('tnai.voice-used.v1');
+  await main('watchWarm', false);
   N.setEnabled(false);
   tones = 0;
   N.play();

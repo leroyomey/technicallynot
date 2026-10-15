@@ -1,7 +1,8 @@
-// Technically Not tools · desktop-check/tests/git-remote.main.js — Main-process side of the
-// git-remote and worktrees self-tests (loaded by run.js): isolates git from the user's own
-// global/system config (so no credential manager window can open and the user's settings are never
-// touched), a local HTTP server that always answers 401 (a remote that needs sign-in), and a
+// Technically Not tools · desktop-check/tests/git-remote.main.js — A shared main-process helper
+// with no test of its own (git-remote.js was deleted 2026-09-30); worktrees, worktree-switch,
+// live-preview and file-activity load it from their own .main.js. It isolates git from the user's
+// own global/system config (so no credential manager window can open and the user's settings are
+// never touched), a local HTTP server that always answers 401 (a remote that needs sign-in), and a
 // folder-exists check.
 'use strict';
 const fs = require('fs');

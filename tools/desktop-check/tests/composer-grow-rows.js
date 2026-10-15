@@ -192,8 +192,8 @@ try {
         : 'the prompt box growing does not change the panel rows here')
   );
 
-  // ---- A− / A+ in the thread top row: the Terminal view's own text size; the Terminal page's
-  // stays. The buttons sit on the strip's line.
+  // ---- A− / A+ in the thread top row: the CLI screen's own text size; the 'terminal' size (used
+  // by Your terminal, 136) stays. The buttons sit on the strip's line.
   const fUp = document.querySelector('.tnt-head [data-tnai-font="1"]'),
     fDown = document.querySelector('.tnt-head [data-tnai-font="-1"]');
   const px = () => parseFloat(getComputedStyle(pane.querySelector('.xterm-rows')).fontSize),
@@ -220,7 +220,7 @@ try {
       rows0 +
       ' → ' +
       rows() +
-      ', Terminal page still ' +
+      ', Your terminal still ' +
       G.fontFor('terminal') +
       ' px'
   );

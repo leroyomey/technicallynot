@@ -238,7 +238,12 @@ function run(test) {
     // never the user's real ~/.agents/skills.
     if (!env.TNAI_HOME_SKILLS_DIR)
       env.TNAI_HOME_SKILLS_DIR = path.join(require('os').tmpdir(), 'tnai-check-home-skills');
-    if ((test === 'voice-prompt' || test === 'perf-latency') && !env.TN_VOICE_FAKE)
+
+    // (voice-lost-audio: the engine must count as installed for its warm-up check)
+    if (
+      (test === 'voice-prompt' || test === 'perf-latency' || test === 'voice-lost-audio') &&
+      !env.TN_VOICE_FAKE
+    )
       env.TN_VOICE_FAKE = 'hello from the fake mic';
 
     // Linux CI: node_modules' chrome-sandbox is not setuid root, so Chromium's sandbox can't start

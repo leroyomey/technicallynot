@@ -44,6 +44,11 @@ const INTERVENE_GAP_MS = 120000;
 // put its prompt back
 const INTERVENE_REPLY_MS = 2500;
 
+// how often, within INTERVENE_REPLY_MS, to look whether it did (agent-turns.js stopped() reads only
+// the new end of the transcript, so a short step costs little; 250 ms made the message wait up to
+// 250 ms after the stop line was there)
+const INTERVENE_CHECK_MS = 50;
+
 // lets the CLI stop and return to its prompt before the message is typed
 const INTERVENE_SETTLE_MS = 450;
 const intervened = new Map(); // paneId -> when it was last interrupted by another agent
@@ -63,7 +68,7 @@ const WORKING_MS = 2500; // output this recent = working (same rule as the pane 
 // Told to every agent: Claude Code in its system prompt, Codex/OpenCode/Cursor Agent in their
 // instructions (agent-hooks.js WORK_RULES), and all of them in TNAI_AGENTS_HINT.
 const HINT =
-  "Other AI agents (any provider) may be working in this same project inside Technically Not. Stay on the user's chosen CLI and model: never hand work to or start an agent of a different CLI (Claude Code, Codex, Cursor, OpenCode…) unless the user's prompt asks for that CLI by name. From your shell: `tnai agents` lists them, `tnai send NAME message` types a message into one of them (use the agent id when names repeat; a closed agent is revived with its conversation, which keeps the tools it started with), `tnai intervene NAME message` stops a working agent where it is and hands it the message at once (urgent only: `tnai send` waits behind its task), `tnai new claude|codex|opencode|cursor TASK` starts a fresh agent in a new panel with the task (it can have its own sub-agents; use it when the user asks for a new agent, and start your own CLI: a different one only when the user's prompt names it; when the user names a model or effort for it, put --model NAME --effort LEVEL before TASK; when the user names the agent itself, --name NAME), `tnai read NAME` shows its recent output, `tnai ask NAME QUESTION` sends a question and waits for its answer (up to 5 min; `--wait SEC`), `tnai context [TOPIC]` shows what other agents finished, `tnai rename NAME` renames your own panel when the user asks you to rename yourself (when they leave the name to you: one or two words that say what you work on), `tnai close --self` closes your own panel only when the user tells you to close or exit yourself, or to close your panel (end your reply first, it closes a moment later); told only to stop, pause or summarize, you end your work, give the summary and stay open, `tnai close NAME...` closes offline or idle agents that are no longer needed, all in one call (`--quiet-over MIN` adds every one quiet that long; add `--user` when the user asked, so agents the user started close too; their finished work stays in `tnai context`), `tnai skill save DIR` saves a reusable procedure you learned (a folder with SKILL.md) to Technically Not's skill library (`tnai skill list` first, to avoid duplicates), `tnai preview URL [phone|tablet|desktop]` shows a running localhost dev server to the user in Technically Not's Live preview (`tnai preview close` closes the tab you opened once you stop its server), `tnai shot preview [URL] [phone|tablet|desktop]` saves a PNG of that page (taken in a hidden window; what the user sees does not change) and prints its path, so you can look at the UI you built, `tnai server list` / `tnai server claim URL` show and record which agent owns each localhost dev server, `tnai test [COMMAND]` runs the project's tests one agent at a time on this computer (prints pass/fail and only the failing part), `tnai tasks` is the project's shared to-do board (`add TEXT`, `take ID`, `release ID`, `done ID`).";
+  "Other AI agents (any provider) may be working in this same project inside Technically Not. Stay on the user's chosen CLI and model: never hand work to or start an agent of a different CLI (Claude Code, Codex, Cursor, OpenCode…) unless the user's prompt asks for that CLI by name. From your shell: `tnai agents` lists them, `tnai send NAME message` types a message into one of them (a working Claude Code agent reads it after its next step, not interrupted; `tnai send --later NAME message` when it can wait until its task ends; use the agent id when names repeat; a closed agent is revived with its conversation, which keeps the tools it started with), `tnai intervene NAME message` stops a working agent where it is and hands it the message at once (urgent only: `tnai send` waits behind its task), `tnai new claude|codex|opencode|cursor TASK` starts a fresh agent in a new panel with the task (it can have its own sub-agents; use it when the user asks for a new agent, and start your own CLI: a different one only when the user's prompt names it; when the user names a model or effort for it, put --model NAME --effort LEVEL before TASK; when the user names the agent itself, --name NAME), `tnai read NAME` shows its recent output, `tnai ask NAME QUESTION` sends a question and waits for its answer (up to 5 min; `--wait SEC`), `tnai context [TOPIC]` shows what other agents finished, `tnai rename NAME` renames your own panel when the user asks you to rename yourself (when they leave the name to you: one or two words that say what you work on), `tnai close --self` closes your own panel only when the user tells you to close or exit yourself, or to close your panel (end your reply first, it closes a moment later); told only to stop, pause or summarize, you end your work, give the summary and stay open, `tnai close NAME...` closes offline or idle agents that are no longer needed, all in one call (`--quiet-over MIN` adds every one quiet that long; add `--user` when the user asked, so agents the user started close too; their finished work stays in `tnai context`), `tnai skill save DIR` saves a reusable procedure you learned (a folder with SKILL.md) to Technically Not's skill library (`tnai skill list` first, to avoid duplicates), `tnai preview URL [phone|tablet|desktop]` shows a running localhost dev server to the user in Technically Not's Live preview (`tnai preview close` closes the tab you opened once you stop its server), `tnai shot preview [URL] [phone|tablet|desktop]` saves a PNG of that page (taken in a hidden window; what the user sees does not change) and prints its path, so you can look at the UI you built, `tnai server list` / `tnai server claim URL` show and record which agent owns each localhost dev server, `tnai test [COMMAND]` runs the project's tests one agent at a time on this computer (prints pass/fail and only the failing part), `tnai tasks` is the project's shared to-do board (`add TEXT`, `take ID`, `release ID`, `done ID`).";
 
 // Arguments that make a CLI do a one-off job instead of an interactive session: such runs pass
 // through unchanged and are not registered.
@@ -1076,11 +1081,6 @@ const DELIVERED = {
 };
 
 async function request(paneId, pane, msg, socket) {
-  // Plan lock (main.js → user-auth.js): no mesh while locked (a lapse still lets a finishing agent
-  // lock/unlock/list files). A refused launch runs the real CLI unregistered (agent-shim.js).
-  const locked = deps.locked?.(msg.op);
-  if (locked) return { ok: false, error: locked };
-
   // The chain of turns a message from another computer's agent started (remote-say.js) comes before
   // everything, a launch included: a CLI started from that agent's own shell runs
   // as it always did from an agent's shell, unregistered.
@@ -1140,8 +1140,8 @@ async function request(paneId, pane, msg, socket) {
   }
 
   // `tnai skill save PATH | list` (skill-service.js): an agent saves a procedure it learned to the
-  // Skills library, off until the user turns it on. `tnai skill overlaps [PATH]` lists skills on
-  // the same topic (skill-overlap.js) and `tnai skill remove NAME` drops an agent-written one a
+  // Skills library, on for every session from the start. `tnai skill overlaps [PATH]` lists skills
+  // on the same topic (skill-overlap.js) and `tnai skill remove NAME` drops an agent-written one a
   // merge replaced.
   if (msg.op === 'skill') {
     if (!deps.skills) return { ok: false, error: 'The skill library is not available.' };
@@ -1528,10 +1528,20 @@ async function request(paneId, pane, msg, socket) {
   if (msg.op === 'close') {
     const user = msg.user === true,
       over = Number(msg.quietOver) > 0 ? Number(msg.quietOver) : 0;
-    const keys = (Array.isArray(msg.names) ? msg.names : [msg.to])
-      .map(label)
-      .filter(Boolean)
-      .slice(0, 50);
+
+    // An agent whose own name has a comma: the shim also sends each word whole (msg.words); a
+    // word that is an agent's whole name here stays one name, any other word is split at commas
+    const offline = await offlineIn(project);
+    const named = word =>
+      [...list.filter(m => m.project === project), ...offline].some(
+        m => String(m.name || '').toLowerCase() === label(word).toLowerCase()
+      );
+    const given = Array.isArray(msg.words)
+      ? msg.words.flatMap(word => (named(String(word)) ? [String(word)] : String(word).split(',')))
+      : Array.isArray(msg.names)
+        ? msg.names
+        : [msg.to];
+    const keys = given.map(label).filter(Boolean).slice(0, 50);
     if (!keys.length && !over)
       return { ok: false, error: 'Name the agents to close, or use --quiet-over MINUTES.' };
     const now = Date.now();
@@ -1552,7 +1562,7 @@ async function request(paneId, pane, msg, socket) {
         quiet: names.get(m.paneId)?.quietSince ? now - names.get(m.paneId).quietSince : 0,
       }));
     const pool = [
-      ...(await offlineIn(project))
+      ...offline
         .filter(o => o.paneId !== paneId && (user || !userKept(o.paneId, o)))
         .map(o => ({ ...o, id: o.paneId, state: 'offline', quiet: Infinity })),
       ...idle,
@@ -1867,9 +1877,9 @@ async function request(paneId, pane, msg, socket) {
       for (
         let waited = 0;
         !(how = deps.turns.stopped(target.paneId)) && waited < INTERVENE_REPLY_MS;
-        waited += 250
+        waited += INTERVENE_CHECK_MS
       )
-        await new Promise(resolve => setTimeout(resolve, 250));
+        await new Promise(resolve => setTimeout(resolve, INTERVENE_CHECK_MS));
       if (how !== 'reply') {
         try {
           deps.ptys.write?.(target.paneId, '\r');
@@ -2060,7 +2070,8 @@ async function request(paneId, pane, msg, socket) {
     // the sender (agent-graph.js sentByParent). Taken back when the message is not delivered. Not
     // for a `tnai ask` question: its answer already goes straight back to the waiting command.
     const mine = msg.asap !== true && !!deps.graph?.sentByParent?.(paneId, target.paneId);
-    const r = await deliver(target, '[from ' + from + '] ' + text, {
+    const body = '[from ' + from + '] ' + text;
+    const heldOpts = {
       from,
       asap: msg.asap === true,
       onDone: res => {
@@ -2074,19 +2085,34 @@ async function request(paneId, pane, msg, socket) {
             kind: 'mesh-out',
             to,
             text: res?.ok
-              ? 'Delivered after waiting: ' + text
+              ? (res.midTask ? 'Read while it worked: ' : 'Delivered after waiting: ') + text
               : 'Not delivered: ' + (res?.error || res?.state || 'it was dropped'),
           });
+
+        // The sender was told "queued" and nothing more, so a held message that is dropped
+        // (expired behind the user's unsent text, cancelled, its panel gone) is told to the
+        // sender in one line, or it would wait for an answer that never comes.
+        if (me && !res?.ok)
+          Promise.resolve(
+            deps.notify?.(
+              paneId,
+              '[from Technically Not] Your message to ' +
+                target.name +
+                ' was not delivered: ' +
+                (res?.error || res?.state || 'it was dropped') +
+                ' Send it again if it still matters. No reply needed.'
+            )
+          ).catch(e => console.warn('[tnai] not-delivered notice failed:', e?.message || e));
       },
-    });
+    };
 
     // Waits and links (agent-links.js): only between agents, and only for a message that was typed
     // in or queued. A message that closes a ring of waits (the target, or someone it waits on, is
     // waiting on the sender) says so in the sender's own command result: no extra prompt for
-    // anyone.
+    // anyone. `held` is tested first: a message read mid-task is linked before `r` exists.
     const linked = held => {
       const ring =
-        me && (r.ok || held)
+        me && (held || r.ok)
           ? deps.links?.sent(paneId, target.paneId, {
               ask: msg.asap === true,
               text,
@@ -2100,6 +2126,36 @@ async function request(paneId, pane, msg, socket) {
             ' waiting on an answer that leads back to you, so nobody in this ring can go on by waiting. Answer what you were asked, or carry on with what does not depend on the answer.'
         : '';
     };
+
+    // A WORKING Claude Code agent reads another agent's message after its next tool call
+    // (agent-notices.js, agent-hooks.js PostToolUse), not interrupted and not left in its prompt
+    // queue until the task ends. Not for `tnai send --later` (the sender said it can wait), and not
+    // for other CLIs, which have no such step: theirs waits in the queue as before. A message no
+    // tool call took within a minute, or still held when the task ends, goes the old way
+    // (deliver), so none is lost.
+    const working = deps.turns?.busy ? deps.turns.busy(target.paneId) : false;
+    const notices = deps.notices;
+    if (notices && target.provider === 'Claude Code' && working && msg.later !== true) {
+      const fallback = async () => {
+        const late = await deliver(target, body, heldOpts);
+        if (late.state === 'held') return;
+        heldOpts.onDone(late.ok ? { ok: true } : late);
+      };
+      const onTaken = () => heldOpts.onDone({ ok: true, midTask: true });
+      notices.hold(target.paneId, text, fallback, notices.WAIT_MS, { from, onTaken });
+      if (me) deps.hooks.note(paneId, { kind: 'mesh-out', to, text: 'Sent mid-task: ' + text });
+      return {
+        ok: true,
+        to:
+          target.name +
+          ' (' +
+          target.provider +
+          via +
+          '). It is working: it reads your message after its next step, without being interrupted (if it takes no step within a minute, or ends its task first, it gets it as its next prompt)' +
+          linked(true),
+      };
+    }
+    const r = await deliver(target, body, heldOpts);
     if (r.state === 'held') {
       if (me) deps.hooks.note(paneId, { kind: 'mesh-out', to, text: 'Queued: ' + text });
       return {

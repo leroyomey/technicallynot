@@ -1,6 +1,6 @@
 ---
 name: known-issues
-description: Fix open known issues from `tnai context` with side sub-agents, claiming each one first.
+description: Fix open known issues from `tnai context` after your task, claiming each one first (sub-agents only when the user asked for them).
 for: every-agent
 tnai-hidden: true
 ---

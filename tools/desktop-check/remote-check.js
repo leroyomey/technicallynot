@@ -66,7 +66,7 @@
  * * watched again, then full control goes off on B: "off" and the picture is dropped. First run
  * * 2026-10-10 by the lead: passed. The stand-in CLI is unchanged; the terminal, the reading of its
  * * screen, the frames, the checks and the picture are the two apps'.
- * * 24. another computer's agents on the Agents page, in A's own
+ * * 24. another computer's agents in the thread list, in A's own
  * * window, read and pressed as its user would (tests/remote-two.main.js `farAgents`): B's agent of
  * * the open project is listed under B's name and nothing is watched; its row selected, the page's
  * * terminal box shows, row for row, what B's own window reads from that panel; "Send composer
@@ -249,13 +249,7 @@ async function startApp(a, extraEnv) {
     TNAI_HOME_SKILLS_DIR: path.join(base, 'home-skills'),
     ...(HAND ? { TNAI_CHECK_BY_HAND: '1' } : {}),
   };
-  for (const k of [
-    'TNAI_CHECK_LIMIT_MS',
-    'ELECTRON_RUN_AS_NODE',
-    'TNAI_CHECK_PROJECT',
-    'TNAI_ENFORCE_PLAN',
-    'TNAI_DEV_UNLOCK',
-  ])
+  for (const k of ['TNAI_CHECK_LIMIT_MS', 'ELECTRON_RUN_AS_NODE', 'TNAI_CHECK_PROJECT'])
     delete env[k];
 
   // The second -r: the test's own main-process half, loaded before the app's code so it can see
@@ -624,7 +618,7 @@ async function hand() {
     'B\'s workspace is full: no panel and no new workspace, A reads "failed"',
     'the remotely started panel is started again on B with Full access asked: resumed or fresh, it is "Ask first" again',
     'the live view: A\'s picture of the agent\'s panel on B is what B\'s own window reads there; a still screen sends nothing; a restart ends it ("gone"); full control off ends it ("off")',
-    "another computer's agents on the Agents page: A's page lists B's agent of the open project and watches nothing until it is selected; selected, its terminal box shows what B's own window reads there; the composer's Send reaches that agent once and leaves the box empty; leaving the page ends the view; A's window loading again during a view ends it on B",
+    "another computer's agents in the thread list: A's list shows B's agent of the open project and watches nothing until it is selected; selected, its terminal box shows what B's own window reads there; the composer's Send reaches that agent once and leaves the box empty; leaving the Threads page ends the view; A's window loading again during a view ends it on B",
     "a longer command: A holds a shell request of three lines; B is shown every line (`full`, `can2`, never `can`); B's Allow once answers that request once; with the answer switch off the next one arrives without its text",
     "the git hand-over: \"Bring A's work here\" on B fetches A's commit from B's own git remote into one branch, tnai/handoff/…, and B's checked-out branch and files stay as they were; asking the other computer is not offered (its right waits for the user's yes)",
     "a picture and a text file with a prompt: A's page makes the picture small and hands both over; B saves the same bytes under names of its own, its agent is sent the words and both paths, and B's list names the files",
@@ -1666,13 +1660,13 @@ async function hand() {
       `A asked: "${v23.sent}", then "${v23.m?.state}"; A's picture equals B's own reading of that panel: ${same23} (${Array.isArray(own23) ? own23.filter(l => l.trim()).length : 0} rows with text); on B the state names the watcher: ${mark23}, the list has its line: ${line23}; a picture in A's pushed state: ${inState23}; no new picture in 10 still seconds: ${still23}; the agent restarted: "${gone23?.why}"; watched again: "${v23b.m?.state}"; full control off: "${off23?.why}", picture dropped: ${off23 ? off23.picture === null : '?'}; views left on B: ${(after23.watching || []).length}`
     );
 
-    // 24 ---- another computer's agents on the Agents page, in
+    // 24 ---- another computer's agents in the thread list, in
     // A's own window: B's agent of the open project is listed under B's name; listing it watches
-    // nothing; selecting it shows its terminal panel live in the page's terminal box (compared with
+    // nothing; selecting it shows its terminal panel live in the thread's main area (compared with
     // B's own reading of that panel at that moment); the composer's Send reaches that agent as a
-    // prompt; leaving the page ends the view on both. No message of its own: view, prompt and
-    // unview, as in the proofs before. Full control goes on for it and off at its end, as proof 23
-    // left it: the last proof needs only the first switch.
+    // prompt; leaving the Threads page ends the view on both. No message of its own: view, prompt
+    // and unview, as in the proofs before. Full control goes on for it and off at its end, as proof
+    // 23 left it: the last proof needs only the first switch.
     step = 24;
     const key24 = idB + '\n' + p16.paneId,
       far24 = (what = 'read', text = '') => call(A, 'farAgents', { what, key: key24, text });
@@ -1688,9 +1682,9 @@ async function hand() {
       },
       30000
     );
-    await call(A, 'page', { view: 'agents' });
+    await call(A, 'page', { view: 'threads' });
     const list24 = await until(
-      "A's Agents page lists B's agent",
+      "A's thread list shows B's agent",
       async () => {
         const p = await far24();
         return p?.onPage && p.rows.some(r => r.key === key24) ? p : null;
@@ -1784,7 +1778,7 @@ async function hand() {
     }
     const sent24 = await far24(),
       once24 = (await keysOf(p16.paneId)).slice(keys24.length).split(pasteOf(text24)).length - 1;
-    await call(A, 'page', { view: 'overview' }); // the page is left while the view runs
+    await call(A, 'page', { view: 'devices' }); // the Threads page is left while the view runs
     let left24 = false;
     try {
       left24 = !!(await until(
@@ -1833,7 +1827,7 @@ async function hand() {
         await sleep(left);
       }
     }
-    await call(A, 'page', { view: 'agents' });
+    await call(A, 'page', { view: 'threads' });
     const again24 = await until(
       'the view runs again',
       async () => {
@@ -1889,7 +1883,7 @@ async function hand() {
       steps[23],
       list24
         ? `A's page: group "${list24.groups.map(g => g.name).join('", "')}" with ${list24.rows.length} row(s) of ${sure24} known to be in this project; watched before a row was selected: ${idle24} on B, a view on A: ${unasked24 ? unasked24.state : 'none'}; selected: "${on24?.detail?.name}" (${on24?.detail?.sub}), terminal box "${now24?.detail?.view}"${now24?.detail?.note ? ' ("' + now24.detail.note + '")' : ''}; its rows equal B's own reading of that panel: ${same24} (${Array.isArray(own24) ? own24.filter(l => l.trim()).length : 0} rows with text); B names the watcher: ${mark24}; target pressed: ${pressed24}, hint "${aimed24?.hint}"; the first Enter only asked: ${asked24}; the composer's prompt arrived on B: ${got24} (${how24}), ${once24} time(s), draft left: "${sent24?.draft}"; page left: views on B ${left24 ? 0 : 'still there'}, A's view "${viewA24 ? viewA24.state : 'none'}"; full control off: the composer's hint is gone: ${gone24a}; watched from the page again: "${again24?.detail?.view}", views on B ${watched24}; A's window loaded again: views on B ${reload24 ? 0 : 'still there'}, A's view "${viewR24 ? viewR24.state : 'none'}"`
-        : "A's Agents page never listed B's agent within 15 s"
+        : "A's thread list never showed B's agent within 15 s"
     );
 
     // 25 ---- a longer command answered from the other computer (changes 7 and 8).

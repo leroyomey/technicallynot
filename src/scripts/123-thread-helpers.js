@@ -14,7 +14,7 @@
 //   panel of its own (43's graph; it is a thread too, and one press opens it as one).
 // - The shared files: a row under the top row with every file that the open thread or one of its
 //   helpers holds, who holds it, and who was last refused it and so waits (the app's file locks,
-//   desktop/file-locks.js).
+//   desktop/file-locks.js). Folded to one summary line until the user presses it.
 //
 // Real state only, on the app's own pushes; no timer. Look: the end of
 // src/styles/30-thread-readable.css. `window.TnaiThreadHelpers` (`open`, `close`, `state`).
@@ -159,7 +159,53 @@
   }
 
   // ---------- the shared files ----------
+  // Folded by default to one line: how many files, the busiest holders and who waits. A press
+  // opens the full list of files, so a long list takes little room until it is wanted.
+  // Open or folded holds for every thread
+  // until the user presses again.
   let locks = [];
+  let sharedOpen = false;
+  const HOLDERS_SHOWN = 3;
+
+  const sharedSum = make('button', 'tnt-shared-sum');
+  sharedSum.type = 'button';
+  sharedSum.setAttribute('aria-expanded', 'false');
+  const sharedList = make('div', 'tnt-shared-list');
+  sharedList.hidden = true;
+  shared.append(sharedSum, sharedList);
+  sharedSum.addEventListener('click', () => {
+    sharedOpen = !sharedOpen;
+    paintFold();
+  });
+
+  function paintFold() {
+    sharedSum.setAttribute('aria-expanded', String(sharedOpen));
+    sharedSum.title = sharedOpen ? 'Fold the list of held files' : 'Show every held file';
+    sharedList.hidden = !sharedOpen;
+  }
+
+  // "12 files held · Nimbus 6 · Pulse 3 · Fern 2 · +2" and, in amber, how many files someone waits
+  // for
+  function paintSum(held) {
+    const counts = new Map();
+    for (const lock of held) counts.set(lock.name, (counts.get(lock.name) || 0) + 1);
+    const holders = [...counts].sort((a, b) => b[1] - a[1]);
+    const shown = holders
+      .slice(0, HOLDERS_SHOWN)
+      .map(([name, count]) => name + ' ' + count)
+      .join(' · ');
+    const rest = holders.length - HOLDERS_SHOWN;
+    const waiting = held.filter(lock => lock.wanted?.name).length;
+    const label = make(
+      'span',
+      '',
+      held.length + (held.length === 1 ? ' file held' : ' files held')
+    );
+    const who = make('em', '', shown + (rest > 0 ? ' · +' + rest : ''));
+    sharedSum.replaceChildren(label, who);
+    if (waiting) sharedSum.append(make('b', '', waiting + ' waiting'));
+    sharedSum.insertAdjacentHTML('beforeend', icon('chevron-right', 14));
+  }
 
   function paintShared() {
     const mine = new Set([
@@ -172,7 +218,8 @@
       .join('\n\n');
     if (shared.dataset.key !== key) {
       shared.dataset.key = key;
-      shared.replaceChildren(
+      paintSum(held);
+      sharedList.replaceChildren(
         ...held.map(lock => {
           const chip = make('span', 'tnt-shared-file');
           const waits = lock.wanted?.name || '';
@@ -191,6 +238,7 @@
         })
       );
     }
+    paintFold();
     shared.hidden = !held.length;
   }
 

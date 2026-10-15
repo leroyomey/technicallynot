@@ -37,8 +37,7 @@ const frame = () =>
 const shot = async name => {
   await frame();
   await wait(400);
-  console.log('TNAI_SHOT:' + name);
-  await wait(700);
+  await (window.TnaiTest?.shot?.(name) ?? wait(700));
 };
 let callId = 0;
 const main = (cmd, ...args) =>

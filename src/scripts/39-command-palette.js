@@ -1,9 +1,9 @@
 // Technically Not · 39-command-palette.js — ⌘K / Ctrl+K command palette (top bar ⌘ K button, and
-// the Projects nav item opens it on the project list): go to a page, switch, add or remove (× /
-// Delete; files stay on disk) a project, find and open a project file, run an app action, or put a
-// `tnai` command (agents, send, read, new, context, notes, skills, preview…) in the composer to
-// send. Every entry calls a real feature; entries whose feature is unavailable are left out.
-// window.TnaiPalette (open, close).
+// the three-dots menu's Projects row opens it on the project list): go to a page, switch, add or
+// remove (× / Delete; files stay on disk) a project, find and open a project file, run an app
+// action, or put a `tnai` command (agents, send, read, new, context, notes, skills, preview…) in
+// the composer to send. Every entry calls a real feature; entries whose feature is unavailable are
+// left out. window.TnaiPalette (open, close).
 (() => {
   const style = document.createElement('style');
   style.textContent = `
@@ -89,14 +89,22 @@
   const usable = el => el && el.getAttribute('aria-disabled') !== 'true' && !el.closest('[hidden]');
   const goPage = sel => () => document.querySelector(sel)?.click();
 
+  // The hidden old navigation still holds the page routes. Its Overview route lands on Threads and
+  // its Terminal route is the All threads page, so those rows take the names the three-dots menu
+  // (124) uses; Agents has no page of its own any more and is left out.
+  const PAGE_NAMES = { overview: 'Threads', terminal: 'All threads' };
+  const NO_PAGE = new Set(['projects', 'agents']);
+
   function commands() {
     const out = [];
     for (const el of document.querySelectorAll('.sidebar .side-item')) {
-      if (!usable(el) || el.dataset.view === 'projects') continue;
-      const name = el.textContent
-        .replace(/^[^\p{L}\p{N}]+/u, '')
-        .replace(/\d+$/, '')
-        .trim();
+      if (!usable(el) || NO_PAGE.has(el.dataset.view)) continue;
+      const name =
+        PAGE_NAMES[el.dataset.view] ||
+        el.textContent
+          .replace(/^[^\p{L}\p{N}]+/u, '')
+          .replace(/\d+$/, '')
+          .trim();
       if (name) out.push({ group: 'Pages', kind: 'page', label: name, run: () => el.click() });
     }
     const projects = window.TnaiProjects;
@@ -185,7 +193,7 @@
           terms: hint,
           run: () => {
             if (!composer.offsetParent)
-              // Settings hides the composer
+              // Settings hides the composer; the Threads page shows it
               document.querySelector('.side-item[data-view="overview"]')?.click();
             composer.value = cmd.replace(/ (NAME|TASK|TEXT|URL|TOPIC|MESSAGE).*$/, ' ');
             composer.dispatchEvent(new Event('input', { bubbles: true }));

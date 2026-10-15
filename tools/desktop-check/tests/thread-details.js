@@ -670,7 +670,7 @@ try {
       alias('tu1') + ' · Build dark mode toggle' &&
       /^Running since /.test(sub('tu1').querySelector('small').textContent) &&
       sub('tu1').querySelector('[data-fact="Now"] .ttd-clamp').textContent ===
-        'Edit · src/settings.js' &&
+        'Editing settings.js' &&
       sub('tu1').querySelector('[data-fact="Tool calls"] .ttd-clamp').textContent === '1',
     'the running one: its name and task, since when, what it does now, its tool calls (' +
       sub('tu1').textContent.slice(0, 90) +
@@ -700,7 +700,7 @@ try {
   const stayedOpen = await until(
     () =>
       body('team').querySelector('[data-fact="Now"] .ttd-clamp')?.textContent ===
-        'Read · src/theme.js' &&
+        'Reading theme.js' &&
       body('team').querySelector('[data-open="tu2:output"]')?.open &&
       shown(body('team').querySelector('[data-open="tu2:output"] pre')),
     4000
@@ -868,10 +868,10 @@ try {
       ')'
   );
   check(
-    /^(Using |Editing src\/app\.js|2 sub-agents running)/.test(
+    /^(Using |Editing [^\\/\s]+$|Running|Reading|Writing|Searching|Looking|Starting|Updating|2 sub-agents running)/.test(
       root.querySelector('.ttd-doing')?.textContent || ''
-    ),
-    'Now: what it does, in the card at the top, comes from the freshest signal (' +
+    ) && !/[\\/]/.test(root.querySelector('.ttd-doing')?.textContent || ''),
+    'Now: what it does, in short words with no full path, in the card at the top, comes from the freshest signal (' +
       root.querySelector('.ttd-doing')?.textContent +
       ')'
   );
@@ -912,8 +912,7 @@ try {
     );
     if (age === 'over') {
       await wait(200);
-      console.log('TNAI_SHOT:thread-details-total-over');
-      await wait(500);
+      await (window.TnaiTest?.shot?.('thread-details-total-over') ?? wait(500));
     }
     Date.now = realNow;
   }

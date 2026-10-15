@@ -194,8 +194,8 @@ const typedTo = paneId =>
   );
   let s = graph.state().nodes.find(n => n.paneId === 'sub1');
   check(
-    s.status === 'done' && !s.closesAt,
-    'finished sub-agent is done and stays open while its lead still works'
+    s.status === 'done' && s.closesAt > Date.now(),
+    'finished sub-agent whose report reached its lead closes after the grace period, also while the lead works'
   );
 
   // Related new task while Sub1 is idle → REUSE (same conversation), no refusal.
@@ -287,8 +287,8 @@ const typedTo = paneId =>
   );
   graph.onEvent('root', { kind: 'stop', text: '' });
   check(
-    /Micro test added/.test(typedTo('root')) && !sub1().closesAt,
-    "the lead's turn ends and it gets the waiting report: it works again, the sub-agent stays"
+    /Micro test added/.test(typedTo('root')) && sub1().closesAt > Date.now(),
+    "the lead's turn ends and it gets the waiting report: the sub-agent closes after the grace period"
   );
   graph.onEvent('root', { kind: 'stop', text: '' });
   check(
@@ -296,7 +296,10 @@ const typedTo = paneId =>
     "the lead's task is over and no sub-agent works: the unkept finished one is scheduled to close"
   );
   graph.onEvent('root', { kind: 'prompt', text: 'one more thing' });
-  check(!sub1().closesAt, 'the lead starts a new task: the countdown stops');
+  check(
+    sub1().closesAt > Date.now(),
+    'the lead starts a new task: the countdown goes on, its report already reached the lead'
+  );
   graph.onEvent('root', { kind: 'stop', text: '' });
   check(sub1().closesAt > 0, 'and starts again when that task ends');
   graph.removed('sub1');

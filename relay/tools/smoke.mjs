@@ -382,6 +382,18 @@ async function run(worker) {
     Number.isFinite(leftB.last_seen),
     leftB
   );
+
+  // Remove (the Devices page's button on an unpaired computer), through the app's module: a
+  // connected device stays, one that left is removed from the list
+  const stays = await app.forget(DEVICE_B, DEVICE_A);
+  check('a connected device is not removed: online', stays.error === 'online', stays);
+  const removed = await app.forget(DEVICE_A, DEVICE_B);
+  const after = (await app.devices(DEVICE_A)).map(device => device.id);
+  check(
+    'a device that left is removed and the list no longer names it',
+    removed.ok === true && !after.includes(DEVICE_B) && after.includes(DEVICE_A),
+    { removed, after }
+  );
   linkA.socket.close(1000, 'done');
   await until('both sockets are closed', () => linkA.closed && linkB.closed);
 }

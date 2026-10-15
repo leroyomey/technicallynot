@@ -28,8 +28,14 @@ const typed = [],
   prompts = {};
 let paneN = 0,
   declineNext = false; // declineNext: main.js's folder-trust dialog answered Don't allow
+
+// paneId -> when the first text was typed into it (speed audit item 4: how soon after the quiet)
+const firstTypedAt = new Map();
 const ptys = {
-  write: (paneId, data) => typed.push([paneId, data]),
+  write: (paneId, data) => {
+    if (!firstTypedAt.has(paneId)) firstTypedAt.set(paneId, Date.now());
+    typed.push([paneId, data]);
+  },
   stop: () => {},
   list: () =>
     ['root', ...Array.from({ length: paneN }, (_, i) => 'sub' + (i + 1))].map(paneId => ({
@@ -112,6 +118,7 @@ const typedTo = paneId =>
   );
   await wait(600);
   graph.output([{ paneId: 'sub1', data: 'Codex banner' }]);
+  const bannerAt = Date.now();
   await wait(1500);
   check(!typedTo('sub1'), 'no task while its screen is still drawing');
   await wait(2500);
@@ -120,6 +127,13 @@ const typedTo = paneId =>
       typedTo('sub1')
     ),
     'once the screen settles: role intro + task typed into Codex'
+  );
+  const afterQuiet = (firstTypedAt.get('sub1') || 0) - bannerAt;
+  check(
+    afterQuiet > 2500 && afterQuiet < 2650,
+    'the task goes the moment 2.5 s of quiet is over, not up to 500 ms later (' +
+      afterQuiet +
+      ' ms after the last drawing)'
   );
 
   // the lead finished its own turn: idle, so reports are typed in

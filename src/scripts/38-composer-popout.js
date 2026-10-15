@@ -316,10 +316,6 @@ body.tnai-composer-popout>.composer>.activityline,body.tnai-composer-popout>.com
     return true;
   }
 
-  window.addEventListener('tnai:lock', () => {
-    if (win) dock(false);
-  }); // plan lock on (34): the composer comes back into the window
-
   function dock(focus) {
     const child = win;
     if (!child) return false;

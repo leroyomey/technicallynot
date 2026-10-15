@@ -950,9 +950,6 @@
     syncSides();
     return true;
   }
-  window.addEventListener('tnai:lock', () => {
-    if (out) dock();
-  }); // plan lock (34): pop-outs come back
   window.addEventListener('pagehide', () => {
     if (out) {
       saveSpot(out.win);

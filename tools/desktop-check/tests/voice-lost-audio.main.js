@@ -2,13 +2,30 @@
  * Technically Not tools · desktop-check/tests/voice-lost-audio.main.js — Main-process side of
  * voice-lost-audio.js: a local server whose one page answers after a wait. The test asks it with a
  * blocking request, which holds the window's thread for that long without using the processor (no
- * busy loop), the way a heavy redraw would.
+ * busy loop), the way a heavy redraw would. It also counts the window's engine warm-ups.
  */
 'use strict';
 const http = require('http');
-module.exports = () => {
+module.exports = win => {
   let server = null;
+  let warms = 0;
   return {
+    // Counts the window's engine warm-ups (voice:warm) instead of starting the engine: a handler on
+    // the window's own channel answers before the app's.
+    watchWarm(on) {
+      const ipc = win.webContents.ipc;
+      ipc.removeHandler('voice:warm');
+      if (on) {
+        warms = 0;
+        ipc.handle('voice:warm', () => {
+          warms++;
+        });
+      }
+      return true;
+    },
+    warms() {
+      return warms;
+    },
     async serve() {
       if (!server) {
         server = http.createServer((req, res) => {

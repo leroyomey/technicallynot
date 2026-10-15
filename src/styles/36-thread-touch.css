@@ -65,6 +65,32 @@
     width: 44px;
     height: 44px;
   }
+  /* At 44 the top row's buttons need some 100px more than with a mouse, so the row takes the
+     narrow island's layout of 29 (the buttons in a row of their own under the name) earlier:
+     with the blur button added, the name beside the side column at 1024 was cut to 41px. */
+  @container tnt-main (max-width: 680px) {
+    html.tnt-on:not(#tnt):not(#pg) .tnt-view .tnt-head:not(#lp) {
+      flex-wrap: wrap;
+      row-gap: 6px;
+    }
+    html.tnt-on:not(#tnt):not(#pg) .tnt-view .tnt-head-text:not(#lp) {
+      flex-basis: 100%;
+    }
+    html.tnt-on:not(#tnt):not(#pg) .tnt-view .tnt-head-acts:not(#lp) {
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      row-gap: 4px;
+      max-width: 100%;
+      margin-left: auto;
+    }
+  }
+  /* The pencil beside the name (29) keeps the name's own line: at 44 it takes back its extra
+     height with negative margins (the name's line is 18px × 1.25 = 22.5px), so it stays on the
+     name's center line and the row under it does not move (issue sweep item 18). */
+  html.tnt-on:not(#tnt):not(#pg) .tnt-view .tnt-head-line .tnt-head-rename:not(#lp) {
+    margin-top: -10.75px;
+    margin-bottom: -10.75px;
+  }
   html.tnt-on:not(#tnt):not(#pg) .tnt-fileview-head button:not(#lp) {
     width: 44px;
     height: 44px;

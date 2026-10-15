@@ -39,9 +39,13 @@ try {
     !overlay.hidden && document.activeElement === input,
     'TnaiPalette.open() opens it with the input focused'
   );
+
+  // The pages go by the three-dots menu's names; the old frame's Overview, Agents and Terminal
+  // have no row.
   check(
-    ['Agents', 'Terminal', 'Settings'].every(p => labels().includes(p)),
-    'lists pages: ' + labels().slice(0, 9).join(', ')
+    ['Threads', 'All threads', 'Settings'].every(p => labels().includes(p)) &&
+      !['Overview', 'Agents', 'Terminal'].some(p => labels().includes(p)),
+    'lists pages by their current names: ' + labels().slice(0, 9).join(', ')
   );
   check(
     labels().length > 5 && !labels().some(l => /light theme/i.test(l)),
@@ -90,8 +94,7 @@ try {
       ),
     'typing "tnai" lists the tnai commands group'
   );
-  console.log('TNAI_SHOT:palette-tnai');
-  await wait(700);
+  await (window.TnaiTest?.shot?.('palette-tnai') ?? wait(700));
   input.value = 'project notes';
   input.dispatchEvent(new Event('input'));
   await wait(60);
@@ -119,13 +122,11 @@ try {
         overlay.querySelectorAll('.tnai-pal-keys kbd').length >= 2,
       'current project has a Current pill; shortcuts are keys'
     );
-    console.log('TNAI_SHOT:palette-list');
-    await wait(700);
+    await (window.TnaiTest?.shot?.('palette-list') ?? wait(700));
     if (window.TnaiTheme) {
       window.TnaiTheme.set('dark');
       await wait(300);
-      console.log('TNAI_SHOT:palette-list-dark');
-      await wait(700);
+      await (window.TnaiTest?.shot?.('palette-list-dark') ?? wait(700));
     }
     input.value = 'READM';
     input.dispatchEvent(new Event('input'));
@@ -141,13 +142,11 @@ try {
         !!hit?.querySelector('svg'),
       'file hits sit under a folder header with an icon'
     );
-    console.log('TNAI_SHOT:palette-files');
-    await wait(700);
+    await (window.TnaiTest?.shot?.('palette-files') ?? wait(700));
     if (window.TnaiTheme) {
       window.TnaiTheme.set('dark');
       await wait(300);
-      console.log('TNAI_SHOT:palette-files-dark');
-      await wait(700);
+      await (window.TnaiTest?.shot?.('palette-files-dark') ?? wait(700));
     }
 
     // The File repository page was removed in the purple redesign: a hit opens in 09's view-only

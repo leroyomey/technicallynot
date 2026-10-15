@@ -1788,7 +1788,6 @@ function target() {
         calls.push(a);
         return { ok: true, state: 'sent' };
       },
-      locked: () => null,
       abort: async () => null,
       panelKey: async () => '',
     });

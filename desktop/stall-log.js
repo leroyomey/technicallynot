@@ -16,6 +16,13 @@ const MAX_BYTES = 256 * 1024;
 let busy = null; // { name, ms }
 let inner = 0; // the longest section reported while the current timer callback runs (nameTimers)
 
+// How long the loop ran inside timer, setImmediate and event callbacks since the last tick
+// (outermost ones only). A stall with no named section and little time in callbacks was not a
+// callback of ours: Electron's own work on this thread (a window, a picture, IPC routing), a
+// promise's continuation or loading a module.
+let depth = 0;
+let inCallbacks = 0;
+
 function ran(name, ms) {
   if (ms > inner) inner = ms;
   if (ms >= 20 && (!busy || ms > busy.ms)) busy = { name, ms: Math.round(ms) };
@@ -96,11 +103,13 @@ function nameTimers() {
       return real(
         function (...args) {
           const t = performance.now();
+          depth++;
           inner = 0;
           try {
             return fn.apply(this, args);
           } finally {
             const ms = performance.now() - t;
+            if (--depth === 0) inCallbacks += ms;
             if (ms >= 20 && inner * 2 < ms) ran('timer ' + setAt(fn, at), ms);
           }
         },
@@ -113,6 +122,101 @@ function nameTimers() {
     if (promised) Object.defineProperty(named, custom, promised);
     global[key] = named;
   }
+  nameImmediates();
+}
+
+// setImmediate callbacks had no name either; they are named the same way as timers, as `immediate
+// <function> <file>:<line>`. A separate function because setImmediate takes no delay.
+function nameImmediates() {
+  const real = global.setImmediate;
+  const custom = require('util').promisify.custom;
+  const named = function (fn, ...rest) {
+    if (typeof fn !== 'function') return real(fn, ...rest);
+    const at = {},
+      limit = Error.stackTraceLimit;
+    Error.stackTraceLimit = 1;
+    Error.captureStackTrace(at, named);
+    Error.stackTraceLimit = limit;
+    return real(
+      function (...args) {
+        const t = performance.now();
+        depth++;
+        inner = 0;
+        try {
+          return fn.apply(this, args);
+        } finally {
+          const ms = performance.now() - t;
+          if (--depth === 0) inCallbacks += ms;
+          if (ms >= 20 && inner * 2 < ms) ran('immediate ' + setAt(fn, at), ms);
+        }
+      },
+      ...rest
+    );
+  };
+  const promised = Object.getOwnPropertyDescriptor(real, custom);
+
+  // util.promisify(setImmediate) still works
+  if (promised) Object.defineProperty(named, custom, promised);
+  global.setImmediate = named;
+}
+
+// Event listeners were the largest unnamed part left (2026-10-14: 83 stalls since that morning
+// named no section although the process ran most of the time): a child process ending (git, the
+// CLI checks), a file watcher, a socket's data, an Electron event. Every emit is timed and one of
+// 20 ms or more is reported as `event <object kind>.<event name>`, unless a named section inside
+// it covers half of the run or more. An emit inside another one keeps the outer one's count right,
+// so only the most exact name is kept. Cost: two clock reads per emit; the name is built only when
+// an emit was slow. Listeners, arguments, the return value and thrown errors are unchanged.
+let eventsNamed = false;
+
+function nameEvents() {
+  if (eventsNamed) return;
+  eventsNamed = true;
+  const proto = require('events').EventEmitter.prototype;
+  const real = proto.emit;
+  proto.emit = function emit(type, ...args) {
+    const outer = inner;
+    inner = 0;
+
+    // A child process's listeners are noted before the emit: a once-listener is gone after it,
+    // and child processes emit rarely, so the copy costs nothing that matters.
+    const before = this.spawnfile === undefined ? null : this.listeners(type);
+    const t = performance.now();
+    depth++;
+    try {
+      return real.call(this, type, ...args);
+    } finally {
+      const ms = performance.now() - t;
+      if (--depth === 0) inCallbacks += ms;
+      if (ms >= 20 && inner * 2 < ms) ran('event ' + eventName(this, type, before), ms);
+
+      // the outer section sees this run as covered by a named one
+      inner = Math.max(outer, ms >= 20 ? ms : inner);
+    }
+  };
+}
+
+// `<object kind>.<event name>`, then for a child process the program it ran (2026-10-14: `event
+// ChildProcess.close 632 ms` could not say whose process it was), then the names of the listeners
+// that have one (internal ones like `exithandler` too: they tell execFile from spawn).
+function eventName(emitter, type, listeners) {
+  let kind = '';
+  let program = '';
+  let names = '';
+  try {
+    kind = emitter?.constructor?.name || '';
+    if (typeof emitter?.spawnfile === 'string')
+      program = path.basename(emitter.spawnfile).replace(/\.(exe|cmd|bat)$/i, '');
+    names = (listeners || emitter.listeners(type))
+      .map(listener => listener.name)
+      .filter(Boolean)
+      .slice(0, 3)
+      .join(',');
+  } catch {}
+  return [(kind || 'emitter') + '.' + String(type), program, names]
+    .filter(Boolean)
+    .join(' ')
+    .slice(0, 80);
 }
 
 function setAt(fn, at) {
@@ -163,6 +267,7 @@ function start(dir) {
   const file = dir ? path.join(dir, 'stalls.log') : '';
   const every = setInterval; // the stall timer itself is not one of the named timers
   nameTimers();
+  nameEvents();
   watchGc();
   let last = Date.now(),
     writing = false,
@@ -200,7 +305,8 @@ function start(dir) {
       const head =
         `[tnai stall] main process blocked ~${late} ms at ${new Date(now).toISOString()}` +
         (busy ? ` · longest named section: ${busy.name} ${busy.ms} ms` : ' · no named section') +
-        ` · own CPU ${Math.round((used.user + used.system) / 1000)} ms of ${span} ms`;
+        ` · own CPU ${Math.round((used.user + used.system) / 1000)} ms of ${span} ms` +
+        ` · in callbacks ${Math.round(inCallbacks)} ms`;
 
       // Node hands over its record of a pause one step later in the same turn of the loop, so the
       // line is written there.
@@ -230,6 +336,7 @@ function start(dir) {
     } else gcSince(); // pauses of a turn that was not late are not kept for a later line
     last = now;
     busy = null;
+    inCallbacks = 0;
   }, TICK_MS).unref();
 }
 

@@ -24,8 +24,7 @@ const box = el => el.getBoundingClientRect();
 const n = v => Math.round(v * 10) / 10;
 const shot = async name => {
   await wait(250);
-  console.log('TNAI_SHOT:' + name);
-  await wait(450);
+  await (window.TnaiTest?.shot?.(name) ?? wait(450));
 };
 
 try {

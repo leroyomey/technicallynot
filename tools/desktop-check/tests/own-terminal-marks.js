@@ -108,8 +108,7 @@ try {
   term.input('\r', true);
   await wait(1500);
   check(dots().length === before, 'an empty Enter adds no dot (' + before + ' dots)');
-  console.log('TNAI_SHOT:own-terminal-marks-dots');
-  await wait(700);
+  await (window.TnaiTest?.shot?.('own-terminal-marks-dots') ?? wait(700));
   window.TnaiTheme.set('light');
   await wait(600);
 
@@ -155,8 +154,7 @@ try {
       (rowColor() ? contrast(rowColor(), ground()).toFixed(1) : 'no row') +
       ' to 1)'
   );
-  console.log('TNAI_SHOT:own-terminal-marks-light');
-  await wait(700);
+  await (window.TnaiTest?.shot?.('own-terminal-marks-light') ?? wait(700));
   window.TnaiTheme.set('dark');
   await wait(300);
 

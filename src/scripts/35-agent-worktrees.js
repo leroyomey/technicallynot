@@ -47,7 +47,7 @@
   const option = el('label', 'wt-option');
   option.hidden = true;
   option.innerHTML =
-    '<input type="checkbox" id="wtOwn"><span><b>Own worktree</b><small>Start in a separate folder on a new branch (tnai/…) from the current commit, so several agents can edit at once. Merge or remove it from the agent’s row on Overview (⎇ button).</small></span>';
+    '<input type="checkbox" id="wtOwn"><span><b>Own worktree</b><small>Start in a separate folder on a new branch (tnai/…) from the current commit, so several agents can edit at once. Merge or discard its work from its thread: Details, the ⎇ row under Setup.</small></span>';
   const box = option.querySelector('input');
   if (launcher) launcher.querySelector('.terminal-launcher-grid')?.before(option);
 
@@ -83,7 +83,7 @@
           'small',
           '',
           (w.agent ? w.agent + '’s' : 'An') +
-            ' earlier worktree, no panel now. The agent you pick below starts in it, on that branch, instead of a new one. Its work stays until you merge or discard it from the agent’s row on Overview (⎇ button).'
+            ' earlier worktree, no panel now. The agent you pick below starts in it, on that branch, instead of a new one. Its work stays until you merge or discard it from its thread: Details, the ⎇ row under Setup.'
         )
       );
       row.append(input, text);

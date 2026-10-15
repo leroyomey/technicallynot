@@ -226,7 +226,10 @@
     return new TextDecoder().decode(read.value);
   }
 
+  // A project switch while the files are read: what was read belongs to the old folder (a read
+  // started there ends in the new one), so it is dropped; the new project reads its own.
   async function readScripts() {
+    const forRoot = root;
     let found = [];
     try {
       const pkg = JSON.parse((await readText('package.json')) || 'null');
@@ -241,20 +244,27 @@
       ['bun.lockb', 'bun'],
       ['bun.lock', 'bun'],
     ];
-    runner = 'npm';
+    let foundRunner = 'npm';
     for (const [file, tool] of locks)
       if ((await native.fs.stat(file))?.ok) {
-        runner = tool;
+        foundRunner = tool;
         break;
       }
+    if (root !== forRoot) return;
+    runner = foundRunner;
     scripts = found;
     paint();
   }
+
+  // Two quick project switches: the older pass stops at its next wait, so it never paints the old
+  // project's scripts or reattaches its servers under the new one.
+  let syncSeq = 0;
 
   async function syncProject() {
     const now = (await native.fs.root()) || '';
     if (now === root) return;
     root = now;
+    const seq = ++syncSeq;
     tabs = [];
     activeId = '';
     scripts = [];
@@ -288,12 +298,14 @@
     activeId = tabs[Math.min(tabs.length - 1, saved?.active | 0)]?.id || '';
     paint();
     await readScripts();
+    if (seq !== syncSeq) return;
 
     // A server started before this window reloaded still runs in its Terminal pane: reattach and
     // read its URL from the pane's output.
     for (const tab of tabs) {
       if (tab.kind !== 'script' || !tab.paneId) continue;
       const info = await native.pty.replay(tab.paneId);
+      if (seq !== syncSeq) return;
       if (info && info.running && !info.saved && info.agent === 'Terminal') {
         // The whole replay buffer, newest address wins: a chatty server has pushed its URL line far
         // out of the last 4 KB by now.
@@ -447,8 +459,21 @@
     return { ok: true, id: tab.id };
   }
 
-  // Runs the script in a new Terminal pane (visible on the Terminal page), then comes back here.
-  // The pane ends with the server, so its exit code is real.
+  // A new PowerShell panel underneath (an empty one is filled first) with the shell started in it,
+  // without leaving the page shown (the way the prompt box's New agent gets its panel, 19).
+  // Answers { ok, paneId, error }.
+  async function openPanel() {
+    const record = window.TnaiNewTerminalPane?.({ quiet: true, reuseEmpty: true });
+    if (!record) return { ok: false, error: window.TnaiPaneLimit?.message };
+
+    // 05 gives the panel its connection select; 07 moves it into its workspace
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const result = await window.TnaiAgents.openIn(record.id, 'Terminal', { name: record.name });
+    return { ...result, paneId: record.id };
+  }
+
+  // Runs the script in a new PowerShell panel underneath. The panel ends with the server, so its
+  // exit code is real.
   async function start(id) {
     const tab = tabs.find(t => t.id === id);
     if (
@@ -469,10 +494,7 @@
       paneId: '',
     });
     paint();
-    const layoutEl = document.querySelector('.layout');
-    const backToPage = layoutEl?.classList.contains('preview-mode');
-    const result = await window.TnaiAgents.open('Terminal');
-    if (backToPage) window.TnaiLivePreviewPage?.open();
+    const result = await openPanel();
     if (!result?.ok) {
       tab.state = 'exited';
       tab.error = result?.error || 'Could not open a thread for it.';

@@ -46,8 +46,7 @@ const shown = el =>
   !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
 const n = v => Math.round(v * 10) / 10;
 const shot = async name => {
-  console.log('TNAI_SHOT:' + name);
-  await wait(650);
+  await (window.TnaiTest?.shot?.(name) ?? wait(650));
 };
 
 // ---------- colors ----------

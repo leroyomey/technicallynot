@@ -279,8 +279,8 @@ contextBridge.exposeInMainWorld('tnaiNative', {
     clip: text => invoke('attachments:clip', String(text || '')),
     play: text => invoke('attachments:play', String(text || '')),
   },
-  // The Technically Not account + plan lock (user-auth.js). Only public state crosses: { available,
-  // google, signedIn, user: {name, email, providers}, plan, lock, checking, problem, flow }.
+  // The Technically Not account (user-auth.js). Only public state crosses: { available, google,
+  // signedIn, user: {name, email, providers}, plan, checking, problem, flow }.
   auth: {
     state: () => invoke('auth:state'),
     signIn: (provider, browser) => invoke('auth:signIn', String(provider), String(browser ?? '')),
@@ -300,11 +300,6 @@ contextBridge.exposeInMainWorld('tnaiNative', {
     open: which => invoke('auth:open', String(which)),
     onChange: listen('auth:changed'),
     onNotice: listen('auth:notice'),
-    // Plan lapse (plan-lapse.js): { closeAt, panes } of the PowerShell panels that close after the
-    // notice; onRefused: main refused a prompt, panel or keystroke while locked.
-    lapse: () => invoke('auth:lapse'),
-    onLapse: listen('auth:lapse'),
-    onRefused: listen('auth:refused'),
   },
   // The thread layout's Readable view (thread-log.js): the entries of one panel's conversation
   // added since byte `from` (-1 = a first read) → { readable, found, entries, next, cut, reset }.
@@ -399,6 +394,9 @@ contextBridge.exposeInMainWorld('tnaiNative', {
     setOwnRelay: (url, secret, confirm) =>
       invoke('remote:setOwnRelay', String(url), String(secret), confirm === true),
     clearOwnRelay: confirm => invoke('remote:clearOwnRelay', confirm === true),
+    // an unpaired computer on the own relay, removed from its list → { ok, state } or { ok: false,
+    // error }
+    forgetRelayDevice: id => invoke('remote:forgetRelayDevice', String(id)),
     woke: () => invoke('remote:woke'),
     setOn: on => invoke('remote:setOn', on === true),
     setName: name => invoke('remote:setName', String(name ?? '')),
@@ -542,6 +540,15 @@ contextBridge.exposeInMainWorld('tnaiNative', {
     state: () => invoke('snapshot:state'),
     setShortcut: accelerator => invoke('snapshot:setShortcut', accelerator),
     onState: listen('snapshot:state'),
+  },
+  // The Snapshots box (snapshot-shelf.js): the last five pictures and clips. kind is 'picture' or
+  // 'clip'; onChange hears the new list after every change.
+  snapshots: {
+    list: () => invoke('snapshots:list'),
+    copy: (kind, id) => invoke('snapshots:copy', kind, id),
+    remove: (kind, id) => invoke('snapshots:remove', kind, id),
+    clear: () => invoke('snapshots:clear'),
+    onChange: listen('snapshots:changed'),
   },
   // Agent mesh (agent-mesh.js): agent sessions incl. CLIs started by hand in a terminal, and the
   // pane names `tnai` uses.

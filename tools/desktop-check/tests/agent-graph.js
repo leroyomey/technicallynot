@@ -36,8 +36,7 @@ const main = (cmd, ...args) =>
     console.log('TNAI_MAIN:' + JSON.stringify({ id, cmd, args }));
   });
 const shot = async name => {
-  console.log('TNAI_SHOT:' + name);
-  await wait(450);
+  await (window.TnaiTest?.shot?.(name) ?? wait(450));
 };
 const layout = document.querySelector('.layout'),
   G = window.TnaiAgents;

@@ -32,8 +32,7 @@ const frame = () =>
   ]);
 const shot = async name => {
   await frame();
-  console.log('TNAI_SHOT:' + name);
-  await wait(700);
+  await (window.TnaiTest?.shot?.(name) ?? wait(700));
 };
 let callId = 0;
 const main = (cmd, ...args) =>
@@ -271,6 +270,22 @@ try {
 
   // ---- actions: grouped lines in the reading face ----
   const groups = [...list().querySelectorAll('.tnt-grp')];
+
+  // a run of actions folds behind one line that sums it up, and a press opens it
+  const run = list().querySelector('.tnt-did');
+  const runHead = run?.querySelector(':scope > .tnt-run-head');
+  check(
+    shown(runHead) &&
+      runHead.textContent === 'Read 3 files, ran 2 commands, edited 1 file · 1 failed' &&
+      run.dataset.open === 'false' &&
+      groups.every(group => !shown(group)),
+    'a run of actions folds behind one line that sums it up: "' + runHead?.textContent + '"'
+  );
+  runHead?.click();
+  check(
+    groups.every(shown) && runHead.getAttribute('aria-expanded') === 'true',
+    'a press on that line opens the run to its groups'
+  );
   const heads = groups.map(g =>
     shown(g.querySelector('.tnt-grp-head')) ? g.querySelector('.tnt-grp-head').textContent : ''
   );
@@ -481,12 +496,26 @@ try {
     sentTexts.push(paneId + ': ' + text);
     return true;
   };
+
+  // The reader is up the conversation when they press: the press must not move the view to the
+  // newest line, so several decisions can be pressed in a row.
+  talk.scrollTop = 0;
+  await wait(50);
+  const readingAt = talk.scrollTop;
   try {
     optionButtons[0]?.click();
     await wait(150);
   } finally {
     window.TnaiAgents.send = realSend;
   }
+  check(
+    talk.scrollHeight <= talk.clientHeight + 48 || Math.abs(talk.scrollTop - readingAt) < 4,
+    'pressing a decision keeps the view where the user reads (' +
+      readingAt +
+      ' → ' +
+      Math.round(talk.scrollTop) +
+      ')'
+  );
   const answer = /Decision on "Which way should the test go\?": go with Left/;
   check(
     sentTexts.some(text => text.startsWith(pane + ': ') && answer.test(text)) ||
@@ -503,6 +532,48 @@ try {
   );
   promptBox.value = promptBefore;
   promptBox.dispatchEvent(new Event('input', { bubbles: true }));
+
+  // A report that comes in while the reader is at the newest line stays in view when the next
+  // turn follows at once (a held message typed in, a short follow-up report): following the end
+  // stops at the report's top until the reader moves past it.
+  talk.scrollTop = talk.scrollHeight;
+  await wait(100);
+  const reportsBefore = list().querySelectorAll('.tnt-report').length;
+  const said = (id, text) => ({
+    type: 'assistant',
+    message: { id, role: 'assistant', content: [{ type: 'text', text }] },
+  });
+  const longAnswer = Array.from(
+    { length: 60 },
+    (_, at) => 'Line ' + (at + 1) + ' of the next task.'
+  ).join('\n\n');
+  const appended = await main('appendTranscript', pane, [
+    said(
+      'msg_second_report',
+      'Second task done.\n\nTechnically Not report\n- Did: the second task'
+    ),
+    { type: 'user', message: { role: 'user', content: '[from Lead] one more thing' } },
+    said('msg_after_report', longAnswer),
+  ]);
+  const heldCard = appended
+    ? await until(() => {
+        const cards = list().querySelectorAll('.tnt-report');
+        return cards.length > reportsBefore && /Line 60 of the next task/.test(list().textContent)
+          ? cards[cards.length - 1]
+          : null;
+      }, 8000)
+    : null;
+  await wait(300);
+  const heldTop = heldCard ? heldCard.getBoundingClientRect().top : NaN;
+  const talkBox = talk.getBoundingClientRect();
+  check(
+    !!heldCard && heldTop >= talkBox.top - 2 && heldTop < talkBox.bottom,
+    'a new report stays in view when the next turn follows it (top ' +
+      Math.round(heldTop - talkBox.top) +
+      ' px in a ' +
+      Math.round(talkBox.height) +
+      ' px view)'
+  );
 
   // Getting around: "Last report" and "Latest" float at the bottom right while
   // the reader is away from where they lead; sending a prompt brings the thread to its newest line;

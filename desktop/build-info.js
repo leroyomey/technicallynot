@@ -1,8 +1,8 @@
 /*
  * * Technically Not desktop · build-info.js — Whether this copy is a release build. A release build
- * * ignores every TNAI_* developer override (TNAI_DEV_UNLOCK, TNAI_ENFORCE_PLAN, test keys and
- * * endpoints, the self-test hook, the web bridge) and keeps DevTools closed, whatever the exe is
- * * called. Release = any of these (each can only turn release ON; nothing outside the
+ * * ignores every TNAI_* developer override (TNAI_ACCOUNTS_URL, test keys and endpoints, the
+ * * self-test hook, the web bridge) and keeps DevTools closed, whatever the exe is called.
+ * * Release = any of these (each can only turn release ON; nothing outside the
  * * integrity-checked app.asar can turn it off):
  * * - the app code runs from an app.asar (every installed or built copy; the Electron fuses in
  * * package.json `build.electronFuses` make the exe load only its app.asar and refuse one whose

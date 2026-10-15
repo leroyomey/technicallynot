@@ -7,7 +7,8 @@
  * JSON line per message. Nothing here is guessed: every entry is one line of that file, turned
  * into what a person reads (your prompt, the agent's words, an action with its file or command,
  * what the action gave back, how long the task took). Lines the CLI writes for itself (thinking,
- * attachments, snapshots, a sub-agent's own inner steps) are left out. Text is clipped here.
+ * attachments, snapshots, a sub-agent's own inner steps) are left out, except the attachment that
+ * carries a prompt sent while the agent worked. Text is clipped here.
  *
  * `fileFor(record)` finds the transcript of a saved session record (session-store.js);
  * `entries(lines)` is pure and is tested by tools/thread-log-test.js.
@@ -237,6 +238,18 @@ function lineEntries(line, inSub) {
     return [{ kind: 'worked', ms: Math.round(line.durationMs), at }];
   if (line.type === 'system' && line.subtype === 'compact_boundary')
     return [{ kind: 'note', text: 'The conversation was compacted here', at }];
+
+  // A prompt sent while the agent was working reaches it inside the running turn: Claude Code
+  // records it as a "queued_command" attachment, never as a user line, so without this the
+  // prompt is missing from the thread although the agent answered it.
+  if (line.type === 'attachment') {
+    const queued = line.attachment;
+    const isPrompt =
+      queued?.type === 'queued_command' &&
+      typeof queued.prompt === 'string' &&
+      (queued.commandMode || 'prompt') === 'prompt';
+    return isPrompt ? userEntries(queued.prompt, at) : [];
+  }
   if (line.type === 'user') {
     if (line.isCompactSummary) return [];
     if (typeof content === 'string') return userEntries(content, at);

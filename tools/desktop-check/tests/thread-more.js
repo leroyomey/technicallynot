@@ -8,7 +8,8 @@
 // with the text size buttons and "Back to the conversation" shows the conversation again; Team
 // opens the team box; Stop asks and stops the session, Start starts it again; Close thread asks
 // and closes it; and nothing in the top row lies over anything else in a thread 420 px wide.
-// Pictures: thread-more-menu, -menu-light, -rename, -stop, -narrow.
+// Pictures: thread-more-menu, -menu-light, -rename, -stop, -narrow; thread-pencil-<look>-<width>
+// (the pencil beside the name in Light and Dark at 1440, 1024 and 768).
 // Returns {ok, log}.
 const log = [];
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -28,8 +29,7 @@ const until = async (fn, ms = 8000) => {
 };
 const shot = async name => {
   await wait(400);
-  console.log('TNAI_SHOT:' + name);
-  await wait(700);
+  await (window.TnaiTest?.shot?.(name) ?? wait(700));
 };
 let callId = 0;
 const main = (cmd, ...args) =>
@@ -115,6 +115,94 @@ const overlaps = row => {
       if (across > 2 && down > 2) found.push(named(parts[first]) + ' | ' + named(parts[second]));
     }
   return found;
+};
+
+// ---------- the page colors (44-page-colors.css) ----------
+// The page colors, one a place, in each look.
+const PAGE_COLORS = {
+  dark: {
+    all: '#e29b6f',
+    side: '#cecb64',
+    cli: '#86cb8f',
+    terminal: '#67c1be',
+    past: '#bb9ce8',
+    handoff: '#d590cf',
+    preview: '#e4869d',
+  },
+  light: {
+    all: '#a75420',
+    side: '#716e09',
+    cli: '#2a7935',
+    terminal: '#13726f',
+    past: '#6e3eb1',
+    handoff: '#9b3192',
+    preview: '#af3151',
+  },
+};
+const numbersOf = text => (String(text).match(/[\d.]+/g) || []).map(Number);
+const hexOf = text =>
+  '#' +
+  numbersOf(text)
+    .slice(0, 3)
+    .map(part => Math.round(part).toString(16).padStart(2, '0'))
+    .join('');
+const luminance = rgb => {
+  const channel = value => {
+    const part = value / 255;
+    return part <= 0.03928 ? part / 12.92 : ((part + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2]);
+};
+const contrastOf = (one, two) => {
+  const lighter = Math.max(luminance(one), luminance(two));
+  const darker = Math.min(luminance(one), luminance(two));
+  return (lighter + 0.05) / (darker + 0.05);
+};
+
+// What lies under an element: the look's ground, then every background color from the page down
+// to the element laid over it (a see-through fill over the ground).
+const groundUnder = (el, tone) => {
+  const html = getComputedStyle(document.documentElement);
+  const ground = html.getPropertyValue(tone === 'dark' ? '--pg-bg-d' : '--pg-bg-l').trim();
+  let color = numbersOf(
+    ground.startsWith('#')
+      ? [1, 3, 5].map(at => parseInt(ground.slice(at, at + 2), 16)).join(',')
+      : ground
+  ).slice(0, 3);
+  const layers = [];
+  for (let node = el; node && node.nodeType === 1; node = node.parentElement) layers.unshift(node);
+  for (const node of layers) {
+    const [red, green, blue, alpha = 1] = numbersOf(getComputedStyle(node).backgroundColor);
+    if (!alpha) continue;
+    color = [red, green, blue].map((part, index) => part * alpha + color[index] * (1 - alpha));
+  }
+  return color;
+};
+
+// Reads the icon of each [place, words, control] and checks its color and its contrast.
+const readPageColors = (tone, found) => {
+  for (const [place, words, control] of found) {
+    const glyph = control?.querySelector(':scope > svg');
+    if (!glyph || !shown(glyph)) {
+      check(false, tone + ': ' + words + ' is not on screen');
+      continue;
+    }
+    const drawn = getComputedStyle(glyph).color;
+    const ratio = contrastOf(numbersOf(drawn), groundUnder(control, tone));
+    check(
+      hexOf(drawn) === PAGE_COLORS[tone][place] && ratio >= 3,
+      tone +
+        ': ' +
+        words +
+        ' is drawn in ' +
+        hexOf(drawn) +
+        ' (' +
+        place +
+        '), contrast ' +
+        ratio.toFixed(2) +
+        ' to 1'
+    );
+  }
 };
 
 const opened = [];
@@ -264,6 +352,90 @@ try {
   window.TnaiTheme?.set(look);
   await wait(200);
 
+  // ---- the page colors (44-page-colors.css) ----
+  // Each icon that leads to a place is drawn in that place's color, in Dark and in Light, with a
+  // contrast of at least 3 to 1 on what lies under it. An icon that leads nowhere of its own
+  // stays neutral, and a disabled one stays muted.
+  for (const tone of ['dark', 'light']) {
+    window.TnaiTheme?.set(tone);
+    threads.open();
+    threads.select(first);
+    await until(() => view().shown() === first, 6000);
+    await wait(300);
+    const found = [];
+    found.push(['all', "the top row's All threads", island.querySelector('.tnt-head-page')]);
+    found.push(['side', "the top row's side column", island.querySelector('.tnt-fold-side')]);
+    found.push(['past', "the top row's Past conversations", island.querySelector('.tnh-open')]);
+    found.push([
+      'handoff',
+      "the top row's Handoff history",
+      island.querySelector('.tnt-head-handoff'),
+    ]);
+    found.push(['past', "the list's Past conversations", document.querySelector('.tnh-foot-btn')]);
+    readPageColors(tone, found);
+    const neutral = island.querySelector('.tnt-head-menu svg');
+    check(
+      !!neutral &&
+        !Object.values(PAGE_COLORS[tone]).includes(hexOf(getComputedStyle(neutral).color)),
+      tone + ': the "..." icon, which leads to no place, stays neutral'
+    );
+
+    // a disabled control keeps the muted look of every disabled icon
+    const pageButton = island.querySelector('.tnt-head-page');
+    pageButton.disabled = true;
+    const mutedColor = hexOf(getComputedStyle(pageButton.querySelector('svg')).color);
+    pageButton.disabled = false;
+    check(
+      mutedColor !== PAGE_COLORS[tone].all,
+      tone + ': a disabled All threads button is not drawn in its color (' + mutedColor + ')'
+    );
+
+    // the thread's "..." menu: CLI screen
+    if (withTalk) {
+      more().open();
+      await wait(250);
+      const screenRow = menu()?.querySelector('.tnt-menu-row[data-row="screen"]');
+      readPageColors(tone, [['cli', 'the "..." menu\'s CLI screen', screenRow]]);
+      more().close();
+      await wait(150);
+    }
+
+    // the three-dots menu: All threads, Terminal, Live preview
+    const fullMenu = () => document.querySelector('.tnt-menu.tnt-menu-full');
+    document.querySelector('.top .tnt-menu-btn')?.click();
+    await until(() => shown(fullMenu()), 3000);
+    const placeRow = place =>
+      fullMenu()?.querySelector('.tnt-menu-row[data-place="' + place + '"]');
+    readPageColors(tone, [
+      ['all', "the three-dots menu's All threads", placeRow('all')],
+      ['terminal', "the three-dots menu's Terminal", placeRow('terminal')],
+      ['preview', "the three-dots menu's Live preview", placeRow('preview')],
+    ]);
+    await shot('page-colors-menu-' + tone);
+    window.TnaiThreadMenu?.close();
+    await wait(200);
+
+    // All threads: a card's Handoff history and side column buttons, the Live preview button
+    await window.TnaiTest.openAllThreads();
+    await wait(600);
+    const card = [...document.querySelectorAll('.tat-card')].find(one => shown(one));
+    readPageColors(tone, [
+      ['handoff', "a card's Handoff history", card?.querySelector('.tat-act-handoff')],
+      ['side', "a card's side column", card?.querySelector('.tat-act-side')],
+      [
+        'preview',
+        'the Live preview button of All threads',
+        document.querySelector('.tnt-fold-preview'),
+      ],
+    ]);
+    await shot('page-colors-all-' + tone);
+  }
+  window.TnaiTheme?.set(look);
+  threads.open();
+  threads.select(first);
+  await until(() => view().shown() === first, 6000);
+  await wait(200);
+
   // ---- Rename ----
   const title = () => head().querySelector('h1');
   const field = () => head().querySelector('.tnai-rename-input');
@@ -315,26 +487,73 @@ try {
   // ---- The pencil beside the name ----
   const pencil = () => head().querySelector('.tnt-head-rename');
   check(shown(pencil()), 'a pencil stands beside the name');
-  const nameBox = box(title()),
-    pencilBox = box(pencil()),
-    headHeight = box(head()).height;
-  const pencilGap = pencilBox.left - nameBox.right;
-  check(
-    pencilGap >= 2 && pencilGap <= 10,
-    'the pencil sits right after the name (' + pencilGap.toFixed(1) + ' px), not apart from it'
-  );
-  check(
-    Math.abs(pencilBox.top + pencilBox.height / 2 - (nameBox.top + nameBox.height / 2)) <= 1.5,
-    'the pencil shares the name’s center line'
-  );
-  const pencilIcon = box(pencil().querySelector('svg'));
-  check(
-    Math.abs(pencilIcon.left + pencilIcon.width / 2 - (pencilBox.left + pencilBox.width / 2)) <=
-      1 &&
-      Math.abs(pencilIcon.top + pencilIcon.height / 2 - (pencilBox.top + pencilBox.height / 2)) <=
-        1,
-    'the pencil icon is centered in its box'
-  );
+  const headHeight = box(head()).height;
+
+  // The pencil against its neighbors: right after the name, on its center line, the icon in the
+  // middle of its box, and whole inside the top row. Measured in each look and at the tablet sizes
+  // (issue sweep item 18: it was first looked at only in Dark at the test window's size).
+  const measurePencil = label => {
+    const nameBox = box(title()),
+      pencilBox = box(pencil()),
+      rowBox = box(head());
+    const pencilGap = pencilBox.left - nameBox.right;
+    check(
+      pencilGap >= 2 && pencilGap <= 10,
+      label +
+        ': the pencil sits right after the name (' +
+        pencilGap.toFixed(1) +
+        ' px), not apart from it'
+    );
+    check(
+      Math.abs(pencilBox.top + pencilBox.height / 2 - (nameBox.top + nameBox.height / 2)) <= 1.5,
+      label + ': the pencil shares the name’s center line'
+    );
+    const pencilIcon = box(pencil().querySelector('svg'));
+    check(
+      Math.abs(pencilIcon.left + pencilIcon.width / 2 - (pencilBox.left + pencilBox.width / 2)) <=
+        1 &&
+        Math.abs(pencilIcon.top + pencilIcon.height / 2 - (pencilBox.top + pencilBox.height / 2)) <=
+          1,
+      label + ': the pencil icon is centered in its box'
+    );
+    check(
+      pencilBox.top >= rowBox.top - 0.5 &&
+        pencilBox.bottom <= rowBox.bottom + 0.5 &&
+        pencilBox.right <= rowBox.right,
+      label + ': the pencil lies whole inside the top row'
+    );
+    log.push(
+      '     ' +
+        label +
+        ': pencil ' +
+        round(pencilBox.width) +
+        'x' +
+        round(pencilBox.height) +
+        ', icon color ' +
+        getComputedStyle(pencil()).color +
+        ', name color ' +
+        getComputedStyle(title()).color
+    );
+  };
+  measurePencil('Dark 1440');
+  const pencilLook = window.TnaiTheme?.get?.() === 'light' ? 'light' : 'dark';
+  for (const [width, height] of [
+    [1440, 900],
+    [1024, 768],
+    [768, 680],
+  ]) {
+    if (width !== 1440) await main('size', width, height);
+    for (const look of ['light', 'dark']) {
+      if (width === 1440 && look === 'dark') continue;
+      window.TnaiTheme?.set(look);
+      await wait(300);
+      measurePencil((look === 'light' ? 'Light ' : 'Dark ') + window.innerWidth);
+      await shot('thread-pencil-' + look + '-' + width);
+    }
+  }
+  window.TnaiTheme?.set(pencilLook);
+  await main('size', 1440, 900);
+  await wait(300);
   pencil().click();
   await wait(200);
   check(
@@ -465,6 +684,46 @@ try {
     await wait(400);
   }
 
+  // Start is drawn green (--pg-work) and Stop red (--pg-err), on the menu's row and on the top
+  // row's on/off button, in Dark and in Light, at least 3 to 1 on what lies under it (user
+  // 2026-10-14: "Stop is red, green is for go"). The menu is opened to read its row.
+  const readStatusColors = (rowId, token) => {
+    button().click();
+    const controls = [
+      ['the menu row ' + rowId, menu().querySelector('.tnt-menu-row[data-row="' + rowId + '"]')],
+      ['the top-row on/off button', island.querySelector('.tnt-head-power')],
+    ];
+    for (const tone of ['dark', 'light']) {
+      window.TnaiTheme?.set(tone);
+      const wanted = getComputedStyle(document.documentElement).getPropertyValue(token).trim();
+      for (const [words, control] of controls) {
+        const glyph = control?.querySelector(':scope > svg');
+        if (!glyph || !shown(glyph)) {
+          check(false, tone + ': ' + words + ' is not on screen');
+          continue;
+        }
+        const drawn = getComputedStyle(glyph).color;
+        const ratio = contrastOf(numbersOf(drawn), groundUnder(control, tone));
+        check(
+          hexOf(drawn) === wanted.toLowerCase() && ratio >= 3,
+          tone +
+            ': ' +
+            words +
+            ' is ' +
+            hexOf(drawn) +
+            ' (' +
+            token +
+            ' ' +
+            wanted +
+            '), ' +
+            ratio.toFixed(2) +
+            ':1'
+        );
+      }
+    }
+    button().click();
+  };
+
   // ---- a thread with no conversation: Stop, Start, Close ----
   threads.select(shell);
   await until(() => view().shown() === shell, 6000);
@@ -505,6 +764,7 @@ try {
     rowIds().includes('start') && !rowIds().includes('stop'),
     'the menu of a stopped thread has Start, not Stop (' + rowIds().join(', ') + ')'
   );
+  readStatusColors('start', '--pg-work');
   button().click();
   await wait(150);
   press('start');
@@ -517,6 +777,7 @@ try {
     rowIds().includes('stop') && !rowIds().includes('start'),
     'and the menu has Stop again (' + rowIds().join(', ') + ')'
   );
+  readStatusColors('stop', '--pg-err');
   button().click();
   await wait(150);
   press('close');

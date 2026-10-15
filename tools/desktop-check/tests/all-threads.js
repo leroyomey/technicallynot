@@ -115,7 +115,22 @@ try {
     panels.length > 0 && panels.every(panel => !panel.getClientRects().length),
     'the terminal panels are not shown (' + panels.length + ' underneath)'
   );
-  await wait(400);
+
+  // The unfocused test window can take longer than a fixed pause to lay the cards out, so this
+  // waits (up to 6 s) until the row holds as many cards of one real width as the page says
+  const laidOut = () => {
+    const row = view.querySelector('.tat');
+    const cards = [...(view.querySelector('.tat-strip')?.children || [])];
+    if (!row || !all().state().per) return false;
+    const rowEdges = box(row);
+    const inside = cards.filter(
+      card => box(card).left >= rowEdges.left - 1 && box(card).right <= rowEdges.right + 1
+    );
+    const widths = new Set(inside.map(card => round(box(card).width)));
+    return inside.length === all().state().per && widths.size === 1 && !widths.has(0);
+  };
+  const cardsReady = await until(laidOut, 6000);
+  if (!cardsReady) log.push('note the cards were not laid out within 6 s');
   const strip = view.querySelector('.tat-strip');
   const rowBox = box(view.querySelector('.tat'));
   const onScreen = () =>
@@ -206,6 +221,14 @@ try {
 
   // ---- a conversation in a card ----
   if (withTalk) {
+    // The row slides there (a 0.18 s transition, 38), and a slide does not move on in a window that
+    // draws no frames (one the user's other windows cover; issue 20 found it 768 px short after a
+    // fixed pause). Where the cards land is checked here, not the slide, so it is off for this part
+    // (data-pg marks a style the check adds itself).
+    const noSlide = document.createElement('style');
+    noSlide.dataset.pg = '';
+    noSlide.textContent = '.tat-strip { transition: none !important; }';
+    document.head.append(noSlide);
     all().show(claude);
     const card = strip.querySelector('.tat-card[data-pane="' + claude + '"]');
     const said = await until(
@@ -213,11 +236,11 @@ try {
       10000
     );
     check(!!said, 'the Claude Code thread shows its conversation');
-    await wait(450);
     const cut = box(view.querySelector('.tat-clip'));
     const inRow = state().shown.map(paneId =>
       box(strip.querySelector('.tat-card[data-pane="' + paneId + '"]'))
     );
+    noSlide.remove();
     check(
       Math.abs(inRow[0].left - cut.left) <= 1 &&
         Math.abs(inRow[inRow.length - 1].right - cut.right) <= 1,
@@ -350,14 +373,43 @@ try {
   console.log('TNAI_SHOT:all-threads-pencil');
   await wait(700);
   const newName = 'Card ' + String(Date.now()).slice(-5);
+
+  // A window covered by the user's other windows draws no frames (119's note), and the desktop
+  // tests run in a window shown behind nothing in particular: this rename sometimes found the old
+  // name on the card (issue 20). So frames are held back here on purpose, as a covered window
+  // holds them, and the card must still follow; the held frames run afterwards, as they do when
+  // the window is seen again.
+  const realFrame = window.requestAnimationFrame;
+  const realCancelFrame = window.cancelAnimationFrame;
+  const heldFrames = new Map();
+  let heldId = 0;
+  window.requestAnimationFrame = callback => {
+    heldId++;
+    heldFrames.set(heldId, callback);
+    return heldId;
+  };
+  window.cancelAnimationFrame = id => heldFrames.delete(id);
   cardField().value = newName;
   cardField().dispatchEvent(
     new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
   );
-  check(
-    !!(await until(() => !cardField() && cardName.textContent === newName, 5000)) &&
+  const renameFollows = await until(
+    () =>
+      !cardField() &&
+      cardName.textContent === newName &&
       window.TnaiThreadList?.thread?.(pick)?.name === newName,
-    'Enter saves the card’s new name, and the thread list has it (' + cardName.textContent + ')'
+    5000
+  );
+  window.requestAnimationFrame = realFrame;
+  window.cancelAnimationFrame = realCancelFrame;
+  heldFrames.forEach(callback => realFrame(callback));
+  check(
+    !!renameFollows,
+    'Enter saves the card’s new name, and the thread list has it, with no frame drawn (card ' +
+      cardName.textContent +
+      ', list ' +
+      window.TnaiThreadList?.thread?.(pick)?.name +
+      ')'
   );
 
   // ---- the open thread's top-row controls on the card ----

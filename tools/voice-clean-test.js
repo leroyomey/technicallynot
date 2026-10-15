@@ -26,6 +26,16 @@ const cases = [
     'Make it bigger, much bigger. Make it bigger, much bigger. And blue.',
     'Make it bigger, much bigger. Make it bigger, much bigger. And blue.',
   ],
+  // a long sentence twice in a row, with more after it: the decoder looped once, folded
+  [
+    'Open the thread view and keep the report on screen until I have read it. Open the thread view and keep the report on screen until I have read it. Then run the tests.',
+    'Open the thread view and keep the report on screen until I have read it. Then run the tests.',
+  ],
+  // a long sentence twice after a lead-in, nothing after it: one copy with its lead-in
+  [
+    'Okay, check every voice setting and tell me which ones still use the old model. Check every voice setting and tell me which ones still use the old model.',
+    'Okay, check every voice setting and tell me which ones still use the old model.',
+  ],
   // the old rule still folds a clip that is only "X. X."
   ['Run the tests again. Run the tests again.', 'Run the tests again.'],
   // short sentences repeated are left alone

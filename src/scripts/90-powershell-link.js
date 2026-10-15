@@ -135,8 +135,12 @@
       if (String(window.TnaiThreads.selected()) !== String(paneId)) return true;
       const term = window.TnaiThreadView?.term?.();
       if (term?.tnaiPaneId !== paneId || !term.element?.getClientRects().length) return false;
+
+      // A terminal that has just come on screen is kept unseen until it has drawn its newest
+      // lines (120's veil, visibility hidden), and focus() on it does nothing until then; so the
+      // look goes on until the keyboard is really in it.
       term.focus();
-      return true;
+      return term.element.contains(document.activeElement);
     };
 
     // Looked for every 50 ms, 3 s at most. This wait holds nothing up: the thread is on screen

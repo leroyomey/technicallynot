@@ -52,8 +52,37 @@ const savedState = () => {
 };
 const opened = [];
 
+// A window minimized or hidden from outside takes no size and its page keeps its old width, so
+// every layout check after it fails for a fault the app does not have (2026-10-14: five checks
+// failed with the page still 1395 px wide where the test narrows the window). The test stops there
+// with one line that says so; it never restores the window itself.
+const notSized = { stop: true };
+const sized = async (width, height) => {
+  window.resizeTo(width, height);
+
+  // within 40 px: the smallest size lies near the window's own minimum
+  const took = () =>
+    Math.abs(window.outerWidth - width) <= 40 && Math.abs(window.outerHeight - height) <= 40;
+  if (await until(took, 3000)) return;
+  check(
+    false,
+    'the window did not take ' +
+      width +
+      ' x ' +
+      height +
+      ' (window ' +
+      window.outerWidth +
+      ' x ' +
+      window.outerHeight +
+      ', ' +
+      document.visibilityState +
+      '): it was minimized or hidden from outside, so its layout cannot be measured; run the test again and leave its window as it is'
+  );
+  throw notSized;
+};
+
 try {
-  window.resizeTo(1500, 860);
+  await sized(1500, 860);
   check(
     (await window.TnaiTest.openAllThreads()) &&
       !!preview &&
@@ -252,7 +281,7 @@ try {
   check(savedState().preview === true && rowFilled(), 'saved again, the threads fitted again');
 
   // ---- narrow windows: the preview under the threads, and always threads ----
-  window.resizeTo(900, 760);
+  await sized(900, 760);
   await until(() => view.classList.contains('tp-stack'), 4000);
   await wait(500);
   check(
@@ -277,7 +306,7 @@ try {
   );
   console.log('TNAI_SHOT:terminal-preview-stacked');
   await wait(700);
-  window.resizeTo(768, 700);
+  await sized(768, 700);
   await wait(900);
   check(
     state().on && state().per === 1,
@@ -311,14 +340,14 @@ try {
   check(state().first === 0, 'a dot brings its thread back');
   console.log('TNAI_SHOT:terminal-preview-narrowest');
   await wait(700);
-  window.resizeTo(1500, 860);
+  await sized(1500, 860);
   check(
     !!(await until(() => displayed(host) && displayed(divider) && displayed(previewButton))),
     'in a wide window Live preview is back beside the threads'
   );
 } catch (error) {
   ok = false;
-  log.push('ERROR ' + (error?.stack || error));
+  if (error !== notSized) log.push('ERROR ' + (error?.stack || error));
 }
 window.resizeTo(1440, 900);
 for (const paneId of opened) await agents.stop(paneId).catch(() => {});

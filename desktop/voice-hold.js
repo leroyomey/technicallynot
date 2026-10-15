@@ -6,7 +6,7 @@
  */
 'use strict';
 const { BrowserWindow } = require('electron');
-const { spawn } = require('child_process');
+const processStarter = require('./process-starter');
 
 // KeyboardEvent.code (and 70's Mouse4/Mouse5, 'Mouse1' for the mic button itself) → Windows
 // virtual-key code.
@@ -78,25 +78,25 @@ function createVoiceHold() {
       '$v=@(' +
       vks.join(',') +
       ');if($k::GetSystemMetrics(23)){$v=@($v|%{if($_ -eq 1){2}else{$_}})};while(@($v|?{($k::GetAsyncKeyState($_) -band 0x8000) -ne 0}).Count){Start-Sleep -Milliseconds 20};"up"';
-    let child;
-    try {
-      child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
-        windowsHide: true,
-        stdio: ['ignore', 'pipe', 'ignore'],
-      });
-    } catch {
-      return;
-    }
+
+    // Started from the process starter's worker thread: a process start holds the thread that
+    // starts it, 100 to 800 ms on a busy PC, and on the main thread that froze the window at
+    // every voice press (the stall log's `ipc voice:hold`, 2026-10-14). It starts at the same
+    // moment as before.
+    const child = processStarter.watch(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', script],
+      { windowsHide: true },
+      {
+        onData: data => {
+          if (held === h && /up/.test(data)) h.notify();
+        },
+        onExit: () => {
+          if (h.watcher === child) h.watcher = null;
+        },
+      }
+    );
     h.watcher = child;
-    child.on('error', () => {
-      if (h.watcher === child) h.watcher = null;
-    });
-    child.stdout.on('data', data => {
-      if (held === h && /up/.test(String(data))) h.notify();
-    });
-    child.on('exit', () => {
-      if (h.watcher === child) h.watcher = null;
-    });
   }
 
   function stop() {

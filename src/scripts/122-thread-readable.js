@@ -133,27 +133,83 @@
   const atEnd = new WeakMap();
   const paneSized = new ResizeObserver(entries =>
     entries.forEach(({ target }) => {
-      if (atEnd.get(target)) target.scrollTop = target.scrollHeight;
+      if (atEnd.get(target))
+        followTo(
+          target,
+          [...shown].find(state => state.host === target)
+        );
     })
   );
+
+  // The conversation itself can grow with no scroll and no new lines: a block out of view is
+  // taken as 56 px high until it is drawn (30: content-visibility), and the newest blocks are
+  // drawn one frame after a thread is opened. The end then moved down by their real height
+  // (770 px, measured 2026-10-14, thread-open-end), and an opened thread showed older lines.
+  // A reader at the end follows the conversation's own growth too.
+  const listOwner = new WeakMap();
+  const listSized = new ResizeObserver(entries =>
+    entries.forEach(({ target }) => {
+      const state = listOwner.get(target);
+      const host = state?.host;
+      if (host && atEnd.get(host)) followTo(host, state);
+    })
+  );
+
+  function watchGrowth(state) {
+    if (listOwner.has(state.list)) return;
+    listOwner.set(state.list, state);
+    listSized.observe(state.list);
+  }
 
   function watchEnd(host) {
     if (atEnd.has(host)) return;
     atEnd.set(host, true);
-    host.addEventListener('scroll', () => atEnd.set(host, gapToEnd(host) < END_GAP), {
-      passive: true,
-    });
+    host.addEventListener(
+      'scroll',
+      () => {
+        atEnd.set(host, gapToEnd(host) < END_GAP);
+        for (const state of shown) if (state.host === host) readPast(state);
+      },
+      { passive: true }
+    );
     paneSized.observe(host);
   }
+
+  // A report that came in while the reader was at the newest line is "held": following the end
+  // stops at its top, so the next turn (a held message typed in, a short follow-up report) does not
+  // push it out of view before it is read. The reader's own scrolling past it, "Latest", a prompt
+  // they send or opening the thread again lets the end be followed as before.
+  const REPORT_GAP = 8;
+
+  function holdTop(state) {
+    const card = state?.holdReport;
+    if (!card?.isConnected || !state.host) return Infinity;
+    const host = state.host;
+    const top = card.getBoundingClientRect().top - host.getBoundingClientRect().top;
+    return Math.max(0, host.scrollTop + top - REPORT_GAP);
+  }
+
+  // Goes to the newest line, or as far as a held report's top.
+  function followTo(host, state) {
+    host.scrollTop = Math.min(host.scrollHeight, holdTop(state));
+  }
+
+  // The reader scrolled to the end with the held report's top above the view: it was read past.
+  function readPast(state) {
+    if (!state.holdReport || gapToEnd(state.host) >= END_GAP) return;
+    if (state.holdReport.getBoundingClientRect().top < state.host.getBoundingClientRect().top)
+      state.holdReport = null;
+  }
   const nearBottom = ({ host }) => !host || atEnd.get(host) === true || gapToEnd(host) < END_GAP;
-  const toBottom = ({ host }) => {
+  const toBottom = state => {
+    const host = state.host;
     if (!host) return;
-    host.scrollTop = host.scrollHeight;
+    followTo(host, state);
 
     // Blocks out of view are not laid out (30: content-visibility), so the height above is partly
     // a guess. Once the last blocks are drawn the real end is known: go there again.
     requestAnimationFrame(() => {
-      if (host.isConnected) host.scrollTop = host.scrollHeight;
+      if (host.isConnected) followTo(host, state);
     });
   };
 
@@ -178,6 +234,7 @@
       const state = [...shown].find(each => each.jump === bar);
       if (!kind || !state?.host) return;
       if (kind === 'latest') {
+        state.holdReport = null;
         atEnd.set(state.host, true);
         toBottom(state);
       } else lastReport(state)?.scrollIntoView({ block: 'start' });
@@ -613,7 +670,7 @@
       return;
     }
     let block = state.live.previousElementSibling;
-    if (!block?.classList.contains('tnt-did')) block = addBlock(state, make('div', 'tnt-did'));
+    if (!block?.classList.contains('tnt-did')) block = addBlock(state, runBlock());
 
     // Actions of one kind that follow each other are one group under a heading with a count.
     let group = block.lastElementChild;
@@ -684,6 +741,79 @@
     const failed = group.querySelectorAll('.tnt-act[data-state="failed"]').length;
     const words =
       kind.many(lines.length, group.dataset.verb) + (failed ? ' · ' + failed + ' failed' : '');
+    const label = head.querySelector('span');
+    if (label.textContent !== words) label.textContent = words;
+    if (group.parentElement?.classList.contains('tnt-did')) paintRun(group.parentElement);
+  }
+
+  // ---------- a run of actions, folded behind one line ----------
+  // The actions between two of the agent's sentences are one run. From two actions on, the run
+  // folds behind one line that sums it up ("Ran 3 commands, read 1 file · 1 failed"); a press
+  // opens it to the groups and lines as before, a second press folds it again.
+  function runBlock() {
+    const block = make('div', 'tnt-did');
+    const head = make('button', 'tnt-grp-head tnt-run-head');
+    head.type = 'button';
+    head.hidden = true;
+    head.innerHTML = icon('square-terminal', 14) + '<span></span>' + icon('chevron-right', 14);
+    head.addEventListener('click', () => {
+      block.dataset.open = String(block.dataset.open !== 'true');
+      head.setAttribute('aria-expanded', block.dataset.open);
+    });
+    block.append(head);
+    return block;
+  }
+
+  // "Ran 1 commands" → "Ran 1 command", "1 times" → "once"; later parts start in lower case.
+  function runPart(text, index) {
+    const one = text.replace(/^(.+ 1 \w+?)s$/, '$1').replace(/ 1 times$/, ' once');
+    return index ? one.charAt(0).toLowerCase() + one.slice(1) : one;
+  }
+
+  function paintRun(block) {
+    const head = block.querySelector(':scope > .tnt-run-head');
+    if (!head) return;
+    const groups = [...block.querySelectorAll(':scope > .tnt-grp')];
+    const lines = block.querySelectorAll(':scope > .tnt-grp .tnt-act');
+    const folds = lines.length > 1;
+    block.dataset.run = String(folds);
+    head.hidden = !folds;
+    if (!folds) {
+      delete block.dataset.open;
+      head.removeAttribute('aria-expanded');
+      return;
+    }
+    if (!block.dataset.open) block.dataset.open = 'false';
+    head.setAttribute('aria-expanded', block.dataset.open);
+
+    // One group says the same as the run's line: its own heading steps aside and its lines show
+    // as soon as the run opens. Several groups keep their headings, a step in from the run's line.
+    const single = groups.length === 1;
+    block.dataset.single = String(single);
+    groups.forEach(group => {
+      const many = group.querySelectorAll('.tnt-act').length > 1;
+      group.firstElementChild.hidden = single || !many;
+      if (single && group.dataset.folds === 'true') {
+        group.dataset.open = 'true';
+        group.dataset.openedByRun = 'true';
+      } else if (!single && group.dataset.openedByRun) {
+        // a second kind came: the first group folds behind its own heading again
+        group.dataset.open = 'false';
+        delete group.dataset.openedByRun;
+      }
+    });
+
+    // counts per kind, in the order the kinds first came
+    const counts = new Map();
+    lines.forEach(line => {
+      const verb = line.closest('.tnt-grp').dataset.verb;
+      counts.set(verb, (counts.get(verb) || 0) + 1);
+    });
+    const parts = [...counts].map(([verb, count], index) =>
+      runPart(kindOf(verb).many(count, verb), index)
+    );
+    const failed = block.querySelectorAll('.tnt-act[data-state="failed"]').length;
+    const words = parts.join(', ') + (failed ? ' · ' + failed + ' failed' : '');
     const label = head.querySelector('span');
     if (label.textContent !== words) label.textContent = words;
   }
@@ -865,6 +995,88 @@
       else if (entry.kind === 'note') addNote(state, entry.text);
       else if (entry.kind === 'title') state.topic = entry.text;
     }
+
+    // a prompt of the user's may answer a report's decision in its own words: marked once a batch
+    if (entries.some(entry => entry.kind === 'you' && entry.text)) paintDecisions(state);
+  }
+
+  // ---------- a decision answered in the user's own words ----------
+  // A decision can be answered by typing ("Decision 1 of 2: Yes, as a proposal") as well as by a
+  // press. Typed answers are marked as chosen the same way, so scrolling back shows what was
+  // decided. Only the user's sent prompts between this report and the next one are read, and an
+  // answer counts only when it names exactly one of the options.
+  const plainWords = text =>
+    String(text || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+
+  // The user's prompts that follow a report card, up to the next report.
+  function promptsAfter(card) {
+    const texts = [];
+    let node = card?.nextElementSibling;
+    while (node && !node.classList.contains('tnt-report')) {
+      const sent = node.classList.contains('tnt-you') && !node.classList.contains('tnt-you-queued');
+      if (sent) texts.push(node.textContent || '');
+      node = node.nextElementSibling;
+    }
+    return texts.join('\n');
+  }
+
+  // The option an answer names: by its number ("2", "option 2"), or by its words, the start of
+  // either one matching the other, without "(recommended)" or the reason after a dash.
+  function optionNamed(answer, labels) {
+    const text = String(answer)
+      .replace(/^go with\s+/i, '')
+      .replace(/[.\s]+$/, '');
+    const numbered = /^(?:option\s+)?(\d+)\.?(?:\s|$)/i.exec(text);
+    if (numbered) return labels[Number(numbered[1]) - 1] || '';
+    const said = plainWords(text);
+    if (said.length < 2) return '';
+    const matches = labels.filter(label => {
+      const core = plainWords(label.replace(/\(recommended\)/i, '').split(/\s+[—–-]\s+/)[0]);
+      return !!core && (said.startsWith(core) || core.startsWith(said));
+    });
+    return matches.length === 1 ? matches[0] : '';
+  }
+
+  // The option the user's own words chose for this decision, or ''. Two forms are read: the one a
+  // press writes ('Decision on "<question>": go with <option>') and the numbered one a person
+  // types ("Decision 2 of 3: <option>" or "Decision 2: <option>"). Each answer runs to the end of
+  // its line or to the next "Decision".
+  function typedChoice(ask, labels) {
+    const card = ask.closest('.tnt-report');
+    const said = promptsAfter(card);
+    if (!said) return '';
+    const question = ask.firstChild?.textContent || '';
+    const asks = card.querySelectorAll('.tnt-decide').length;
+    const ownNumber = /^decision\s+(\d+)\b/i.exec(question);
+    const number = ownNumber
+      ? ownNumber[1]
+      : asks > 1
+        ? String(Number(ask.dataset.decision) + 1)
+        : '';
+    const asked = plainWords(question);
+    let chosen = '';
+
+    // the pressed form, matched on the question's first words (a message may shorten it)
+    const quoted = /Decision on "([\s\S]*?)"[^\n]*?: go with ([^\n]*?)(?=\s*Decision\b|\n|$)/g;
+    for (const match of said.matchAll(quoted)) {
+      const named = plainWords(match[1]);
+      const same =
+        !!named && (asked.startsWith(named.slice(0, 40)) || named.startsWith(asked.slice(0, 40)));
+      if (same) chosen = optionNamed(match[2], labels) || chosen;
+    }
+
+    // the typed form, only at the start of a line or a sentence (not inside a quoted question)
+    const typed =
+      /(?:^|\n|[.!?]\s+)Decision\s+(\d+)(?:\s+of\s+\d+)?\s*:\s*([^\n]*?)(?=\s*Decision\b|\n|$)/g;
+    if (number) {
+      for (const match of said.matchAll(typed)) {
+        if (match[1] === number) chosen = optionNamed(match[2], labels) || chosen;
+      }
+    }
+    return chosen;
   }
 
   // ---------- the report's decisions, through the app's own flow (49) ----------
@@ -873,6 +1085,9 @@
   // option hands the work to, else to this agent, held while it works (paintQueued); the prompt
   // box only when nobody can take it. Once answered, its options are text, and the one the user
   // pressed stays marked as chosen.
+  // True only while a decision button's press is being handled (see the button below).
+  let pressingDecision = false;
+
   function paintDecisions(state) {
     // a helper's report is its lead's to read: its options are never buttons here
     if (state.sub) return;
@@ -880,7 +1095,10 @@
     state.list.querySelectorAll('.tnt-report .tnt-decide').forEach(ask => {
       const question = ask.firstChild?.textContent || '';
       const found = safe(() => context?.findDecision?.(state.paneId, question), null);
-      const chosen = safe(() => context?.choiceFor?.(state.paneId, question), '');
+      const labels = [...ask.querySelectorAll('button')].map(button => button.textContent);
+      const chosen =
+        safe(() => context?.choiceFor?.(state.paneId, question), '') ||
+        safe(() => typedChoice(ask, labels), '');
       const live = !!context?.decideInThread && !(found && found.done) && !chosen;
       ask.dataset.open = String(live);
       ask.querySelectorAll('button').forEach(button => {
@@ -892,7 +1110,20 @@
         button.title = picked ? 'You chose this' : '';
         button.onclick = live
           ? () => {
-              context.decideInThread(state.paneId, question, Number(button.dataset.option), label);
+              // A press keeps the view where the user is reading, so several decisions can be
+              // pressed in a row: the answer it sends is not "a prompt sent" for the view, which
+              // would move to the newest line (only a typed prompt does that).
+              pressingDecision = true;
+              try {
+                context.decideInThread(
+                  state.paneId,
+                  question,
+                  Number(button.dataset.option),
+                  label
+                );
+              } finally {
+                pressingDecision = false;
+              }
               paintDecisions(state);
             }
           : null;
@@ -997,6 +1228,7 @@
     state.reading = false;
     if (part) {
       const stick = nearBottom(state);
+      const reportsBefore = state.list.querySelectorAll('.tnt-report').length;
       if (part.reset) {
         state.list.replaceChildren(state.live);
         state.acts.clear();
@@ -1013,6 +1245,11 @@
       state.first = false;
       paintFrame(state);
       paintLive(state);
+
+      // a new report while the reader follows the end: held in view (holdTop)
+      if (part.reset || first) state.holdReport = null;
+      else if (stick && state.list.querySelectorAll('.tnt-report').length > reportsBefore)
+        state.holdReport = lastReport(state);
       if (stick || first) toBottom(state);
     }
     if (state.wanted) request(state);
@@ -1141,8 +1378,11 @@
   // The user sent a prompt to a thread (11): that conversation goes to its newest line, so the
   // prompt and what follows are in view.
   window.addEventListener('tnai:prompt-sent', event => {
+    // sent by a decision press (paintDecisions): the view stays where the user is reading
+    if (pressingDecision) return;
     for (const state of shown)
       if (state.paneId === event.detail?.paneId && state.host) {
+        state.holdReport = null;
         atEnd.set(state.host, true);
         toBottom(state);
         jumpLater(state);
@@ -1155,6 +1395,7 @@
     for (const other of shown) if (other.host === host && other !== state) unmount(host);
     state.host = host;
     watchEnd(host);
+    watchGrowth(state);
     shown.add(state);
     if (!state.live.parentNode) state.list.append(state.live);
     const parts = [state.empty, state.list, state.queued, state.jump];
@@ -1165,6 +1406,10 @@
     paintFrame(state);
     paintLive(state);
     paintQueued(state);
+
+    // the pane is shared by every thread: where the reader was in the last one says nothing here
+    state.holdReport = null;
+    atEnd.set(host, true);
     toBottom(state);
     jumpLater(state);
     request(state);
@@ -1179,6 +1424,8 @@
       if (state.host === host) {
         shown.delete(state);
         state.host = null;
+        listSized.unobserve(state.list);
+        listOwner.delete(state.list);
       }
     unlisten();
   }

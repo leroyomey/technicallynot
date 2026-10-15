@@ -1051,5 +1051,89 @@ await test('unknown paths answer 404 and the front door says only that it is a r
   eq(JSON.stringify(await r.json()), '{"relay":"technically-not","v":1}');
 });
 
+// The ids the relay lists, read as device-aaaa.
+async function listed() {
+  const r = await call('GET', '/remote/presence', await headers('device-aaaa', 'presence'));
+  return ((await r.json()).devices || []).map(d => d.id);
+}
+const forgetCall = async (device, gone, o) =>
+  call('POST', '/remote/forget?d=' + gone, await headers(device, 'forget:' + gone, o));
+
+await test('a device that is not connected can be removed from the list', async () => {
+  const { wa, wb } = await join2();
+  wb.close();
+  await new Promise(r => setTimeout(r, 5));
+  ok((await listed()).includes('device-bbbb'), 'listed before');
+  const r = await forgetCall('device-aaaa', 'device-bbbb');
+  eq(r.status, 200, 'removed');
+  eq((await r.json()).removed, true);
+  ok(!(await listed()).includes('device-bbbb'), 'and gone from the list');
+  ok((await listed()).includes('device-aaaa'), 'the asking device stays');
+  wa.close();
+});
+
+await test('a connected device is not removed', async () => {
+  const { wa, wb } = await join2();
+  const r = await forgetCall('device-aaaa', 'device-bbbb');
+  eq(r.status, 409);
+  eq((await r.json()).error, 'online');
+  ok((await listed()).includes('device-bbbb'), 'still listed');
+  wa.close();
+  wb.close();
+});
+
+await test('a device can remove its own record, as check.mjs does at its end', async () => {
+  const w = await open((await ticketFor('check-aaaaaa')).body.ticket);
+  w.close();
+  await new Promise(r => setTimeout(r, 5));
+  eq((await forgetCall('check-aaaaaa', 'check-aaaaaa')).status, 200);
+  ok(!(await listed()).includes('check-aaaaaa'), 'gone');
+});
+
+await test('a remove needs a proof of the secret that names that device', async () => {
+  const { wa, wb } = await join2();
+  wb.close();
+  await new Promise(r => setTimeout(r, 5));
+  eq(
+    (await forgetCall('device-aaaa', 'device-bbbb', { secret: OTHER })).status,
+    401,
+    'wrong secret'
+  );
+
+  // a proof made for another device to remove is no proof for this one
+  const h = await headers('device-aaaa', 'forget:device-cccc');
+  eq((await call('POST', '/remote/forget?d=device-bbbb', h)).status, 401, 'another device named');
+  eq(
+    (await call('POST', '/remote/forget?d=device-bbbb', await headers('device-aaaa', 'presence')))
+      .status,
+    401,
+    'a list proof'
+  );
+  eq((await call('POST', '/remote/forget?d=x')).status, 400, 'a bad id');
+  eq((await call('GET', '/remote/forget?d=device-bbbb')).status, 404, 'GET is no route');
+  ok((await listed()).includes('device-bbbb'), 'nothing was removed');
+
+  // a proof counts once
+  const once = await headers('device-aaaa', 'forget:device-bbbb');
+  eq((await call('POST', '/remote/forget?d=device-bbbb', once)).status, 200);
+  eq(
+    (await call('POST', '/remote/forget?d=device-bbbb', once)).status,
+    401,
+    'the same proof again'
+  );
+  wa.close();
+});
+
+await test('the phone key cannot remove a device', async () => {
+  const { wa, wb } = await join2();
+  wb.close();
+  await new Promise(r => setTimeout(r, 5));
+  const phoneKey = await hmacHex(SECRET, 'phone-key:' + HOST);
+  const r = await forgetCall('ph-0123456789', 'device-bbbb', { secret: phoneKey });
+  eq(r.status, 403);
+  ok((await listed()).includes('device-bbbb'), 'still listed');
+  wa.close();
+});
+
 console.log(`\n${passed} passed, ${failed} failed (Node ${process.versions.node})`);
 process.exit(failed ? 1 : 0);

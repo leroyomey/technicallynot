@@ -1046,6 +1046,9 @@ function wait(parent, { ids, timeout_seconds }, signal = null) {
     done.forEach(k => {
       k.reported = true;
     });
+
+    // The parent has these reports now: their panels close after the grace period.
+    if (done.length) armClose(parent.id);
     return done;
   };
   const still = () => 'Still working: ' + (working().map(label).join(', ') || 'none') + '.';
@@ -1167,12 +1170,16 @@ function setLane(paneId, branch) {
 }
 
 // A non-Claude CLI is ready once it has drawn its screen and then stayed quiet for QUIET_MS
-// (output(), fed by pty:data).
+// (output(), fed by pty:data). Before anything is drawn it looks every 500 ms; once something is,
+// it sleeps until the moment that quiet would be over, so the task goes the moment the rule is met
+// instead of up to 500 ms later. The rule itself is unchanged.
 async function readyByScreen(n, paneId) {
   if (!drawn.has(paneId)) drawn.set(paneId, 0);
   const until = Date.now() + READY_TIMEOUT;
   while (Date.now() < until && n.paneId === paneId && n.status === 'starting') {
-    await sleep(500);
+    const drawnAt = drawn.get(paneId);
+    const untilQuiet = drawnAt ? drawnAt + QUIET_MS + 1 - Date.now() : 500;
+    await sleep(Math.min(500, Math.max(1, untilQuiet)));
     const last = drawn.get(paneId);
     if (last && Date.now() - last > QUIET_MS) break;
   }
@@ -1365,10 +1372,11 @@ function settle(n) {
   publish();
 }
 
-// Finished sub-agents stay open while their parent still works: the
-// grace period starts only once the parent's turn is over and none of its sub-agents is working,
-// and a new turn or tool call of the parent stops it again. A parent whose pane is gone counts as
-// at rest.
+// A finished sub-agent closes after the grace period once its report has reached its parent, also
+// while the parent keeps working: a lead that cycles many sub-agents would otherwise collect every
+// finished panel until its whole task ends. One whose report has not arrived yet waits, as before,
+// until the parent is at rest (its turn over, none of its sub-agents working). A parent whose pane
+// is gone counts as at rest. A closed sub-agent stays revivable for related work.
 function armClose(parentId) {
   const parent = nodes.get(parentId);
   const rest =
@@ -1376,8 +1384,9 @@ function armClose(parentId) {
     (!busy.has(parent.paneId) && !children(parentId).some(k => ACTIVE.has(k.status)));
   let changed = false;
   for (const k of children(parentId)) {
-    if (k.persistent || !k.paneId || k.status !== 'done' || rest === !!k.closesAt) continue;
-    if (rest) scheduleClose(k);
+    const due = rest || !!k.reported;
+    if (k.persistent || !k.paneId || k.status !== 'done' || due === !!k.closesAt) continue;
+    if (due) scheduleClose(k);
     else cancelClose(k);
     changed = true;
   }
@@ -1402,10 +1411,12 @@ function flush(parentPaneId) {
       k.reported = false;
     });
     busy.delete(parentPaneId);
+    armClose(parent.id);
   };
 
   deliver(parentPaneId, '[TN.ai] ' + due.map(reportText).join('\n\n'), null, lost);
   busy.add(parentPaneId);
+  armClose(parent.id);
 }
 
 function scheduleClose(n) {

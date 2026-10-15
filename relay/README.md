@@ -31,7 +31,9 @@ Keep the address and the secret. You enter both on each of your computers. Enter
 
 ## Check it works
 
-`npm run check -- https://your-relay-address` connects two made-up devices through your deployed relay with the saved secret and passes a message between them. It prints what worked and never shows the secret.
+`npm run check -- https://your-relay-address` connects two made-up devices through your deployed relay with the saved secret and passes a message between them, then removes the two again. It prints what worked and never shows the secret.
+
+Old devices you no longer want listed (an old computer, devices left by an older check) are removed in the app: Devices, the computer's card, Remove. Only an unpaired computer that is not connected right now can be removed; if it connects again, it shows up again. From this folder, `npm run clean-up -- https://your-relay-address` removes the made-up devices older checks left, and `npm run clean-up -- https://your-relay-address a79da3b0` removes the device whose id begins with those characters (the 8 the Devices page shows). A relay deployed before this needs `npm run deploy` once for either to work.
 
 ## Who can use your relay
 

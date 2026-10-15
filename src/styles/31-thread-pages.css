@@ -84,6 +84,15 @@ html.tnt-on:not([data-theme='dark']):not(#tnt):not(#pg) {
   --pg-idle: #7d7888;
   --pg-err: #c8364f;
   --pg-handoff: #0d7c75;
+  /* the page colors of 07, darker so they read on the pale ground (44-page-colors.css) */
+  --pg-page-all: #a75420;
+  --pg-page-side: #716e09;
+  --pg-page-cli: #2a7935;
+  --pg-page-terminal: #13726f;
+  --pg-page-past: #6e3eb1;
+  --pg-page-handoff: #9b3192;
+  --pg-page-preview: #af3151;
+  --pg-privacy: #4f7010;
   --pg-shadow: 0 20px 50px rgba(50, 40, 30, 0.16);
   --pg-scrim: rgba(60, 54, 46, 0.34);
   --pg-grain: 0.035;

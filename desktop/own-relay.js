@@ -553,6 +553,24 @@ function createOwnRelay({
       return body.ticket;
     },
 
+    // Remove another device's record from the relay (an old computer or a test device the user no
+    // longer wants listed). The device is named in the proof, so the proof removes no other one.
+    // → { ok: true } or { ok: false, error: 'online' | 'invalid_device' | 'network' | … }
+    async forget(deviceId, goneId) {
+      if (!DEVICE.test(String(goneId || ''))) return { ok: false, error: 'invalid_device' };
+      try {
+        await call(
+          'POST',
+          '/remote/forget?d=' + encodeURIComponent(goneId),
+          'forget:' + goneId,
+          deviceId
+        );
+      } catch (e) {
+        return { ok: false, error: typeof e?.code === 'string' ? e.code : 'network' };
+      }
+      return { ok: true };
+    },
+
     // → [{ id, name: '', last_seen }]: the relay knows ids only; names arrive from the computers
     // themselves once paired. An error gives an empty list, as with the account's list.
     async devices(deviceId) {

@@ -725,6 +725,7 @@
     const disposeTerm = term.dispose.bind(term);
     term.dispose = () => {
       views.delete(term);
+      term.tnaiDisposed = true;
       disposeTerm();
     };
     term.onResize(({ cols, rows }) => {
@@ -1792,6 +1793,10 @@
   // since
   const shrunk = new Set();
 
+  // A replay this long has been cut to its tail by the main process (SCROLLBACK, 256 KB, in
+  // desktop/pty-service.js; a trimmed buffer stays within a line or so of it): see repaint.
+  const REPLAY_CUT_CHARS = 192 * 1024;
+
   function nudge(paneId, cols, rows) {
     if (!(rows > 5)) return;
     native.pty.resize(paneId, cols, rows - 1);
@@ -1949,9 +1954,26 @@
     // A full-screen program (alternate screen: OpenCode) sends only the cells that change, so a
     // view that replayed just the tail of its output has gaps (the terminal's own background shows
     // through its dark screen). One row less and back makes it redraw everything.
-    repaint(paneId, term) {
+    // An agent CLI on the normal screen needs the same once its replay was cut off: a working
+    // Claude Code writes about 850 bytes a second for its spinner alone, so after a few minutes the
+    // kept tail (desktop/pty-service.js SCROLLBACK, 256 KB) holds no screen, only spinner updates,
+    // and a new view stayed almost empty until the CLI drew again. replayLength is the replay's
+    // size; a shell is never asked (its repaint would only repeat its rows).
+    repaint(paneId, term, replayLength = 0) {
       const key = sentSize.get(paneId);
-      if (!key || term?.buffer.active.type !== 'alternate' || resizeTimers.has(paneId)) return;
+      if (!key) return;
+      const alternate = term?.buffer.active.type === 'alternate';
+      const cutOff =
+        replayLength >= REPLAY_CUT_CHARS &&
+        window.TnaiAgents?.sessions?.().find(x => x.paneId === paneId)?.agent !== 'Terminal';
+      if (!alternate && !cutOff) return;
+
+      // A size still on its way: a new size makes the program draw anyway, and the size the pty
+      // already has is sent as one row less and back (flushResize, the same as after a bounce)
+      if (resizeTimers.has(paneId)) {
+        if (!nudging.has(paneId)) shrunk.add(paneId);
+        return;
+      }
       const [cols, rows] = key.split('×').map(Number);
       nudge(paneId, cols, rows);
     },
@@ -2277,8 +2299,13 @@
   // while the app is open gets its note the same way (it used to be
   // written at the cursor, over Claude Code's input box and status line). Then every view of the
   // pane settles (createTerm tnaiSettle).
-  const sayBelow = (view, notes, tone) =>
+  // A pane closed or remounted meanwhile (its restore or exit note was still waiting on a write)
+  // gets nothing: its terminal is disposed, and writing into it touched a dead buffer and renderer.
+  const sayBelow = (view, notes, tone) => {
+    const gone = () => live.get(view.paneId) !== view || view.term.tnaiDisposed;
+    if (gone()) return;
     view.term.write('', () => {
+      if (gone()) return;
       const b = view.term.buffer.active;
       let y = b.length - 1;
       while (y > b.baseY && !b.getLine(y)?.translateToString(true).trim()) y--;
@@ -2288,10 +2315,12 @@
 
       // the screen has new lines: it is read again before it is next laid out (reflowSaved)
       view.term.write('', () => {
+        if (gone()) return;
         view.reflow = null;
         reflowSaved(view);
       });
     });
+  };
 
   // A stopped session's screen in its Terminal page panel, laid out for the panel's width (132).
   // The CLI broke its lines for the width it last ran at; in a panel of another width the

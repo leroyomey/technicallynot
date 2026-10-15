@@ -94,10 +94,9 @@ try {
   await wait(1500);
 
   // ---- A real Claude Code agent (Haiku) makes one edit.
-  window.TnaiRoute('terminal');
-  await wait(400);
+  // started as a thread, the way New thread does; the page shown stays the same
   window.TnaiLaunchPrefs?.once('Claude Code', { model: 'claude-haiku-4-5-20251001' });
-  claude = (await G.open('Claude Code'))?.paneId;
+  claude = (await window.TnaiTest.open('Claude Code'))?.paneId;
   check(
     !!claude &&
       !!(await until(() => G.sessions().find(s => s.paneId === claude && s.running), 20000)),
@@ -192,7 +191,7 @@ try {
 } catch {}
 
 // Let the panels finish closing: exiting the app mid-teardown crashed it (0xC0000409) after RESULT:
-// PASS (as in overview-cards).
+// PASS.
 await until(() => !G.sessions().some(s => s.running), 8000);
 await wait(300);
 return { ok, log };

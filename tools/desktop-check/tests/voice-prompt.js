@@ -408,6 +408,46 @@ try {
     'Ctrl+Space hold appends with a space: ' + JSON.stringify(p.value)
   );
 
+  // 3-tail. A new press while the last clip's tail is still recorded (up to 0.7 s after a release)
+  // is kept and starts when the mic is free: it reaches listening and its words are typed in too.
+  // Before 2026-10-14 that press was dropped with no sign.
+  setText('two', 3);
+  await ensureFocus();
+  {
+    const heard = until(() => btn.dataset.state === 'listening', 15000);
+    await realInput([{ type: 'keyDown', keyCode: 'Space', modifiers: ['control'], wait: 30 }]);
+    await heard;
+    await wait(1200);
+
+    // let go and press again at once, in one batch: the press lands in the tail
+    const queuedBefore = window.TnaiVoice._queuedPresses || 0;
+    const listeningAgain = until(
+      () =>
+        (window.TnaiVoice._queuedPresses || 0) > queuedBefore && btn.dataset.state === 'listening',
+      5000
+    );
+    await realInput([
+      { type: 'keyUp', keyCode: 'Space', modifiers: ['control'], wait: 5 },
+      { type: 'keyUp', keyCode: 'Control', wait: 5 },
+      { type: 'keyDown', keyCode: 'Space', modifiers: ['control'], wait: 30 },
+    ]);
+    const again = !!(await listeningAgain);
+    const inTail = (window.TnaiVoice._queuedPresses || 0) === queuedBefore + 1;
+    await wait(1200);
+    await realInput(KEY_UP);
+    await until(() => p.value === 'two ' + FAKE + ' ' + FAKE, 8000);
+    await idle();
+    check(
+      !!inTail && again && p.value === 'two ' + FAKE + ' ' + FAKE,
+      'a press during the stop tail starts once the mic is free (pressed in the tail: ' +
+        !!inTail +
+        ', listening again: ' +
+        again +
+        '): ' +
+        JSON.stringify(p.value)
+    );
+  }
+
   // 3a. Text selected in the prompt → the spoken text replaces the selection, caret after it.
   setText('fix the old button please', 18);
   p.setSelectionRange(8, 18);
@@ -469,6 +509,10 @@ try {
       composerLit = document.querySelector('.composebox').classList.contains('tnai-voice-live');
     const box = el.getBoundingClientRect(),
       inView = box.width > 0 && box.height > 0;
+
+    // held 1.2 s in all, as the other holds: the first 0.4 s after listening starts (the start
+    // tone's time) don't count as something said (70 quietStart)
+    await wait(600);
     await realInput([
       { type: 'keyUp', keyCode: 'Space', modifiers: ['control'] },
       { type: 'keyUp', keyCode: 'Control' },
@@ -666,8 +710,7 @@ try {
   const ringOf = ringInfo,
     noteLit = note.classList.contains('tnai-voice-target') && note.dataset.voice === 'listening',
     ringOn = ringOf(note);
-  console.log('TNAI_SHOT:voice-shot-note');
-  await wait(300);
+  await (window.TnaiTest?.shot?.('voice-shot-note') ?? wait(300));
   await realInput([
     { type: 'keyUp', keyCode: 'Space', modifiers: ['control'] },
     { type: 'keyUp', keyCode: 'Control' },
@@ -991,13 +1034,11 @@ try {
     return r.width > 0 && s.left >= r.left && s.right <= r.right && s.right <= innerWidth;
   };
   const fitLight = !!mRow && fits();
-  console.log('TNAI_SHOT:voice-model-1024');
-  await wait(500);
+  await (window.TnaiTest?.shot?.('voice-model-1024') ?? wait(500));
   window.TnaiTheme.set('dark');
   await wait(300);
   const fitDark = !!mRow && fits();
-  console.log('TNAI_SHOT:voice-model-dark');
-  await wait(500);
+  await (window.TnaiTest?.shot?.('voice-model-dark') ?? wait(500));
   window.TnaiTheme.set('light');
   await main('size', 1440, 900);
   window.TnaiRoute?.('overview');
@@ -1019,8 +1060,7 @@ try {
   readyBox?.click();
   const focusedNow = document.hasFocus(),
     opened = !!(await until(() => VR.rate > 0, 4000));
-  console.log('TNAI_SHOT:voice-ready-row');
-  await wait(500);
+  await (window.TnaiTest?.shot?.('voice-ready-row') ?? wait(500));
   const idleOpen = VR.rate > 0 && !VR.recording && btn.dataset.state === 'idle';
   readyBox?.click();
   await wait(300);
@@ -1070,8 +1110,7 @@ try {
       !!gpuEdge && !!soundEdge && gpuEdge.every((n, i) => Math.abs(n - soundEdge[i]) <= 0.5);
   const textRight = gpuSmall ? gpuSmall.getBoundingClientRect().right : 0,
     switchLeft = gpuBox ? gpuBox.getBoundingClientRect().left : 0;
-  console.log('TNAI_SHOT:voice-gpu-row');
-  await wait(500);
+  await (window.TnaiTest?.shot?.('voice-gpu-row') ?? wait(500));
   gpuBox?.click();
   await wait(500);
   const gpuSaved = localStorage.getItem('tnai.voice-gpu.v1'),
@@ -1152,8 +1191,7 @@ try {
       r.lastElementChild.getBoundingClientRect().right <= innerWidth &&
       r.scrollWidth <= r.clientWidth
   );
-  console.log('TNAI_SHOT:settings-keyboard');
-  await wait(500);
+  await (window.TnaiTest?.shot?.('settings-keyboard') ?? wait(500));
   await main('size', 1440, 900);
   check(
     kbFits &&

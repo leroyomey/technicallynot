@@ -337,6 +337,9 @@
     const shows = session.running ? 'stop' : 'start';
     if (shows === powerShows) return;
     powerShows = shows;
+
+    // 44-page-colors.css reads it: green for Start, red for Stop
+    power.dataset.shows = shows;
     const label = shows === 'stop' ? 'Stop this agent' : 'Start this agent again';
     power.innerHTML = icon(shows === 'stop' ? 'square-stop' : 'play', 16);
     power.title = label;

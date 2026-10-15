@@ -92,9 +92,21 @@ html[data-theme='dark'] {
   /* waiting on another agent: violet, never the blue of "free" */
   --pg-agents: #c79bff;
   --pg-handoff: #5fd0c8;
+  /* a thread kept blurred (120): lime, a color no status, accent or other control uses */
+  --pg-privacy: #b6e36a;
   --pg-tel-cpu: #b3a3ff;
   --pg-tel-ram: #8fd3ff;
   --pg-tel-gpu: #7fe0c0;
+  /* Page colors: one color per place, on the icon of every control that leads there, so a place
+     is known by its color alone. Only the glyph takes it (44-page-colors.css). The Light values
+     are in 31-thread-pages.css, where the Light look sets its tokens. */
+  --pg-page-all: #e29b6f;
+  --pg-page-side: #cecb64;
+  --pg-page-cli: #86cb8f;
+  --pg-page-terminal: #67c1be;
+  --pg-page-past: #bb9ce8;
+  --pg-page-handoff: #d590cf;
+  --pg-page-preview: #e4869d;
   --pg-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
   --pg-scrim: rgba(8, 5, 18, 0.62);
   --pg-grain: 0.06;
@@ -120,6 +132,7 @@ html:not([data-theme='dark']) {
   --pg-err: #d9405a;
   --pg-agents: #7a3fc0;
   --pg-handoff: #0f8a82;
+  --pg-privacy: #4f7010;
   --pg-tel-cpu: #6f5ae8;
   --pg-tel-ram: #1f8fd0;
   --pg-tel-gpu: #119a78;

@@ -74,13 +74,7 @@ function buildInfoWith(variable, resourcesFolder) {
 {
   // These files read it themselves and each pairs it with its own "not a release build" or "not a
   // packaged app" condition on the same statement. Every other file must ask build-info.js.
-  const MAY_READ_IT = [
-    'build-info.js',
-    'discord-alerts.js',
-    'plan-lapse.js',
-    'updater.js',
-    'user-auth.js',
-  ];
+  const MAY_READ_IT = ['build-info.js', 'discord-alerts.js', 'updater.js', 'user-auth.js'];
   const readers = fs
     .readdirSync(desktop)
     .filter(name => name.endsWith('.js'))

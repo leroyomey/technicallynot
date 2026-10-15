@@ -3,8 +3,10 @@
    It stands in the open thread's island in place of the conversation; the prompt box stays under
    it. Colors, radii and type come from the --pg-* tokens, so Dark and Light both follow. */
 
-/* While the screen shows, the thread's own parts step aside; its question cards stay. */
-.tnt-view.tnt-starting > :is(.tnt-head, .tnt-talk, .tnt-plain, .tnt-term, .tnt-none) {
+/* While the screen shows, the thread's own parts step aside; its question cards stay. The held
+   files row and the helper line (123 puts them under the top row) belong to the thread too. */
+.tnt-view.tnt-starting
+  > :is(.tnt-head, .tnt-shared, .tnt-helper-line, .tnt-talk, .tnt-plain, .tnt-term, .tnt-none) {
   display: none !important;
 }
 

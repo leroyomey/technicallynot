@@ -10,6 +10,7 @@
     "secret": "node -e \"console.log(require('node:crypto').randomBytes(32).toString('base64url'))\"",
     "deploy": "npx wrangler deploy",
     "setup-secret": "node tools/setup-secret.mjs",
-    "check": "node tools/check.mjs"
+    "check": "node tools/check.mjs",
+    "clean-up": "node tools/clean-up.mjs"
   }
 }

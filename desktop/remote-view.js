@@ -263,7 +263,7 @@ function unpack(z) {
 // (change 19). live(peerId) → a session with it. fresh(peerId, msg) → the message is not one the
 // relay held back (6f change 13, remote-control.js). ticket(peerId, panelId) → the ticket that
 // panel's agent has for that computer now, '' when it is no agent the app started, has no
-// conversation yet, or the plan is locked. agentName(panelId), peerName(peerId) → the names as this
+// conversation yet. agentName(panelId), peerName(peerId) → the names as this
 // computer shows them. send(peerId, obj) → true when it went out. screen(panelId, on) → ask this
 // computer's window to hand over that panel's screen (rows come back through `rows` below) or to
 // stop. allowance: { read() → { deviceId: [[startMs, seconds], …] }, write(map) } in the key store;
@@ -695,7 +695,7 @@ function createViews({
       v.pending = shaped;
       pump(v);
     },
-    // Something the guard asks about may have changed (a panel's process, its name, the plan lock):
+    // Something the guard asks about may have changed (a panel's process, its name):
     // a running view is looked at now.
     recheck() {
       const v = view;

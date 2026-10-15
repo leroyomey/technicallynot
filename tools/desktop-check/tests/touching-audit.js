@@ -226,15 +226,15 @@ try {
   const PAGES = {
     threads: () => window.TnaiThreads.open(),
     usage: () => window.TnaiSettings.open('usage'),
-    // the route 'terminal' is the All threads page
-    'all-threads': () => window.TnaiRoute('terminal'),
+    // the All threads page, as the menu's row opens it
+    'all-threads': () => window.TnaiTest.openAllThreads(),
     'live-preview': () => window.TnaiLivePreviewPage.open(),
     skills: () => window.TnaiRoute('skills'),
     devices: () => window.TnaiRoute('devices'),
     settings: () => window.TnaiSettings.open('general'),
   };
   const go = async view => {
-    PAGES[view]();
+    await PAGES[view]();
     await wait(400);
   };
   const agents = window.TnaiAgents;

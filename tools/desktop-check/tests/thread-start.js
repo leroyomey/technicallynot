@@ -28,8 +28,7 @@ const until = async (fn, ms = 8000) => {
 };
 const shot = async name => {
   await wait(400);
-  console.log('TNAI_SHOT:' + name);
-  await wait(700);
+  await (window.TnaiTest?.shot?.(name) ?? wait(700));
 };
 let callId = 0;
 const main = (cmd, ...args) =>
@@ -106,6 +105,18 @@ try {
     !shown(island.querySelector('.tnt-head')) && !shown(island.querySelector('.tnt-term')),
     "the thread's top row and screen step aside for it"
   );
+
+  // The held files row and the helper line (123) are added under the top row later; unhidden as
+  // when the thread holds files, they still step aside (they once showed over the start screen).
+  const lateRows = [...island.querySelectorAll('.tnt-view > :is(.tnt-shared, .tnt-helper-line)')];
+  const lateWereHidden = lateRows.map(row => row.hidden);
+  lateRows.forEach(row => (row.hidden = false));
+  check(
+    lateRows.length > 0 && lateRows.every(row => !shown(row)),
+    'the held files row and the helper line step aside too (' + lateRows.length + ' rows)'
+  );
+  lateRows.forEach((row, index) => (row.hidden = lateWereHidden[index]));
+
   const project = start().querySelector('h2 em')?.textContent || '';
   check(project.length > 0, 'the question names the project (' + project + ')');
   const names = tools().map(tool => tool.textContent.trim());

@@ -115,9 +115,31 @@ const opened = [];
 // questions asked and not yet answered by the test: closed at the end whatever happened
 const openTrust = new Set();
 
+// A window minimized from outside takes no size and its page keeps its old width, so every layout
+// check after it fails for a fault the app does not have (2026-10-14: "window 0 x 0, page 1515 x
+// 947"). The test stops there with one line that says so; it never restores the window itself.
+const notSized = { stop: true };
+const sized = async (width, height) => {
+  const got = await main('size', width, height);
+
+  // within 40 px: the smallest size lies near the window's own minimum
+  if (got && Math.abs(got[0] - width) <= 40 && Math.abs(got[1] - height) <= 40) return got;
+  check(
+    false,
+    'the window did not take ' +
+      width +
+      ' x ' +
+      height +
+      ' (' +
+      (await main('state')) +
+      '): it was minimized or hidden from outside, so its layout cannot be measured; run the test again and leave its window as it is'
+  );
+  throw notSized;
+};
+
 try {
   await agents.detect(true);
-  await main('size', 1600, 900);
+  await sized(1600, 900);
   for (let count = 0; count < 4; count++) {
     const made = await window.TnaiTest.startThread({ tool: 'Terminal' });
     opened.push(made.paneId);
@@ -163,8 +185,7 @@ try {
         ')'
     );
     await wait(450);
-    console.log('TNAI_SHOT:all-threads-asks-trust');
-    await wait(700);
+    await (window.TnaiTest?.shot?.('all-threads-asks-trust') ?? wait(700));
     realCard?.querySelector('.tnt-ask-yes').click();
     check(
       !!(await until(
@@ -255,7 +276,22 @@ try {
     'the floating card is put away for a question that stands in a thread'
   );
   const tone = await until(() => cardOf(first)?.querySelector('.tat-dot').dataset.tone === 'needs');
-  check(!!tone, "the asking thread's state dot says it needs the user");
+
+  // what the card and the thread list read, so a failed run says which side was late
+  const toneSeen = () => {
+    const panel = document.querySelector('.terminal-pane[data-pane-id="' + first + '"]');
+    return (
+      'dot ' +
+      (cardOf(first)?.querySelector('.tat-dot').dataset.tone || 'none') +
+      ', list ' +
+      (window.TnaiThreadList?.thread?.(first)?.tone || 'none') +
+      ', panel ' +
+      (panel?.dataset.status || 'none') +
+      ', needs-you ' +
+      !!window.TnaiNeedsYou?.has?.(first)
+    );
+  };
+  check(!!tone, "the asking thread's state dot says it needs the user (" + toneSeen() + ')');
   check(
     JSON.stringify(state().shown) === JSON.stringify(inSight),
     'the threads keep their places when one of them starts to ask'
@@ -328,16 +364,14 @@ try {
     !withTalk || (displayed(talk) && box(talk).height > 120),
     'the conversation keeps its room over the question (' + Math.round(box(talk).height) + ' px)'
   );
-  console.log('TNAI_SHOT:all-threads-asks-card');
-  await wait(700);
+  await (window.TnaiTest?.shot?.('all-threads-asks-card') ?? wait(700));
 
   // the same cards in the Light look, and in a small window (one thread wide)
   window.TnaiTheme.set('light');
   await wait(500);
-  console.log('TNAI_SHOT:all-threads-asks-card-light');
-  await wait(700);
+  await (window.TnaiTest?.shot?.('all-threads-asks-card-light') ?? wait(700));
   window.TnaiTheme.set('dark');
-  await main('size', 1024, 700);
+  await sized(1024, 700);
   all().show(first);
   await wait(500);
   const smallCard = box(cardOf(first));
@@ -350,11 +384,10 @@ try {
       smallAsk.bottom <= smallCard.bottom + 0.5,
     'in a 1024 x 700 window the question still lies inside its card'
   );
-  console.log('TNAI_SHOT:all-threads-asks-card-small');
-  await wait(700);
+  await (window.TnaiTest?.shot?.('all-threads-asks-card-small') ?? wait(700));
 
   // a low window, and the smallest window the app allows
-  await main('size', 1440, 720);
+  await sized(1440, 720);
   all().show(first);
   await wait(500);
   const fits = () => {
@@ -374,25 +407,54 @@ try {
     fits(),
     'in a low window (1440 x 720) the question lies inside its card, over the prompt box'
   );
-  console.log('TNAI_SHOT:all-threads-asks-card-low');
-  await wait(700);
+  await (window.TnaiTest?.shot?.('all-threads-asks-card-low') ?? wait(700));
   const smallest = await main('minimum');
-  await main('size', smallest[0], smallest[1]);
+  const smallestTaken = await sized(smallest[0], smallest[1]);
   all().show(first);
   await wait(600);
+
+  // what was measured, so a failed run names the part that broke
+  const smallestSeen = () => {
+    const home = box(cardOf(first));
+    const ask = asksOf(first)[0] ? box(asksOf(first)[0]) : null;
+    const promptBox = box(document.querySelector('footer.composer'));
+    return (
+      'window ' +
+      smallestTaken.join(' x ') +
+      ', page ' +
+      window.innerWidth +
+      ' x ' +
+      window.innerHeight +
+      ', on ' +
+      state().on +
+      ', per ' +
+      state().per +
+      ', card ' +
+      Math.round(home.top) +
+      '-' +
+      Math.round(home.bottom) +
+      ', ask ' +
+      (ask ? Math.round(ask.top) + '-' + Math.round(ask.bottom) : 'none') +
+      ', prompt box ' +
+      Math.round(promptBox.top) +
+      '-' +
+      Math.round(promptBox.bottom)
+    );
+  };
   check(
     state().on && state().per === 1 && fits(),
     'in the smallest window (' +
       smallest.join(' x ') +
-      ') the threads are still shown, one wide, the question inside its card'
+      ') the threads are still shown, one wide, the question inside its card (' +
+      smallestSeen() +
+      ')'
   );
   check(
     [...view.querySelectorAll('.terminal-pane[data-pane-id]')].every(panel => !displayed(panel)),
     'and no terminal panel is displayed there'
   );
-  console.log('TNAI_SHOT:all-threads-asks-card-smallest');
-  await wait(700);
-  await main('size', 1600, 900);
+  await (window.TnaiTest?.shot?.('all-threads-asks-card-smallest') ?? wait(700));
+  await sized(1600, 900);
   all().show(second);
   all().show(first);
   await wait(400);
@@ -467,8 +529,7 @@ try {
     'it lies in the card, its buttons inside it'
   );
   await wait(300);
-  console.log('TNAI_SHOT:all-threads-asks-held');
-  await wait(700);
+  await (window.TnaiTest?.shot?.('all-threads-asks-held') ?? wait(700));
   all().show(state().order.find(paneId => !state().shown.includes(paneId)));
   const stillSeen = state().shown.includes(second);
   if (!stillSeen)
@@ -600,7 +661,9 @@ try {
   );
 } catch (error) {
   ok = false;
-  log.push('ERROR ' + (error?.stack || error));
+
+  // a size that was not taken has said so in its own line
+  if (error !== notSized) log.push('ERROR ' + (error?.stack || error));
 }
 for (const id of openTrust) await main('trustDone', id).catch(() => {});
 for (const paneId of opened) await agents.stop(paneId).catch(() => {});

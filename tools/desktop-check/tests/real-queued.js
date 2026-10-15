@@ -75,6 +75,14 @@ try {
     !!(await until(() => G.sessions().find(s => s.paneId === paneId && s.running), 20000)),
     'Claude Code started'
   );
+
+  // The prompt box sends to the open thread, so this session's thread is opened.
+  await until(() => window.TnaiThreadList?.thread?.(paneId), 5000);
+  window.TnaiThreads.show(paneId);
+  check(
+    !!(await until(() => window.TnaiLiveTasks.target() === paneId, 5000)),
+    'its thread is open and the prompt box sends to it'
+  );
   check(!!(await ready()), 'Claude Code is ready for a prompt');
   G.send(paneId, '/model haiku');
   await wait(2500);

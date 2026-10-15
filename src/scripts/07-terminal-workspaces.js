@@ -532,7 +532,12 @@
     }
   };
 
+  // Two quick project switches (or one during the startup pass): a pass that waited stops when a
+  // newer one has begun, so the older project's workspaces never replace the newer project's.
+  let resolveSeq = 0;
+
   async function resolveProject(root) {
+    const seq = ++resolveSeq;
     let info = null;
     if (root === undefined || store.workspaces.some(w => w.project == null))
       try {
@@ -547,6 +552,7 @@
       const roots = (info?.projects || []).map(p => norm(p.path)),
         lanes = new Map();
       for (const r of roots) lanes.set(await hex(r), r);
+      if (seq !== resolveSeq) return;
       const cwd = new Map(ptys.map(p => [p.paneId, norm(p.cwd)])),
         owner = id => {
           const c = cwd.get(id) || '',
@@ -581,6 +587,7 @@
         }
       }
     }
+    if (seq !== resolveSeq) return;
     showProject(active);
   }
   window.addEventListener('tnai:project-changed', e => resolveProject(e.detail?.root || ''));

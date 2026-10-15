@@ -35,7 +35,9 @@ const MAX_MS = 30000,
 const MAX_VIDEO = 64 * 1024 * 1024,
   MAX_FRAME = 20 * 1024 * 1024;
 const MARGIN = 44; // room around the area for the frame's brackets and badge, in screen px
-let job = null; // the running clip: { recorder, frame, finish, watchdog }
+
+// the running clip: { recorder, frame, finish, watchdog, ready, stopWanted }
+let job = null;
 
 const from = (event, win) =>
   !!job && !!win && !win.isDestroyed() && event.sender === win.webContents;
@@ -120,7 +122,14 @@ async function start(display, region, accent = 'purple') {
   if (job) return { cancelled: true, busy: true };
   wire();
   const sf = display.scaleFactor || 1;
-  job = { recorder: null, frame: null, finish: () => {}, watchdog: null };
+  job = {
+    recorder: null,
+    frame: null,
+    finish: () => {},
+    watchdog: null,
+    ready: false,
+    stopWanted: false,
+  };
   const mine = job;
   let source;
   try {
@@ -134,6 +143,13 @@ async function start(display, region, accent = 'purple') {
       (sources.length === 1 ? sources[0] : sources[index]);
   } catch {}
   if (job !== mine) return { cancelled: true };
+
+  // Stop came while the screen source was still being looked up: nothing was recorded yet, so the
+  // clip is cancelled before any window opens.
+  if (mine.stopWanted) {
+    job = null;
+    return { cancelled: true };
+  }
   if (!source) {
     job = null;
     return { cancelled: true, error: 'screen capture unavailable' };
@@ -299,6 +315,11 @@ async function start(display, region, accent = 'purple') {
       width: Math.max(2, Math.round((region.width * scale) / 2) * 2),
       height: Math.max(2, Math.round((region.height * scale) / 2) * 2),
     });
+
+    // From here the page hears clip:finish. A Stop that came before this was held, and is passed
+    // on now: the recorder ends as soon as its recording runs.
+    mine.ready = true;
+    if (mine.stopWanted) recorder.webContents.send('clip:finish');
   });
   frame.loadFile(path.join(__dirname, 'snapshot-frame.html'), { query: { accent } });
   recorder.loadFile(path.join(__dirname, 'snapshot-recorder.html'));
@@ -306,9 +327,13 @@ async function start(display, region, accent = 'purple') {
 }
 
 // Ends the running clip and keeps it; the recorder answers with the video and frames.
+// A Stop before the recorder page has loaded would be lost (nothing there listens yet), so it is
+// held on the job and sent once the page is ready (start).
 function stop() {
-  if (!job?.recorder || job.recorder.isDestroyed()) return false;
-  job.recorder.webContents.send('clip:finish');
+  if (!job) return false;
+  if (job.recorder && job.recorder.isDestroyed()) return false;
+  job.stopWanted = true;
+  if (job.ready) job.recorder.webContents.send('clip:finish');
   return true;
 }
 

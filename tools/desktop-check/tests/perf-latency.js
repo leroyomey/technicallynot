@@ -212,7 +212,7 @@ try {
   await deletes('threads idle', 6);
 
   // Three more PowerShell panels print like busy agents (a colored line every ~40 ms each, ~15 s),
-  // then the same deletes on Overview and the Agents page.
+  // then the same deletes on Threads and on All threads.
   const busy = [];
   for (let i = 0; i < 3; i++) {
     const id = (await window.TnaiTest.open('Terminal'))?.paneId;

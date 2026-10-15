@@ -3,7 +3,7 @@
 // (the ready signal) is checked (no prompt is sent, so no usage). Then Claude Code's hook payloads
 // for a two-sub-agent task are played into that session's hook URL, and each sub-agent's row under
 // its lead in the thread list must show its name, task and state; the turn record must carry the
-// task's clock and tokens. Finally the composer, used from the Files page, must reach the open
+// task's clock and tokens. Finally the composer, used from the Threads page, must reach the open
 // thread's agent (a PowerShell thread, so no prompt reaches Claude). What the Details tab shows of
 // a sub-agent (task, output, tool calls) is thread-details' job. Returns {ok, log}.
 const log = [],
@@ -49,11 +49,14 @@ check(
     ' ms): ' +
     (ask?.title || 'none')
 );
+
+// The page shown is read from the layout's page class (the old navigation is never on screen).
+const settingsShown = () =>
+  document.querySelector('.layout')?.classList.contains('settings-mode') &&
+  !window.TnaiThreads.visible();
 check(
-  document.querySelector('.side-item.active')?.dataset.view === 'settings',
-  'starting the lead left the page alone (' +
-    document.querySelector('.side-item.active')?.dataset.view +
-    ')'
+  settingsShown(),
+  'starting the lead left the page alone (Settings still shown: ' + settingsShown() + ')'
 );
 if (ask) await N.trust.answer(ask.id, true);
 const lead = await leadStart;
@@ -94,7 +97,7 @@ check(
   'lead asked to open each sub-agent prompt with a plain Summary line'
 );
 const ready = await T.whenReady(paneId, since, 30000);
-window.TnaiRoute('overview');
+window.TnaiThreads.open();
 check(
   ready,
   'Claude Code connected to Technically Not’s MCP server = ready (' +
@@ -210,7 +213,6 @@ await wait(600);
 // lead's terminal), and tag the file with its name.
 check((await N.fs.write('sub-tag.txt', new TextEncoder().encode('x')))?.ok, 'wrote sub-tag.txt');
 window.TnaiProjectFiles.reload();
-window.TnaiRoute('files');
 await until(() => document.querySelector('[data-real-path="sub-tag.txt"]'), 4000);
 const root = String((await N.fs.root()) || '').replace(/\//g, sep);
 await hook({
@@ -559,7 +561,7 @@ check(
     JSON.stringify(T.background(paneId).map(b => b.taskId))
 );
 
-// A finished sub-agent reported back, so it leaves the card, the Agents page list and its file
+// A finished sub-agent reported back, so it leaves its lead's rows in the thread list and its file
 // tags; the lead stays.
 T.retireAfter = 300;
 await hook({
@@ -627,7 +629,7 @@ await window.TnaiSkills.remove?.('hook-skill');
   // The task-notification turn above is still running (no Stop): end it, or this prompt would count
   // as queued into that task.
   await hook({ hook_event_name: 'Stop', last_assistant_message: 'Noted.' });
-  window.TnaiRoute('overview');
+  window.TnaiThreads.open();
   await hook({
     hook_event_name: 'UserPromptSubmit',
     prompt: '[TN.ai] Measure this task',
@@ -730,7 +732,7 @@ await window.TnaiSkills.remove?.('hook-skill');
 // A question waiting for the user (53): Claude Code's numbered picker (AskUserQuestion hooks), and
 // a reply that ends on a question (inferred).
 {
-  window.TnaiRoute('overview');
+  window.TnaiThreads.open();
   const now = () =>
     document.querySelector(
       '.tnt-th[data-pane="' + CSS.escape(paneId) + '"]:not(.tnt-sub) .tnt-th-now'
@@ -810,7 +812,7 @@ await window.TnaiSkills.remove?.('hook-skill');
 // call comes before (or without) its SubagentStart takes its waiting call of the same type, so its
 // card runs instead of staying on Starting.
 {
-  window.TnaiRoute('overview');
+  window.TnaiThreads.open();
   await hook({
     hook_event_name: 'PreToolUse',
     tool_name: 'Agent',
@@ -944,7 +946,7 @@ for (const id of ['agn1', 'agn2', 'agn3'])
     last_assistant_message: 'Done.',
   });
 
-// 3. Composer from the Files page → the open thread's agent (PowerShell, so nothing reaches
+// 3. Composer on the Threads page → the open thread's agent (PowerShell, so nothing reaches
 // Claude Code).
 const shell = await window.TnaiTest.open('Terminal');
 check(shell?.ok, 'PowerShell thread opened');
@@ -957,16 +959,23 @@ check(
   !!(await until(() => window.TnaiThreadHelpers.state().pane === shell.paneId, 3000)),
   'the PowerShell thread is the open one (' + window.TnaiThreadHelpers.state().pane + ')'
 );
-window.TnaiRoute('files');
-const navBefore = document.querySelector('.side-item.active');
+
+// The page before the send: the Threads page with this thread open (the old Files page is gone).
+const pageNow = () =>
+  [...document.querySelector('.layout').classList].filter(c => /-mode$/.test(c)).join(' ') +
+  ' · threads ' +
+  window.TnaiThreads.visible() +
+  ' · open ' +
+  window.TnaiThreadHelpers.state().pane;
+const pageBefore = pageNow();
 const prompt = document.getElementById('prompt');
 prompt.value = 'echo tnai-composer-ok';
 prompt.dispatchEvent(new Event('input', { bubbles: true }));
 document.getElementById('send').click();
-const layout = document.querySelector('.layout');
+await wait(300);
 check(
-  !!navBefore && document.querySelector('.side-item.active') === navBefore,
-  'composer send left the page alone (Files stays, no jump to Overview)'
+  pageNow() === pageBefore,
+  'composer send left the page alone (the same page and thread: ' + pageNow() + ')'
 );
 check(
   !!(await until(

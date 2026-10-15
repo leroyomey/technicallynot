@@ -1,7 +1,9 @@
 /*
  * * Technically Not · 69-voice-recorder.js — Records the microphone while the composer's voice
  * button
- * * (70) is held: opens the mic, captures raw PCM via a ScriptProcessorNode, resamples to 16 kHz
+ * * (70) is held: opens the mic, captures raw PCM off the window's thread (a stream track reader; a
+ * ScriptProcessorNode
+ * * where the browser has none, which loses audio while the window is busy), resamples to 16 kHz
  * * mono, and packages a 16-bit PCM WAV for the Whisper engine (agent 1) to transcribe. Buffering
  * * starts as soon as the stream is live so a quick press-and-release still captures audio; a hard
  * * 5-minute cap auto-stops buffering while keeping what was recorded. Opening the mic
@@ -90,7 +92,14 @@
     WIN_S = 0.02;
 
   // (No AudioWorklet: Technically Not's desktop window, Electron 44 sandboxed, never finishes
-  // audioWorklet.addModule; voice-prompt test.)
+  // audioWorklet.addModule, from a file, a blob or a data address alike; re-tried 2026-10-14.)
+
+  // The mic is read through a stream track reader where the browser has one (attachTrackReader):
+  // its frames (10 ms each) wait in this queue while the window is busy. 3000 frames is 30 s.
+  const READER_QUEUE = 3000;
+
+  // Loss counted from the reader's frame times only past this much (their times jitter a little)
+  const READER_SLACK_S = 0.05;
 
   // ---- pure helpers (also exported via _test, safe to require() in Node with no `window`) ----
 
@@ -304,10 +313,11 @@
   // ---- recording state (single in-flight recording at a time) ----
   const st = {
     recording: false,
-    // audio a busy window lost in this recording (attachScriptProcessor)
+    // audio a busy window lost in this recording (attachScriptProcessor, attachTrackReader)
     lost: { blocks: 0, ms: 0, worstGapMs: 0 },
     lastBlockAt: null,
     lastBlockWall: 0,
+    readSamples: 0, // attachTrackReader: samples read since the recording's first frame
     startPromise: null,
     opening: null, // the in-flight openMic() promise
     gen: 0, // bumped by start()/cancel(): a stale deferred release is dropped
@@ -336,10 +346,23 @@
     openMs: 0, // how long the last start() took to have the mic live (0 when it was warm)
     nativeRate: 0,
     peak: 0,
+
+    // Samples before this one (the start tone's time, quietStart) don't count as something said.
+    quietUntil: 0,
     capped: false,
     keepRaw: false, // stop() also returns the unprocessed clip (dev copy collecting test clips)
     levelListeners: new Set(),
   };
+
+  // The peak of samples from index `from` on (0 when there are none).
+  function peakFrom(samples, from) {
+    let peak = 0;
+    for (let i = Math.max(0, from); i < samples.length; i++) {
+      const a = Math.abs(samples[i]);
+      if (a > peak) peak = a;
+    }
+    return peak;
+  }
 
   function handleChunk(mono) {
     if (!st.recording || st.capped) {
@@ -361,7 +384,11 @@
       quiet = a < SILENCE_PEAK ? quiet + 1 : 0;
       sumSq += v * v;
     }
-    if (chunkPeak > st.peak) st.peak = chunkPeak;
+
+    // Only the part after the start tone's time counts as something said (quietStart).
+    const saidPeak =
+      st.totalSamples < st.quietUntil ? peakFrom(mono, st.quietUntil - st.totalSamples) : chunkPeak;
+    if (saidPeak > st.peak) st.peak = saidPeak;
     st.quietRun = quiet;
 
     // The level goes out with the block it was measured on (no timer in between); none during the
@@ -457,6 +484,7 @@
     st.chunks = [];
     st.totalSamples = 0;
     st.peak = 0;
+    st.quietUntil = 0;
     st.capped = false;
     st.quietRun = 0;
     st.heldFrom = 0;
@@ -531,6 +559,104 @@
     st.gain = sink;
   }
 
+  // The mic read off the window's thread. The ScriptProcessor above runs on the window's own
+  // thread, and the browser throws away every block the window is too busy to take: a window held
+  // up for 650 ms lost 640 ms of speech (desktop test voice-lost-audio). Here the 16 kHz context's
+  // output goes to a stream track, and the browser keeps that track's frames in a queue
+  // (READER_QUEUE) until the window reads them, so a busy window only delays the audio. The frames
+  // are joined into blocks of the same size as before, so the level, the tail and the quiet count
+  // behave as they did.
+  function attachTrackReader() {
+    const ctx = st.audioCtx;
+    const dest = ctx.createMediaStreamDestination();
+    dest.channelCount = 1;
+    dest.channelCountMode = 'explicit';
+    st.source.connect(dest);
+    const track = dest.stream.getAudioTracks()[0];
+    const reader = new MediaStreamTrackProcessor({
+      track,
+      maxBufferSize: READER_QUEUE,
+    }).readable.getReader();
+    const blockSamples = ctx.sampleRate <= 24000 ? 1024 : 4096;
+    let pieces = [];
+    let pieceSamples = 0;
+    let live = true;
+    const node = {
+      disconnect() {
+        live = false;
+        reader.cancel().catch(() => {});
+        track.stop();
+        try {
+          dest.disconnect();
+        } catch (_e) {}
+      },
+    };
+    (async () => {
+      while (live) {
+        let frame = null;
+        try {
+          frame = (await reader.read()).value;
+        } catch (_e) {
+          break;
+        }
+        if (!frame) break;
+        if (!live || st.node !== node) {
+          frame.close();
+          break;
+        }
+        const samples = new Float32Array(frame.numberOfFrames);
+        try {
+          frame.copyTo(samples, { planeIndex: 0, format: 'f32-planar' });
+        } catch (_e) {}
+        countReaderLoss(frame.timestamp, samples.length, frame.sampleRate);
+        frame.close();
+        pieces.push(samples);
+        pieceSamples += samples.length;
+        if (pieceSamples >= blockSamples) {
+          const block = concatFloat32(pieces, pieceSamples);
+          pieces = [];
+          pieceSamples = 0;
+          handleChunk(block);
+        }
+      }
+    })();
+    st.node = node;
+    st.gain = dest;
+  }
+
+  // The reader keeps every frame unless its queue overflows. A loss still shows as frame times
+  // running ahead of the samples read: counted from the recording's first frame, so a little jitter
+  // between two frames never adds up to a loss. The longest wait between two reads on our clock
+  // (a busy window) is kept beside it, as with the ScriptProcessor.
+  function countReaderLoss(timestampUs, samples, rate) {
+    const wall = performance.now();
+    if (!st.recording) {
+      st.lastBlockAt = null;
+      return;
+    }
+    if (st.lastBlockAt === null) {
+      st.lastBlockAt = timestampUs;
+      st.readSamples = 0;
+    } else {
+      const behind = ((timestampUs - st.lastBlockAt) / 1e6) * rate - st.readSamples;
+      const behindMs = (behind / rate) * 1000;
+      if (behind > rate * READER_SLACK_S && behindMs > st.lost.ms) {
+        st.lost.ms = behindMs;
+        st.lost.blocks = Math.ceil(behind / 1024);
+      }
+      if (wall - st.lastBlockWall > st.lost.worstGapMs)
+        st.lost.worstGapMs = wall - st.lastBlockWall;
+    }
+    st.readSamples += samples;
+    st.lastBlockWall = wall;
+  }
+
+  // Off the window's thread where the browser can (attachTrackReader), else on it.
+  function attachCapture() {
+    if (typeof window.MediaStreamTrackProcessor === 'function') attachTrackReader();
+    else attachScriptProcessor();
+  }
+
   const isLive = () =>
     !!(
       st.stream &&
@@ -569,7 +695,7 @@
           st.audioCtx = new AC(opts);
           st.source = st.audioCtx.createMediaStreamSource(stream);
           st.nativeRate = st.audioCtx.sampleRate;
-          attachScriptProcessor();
+          attachCapture();
           failed = null;
           break;
         } catch (e) {
@@ -827,16 +953,11 @@
     if (!cut) return null;
     const head = raw.subarray(0, cut),
       rest = raw.slice(cut);
-    let peak = 0,
-      restPeak = 0;
-    for (let i = 0; i < head.length; i++) {
-      const a = Math.abs(head[i]);
-      if (a > peak) peak = a;
-    }
-    for (let i = 0; i < rest.length; i++) {
-      const a = Math.abs(rest[i]);
-      if (a > restPeak) restPeak = a;
-    }
+
+    // (the start tone's time does not count as something said here either)
+    const peak = peakFrom(head, st.quietUntil),
+      restPeak = peakFrom(rest, st.quietUntil - cut);
+    st.quietUntil = Math.max(0, st.quietUntil - cut);
     const seconds = Math.max(0, cut - st.heldFrom) / st.nativeRate;
     st.chunks = [rest];
     st.totalSamples = rest.length;
@@ -909,7 +1030,29 @@
     set keepRaw(on) {
       st.keepRaw = !!on;
     },
-    _test: { encodeWav, resample, cutPoint, trimQuiet, evenVolume, pack, speechLevel },
+    // While recording: the next `seconds` of audio, from now, don't count as something said (70
+    // calls it as the start tone plays). The audio itself is kept.
+    quietStart(seconds) {
+      if (st.recording && st.nativeRate)
+        st.quietUntil = st.totalSamples + Math.round(st.nativeRate * seconds);
+    },
+    _test: {
+      encodeWav,
+      resample,
+      cutPoint,
+      trimQuiet,
+      evenVolume,
+      pack,
+      speechLevel,
+
+      // tools/voice-start-quiet-test.js: a recording with no mic, fed block by block
+      hold(rate) {
+        resetBuffers();
+        st.nativeRate = rate;
+        st.recording = true;
+      },
+      feed: handleChunk,
+    },
   };
 
   if (typeof window !== 'undefined') window.TnVoiceRecorder = api;

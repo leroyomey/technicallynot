@@ -78,4 +78,13 @@ module.exports = win => ({
     win.webContents.send('trust:done', { id });
     return true;
   },
+
+  // What the window is to the system, for the line that says a size was not taken. The window is
+  // never restored here: only thread-tablet may do that, so a size test never moves a window.
+  state: () =>
+    [
+      win.isMinimized() ? 'minimized' : 'not minimized',
+      win.isVisible() ? 'shown' : 'hidden',
+      win.getContentSize().join(' x '),
+    ].join(', '),
 });

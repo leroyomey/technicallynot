@@ -147,8 +147,8 @@ try {
   for (let i = 0; i < 4; i++) started.push((await openThread('Terminal')).paneId);
   await wait(2500);
 
-  // the All threads page (its route is 'terminal'), with the four threads side by side
-  window.TnaiRoute('terminal');
+  // the All threads page, with the four threads side by side
+  check(await window.TnaiTest.openAllThreads(), 'the All threads page is open');
   await wait(1000);
   const same = await measure('All threads, 4 threads, sizes that keep the same zoom', false);
   const term = await measure('All threads, 4 threads, sizes that change the zoom', true);

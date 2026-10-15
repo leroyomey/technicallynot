@@ -1,20 +1,20 @@
 /*
- * Technically Not · desktop/file-locks.js — One agent edits a file at a time.
- * A lock is per project + file (path relative to the project root,
- * lowercased on Windows) and owned by one terminal panel. Claude Code takes it automatically before
- * Edit/Write (agent-hooks.js PreToolUse, a refused edit is denied); other CLIs take it with `tnai
- * lock FILE...` (agent-mesh.js; cooperative). Released by `tnai unlock`, the panel exiting or
- * closing, or LOCK_MS after the holder's last edit of that file. The same lead tree (deps.family)
- * shares locks; shared ledgers every agent appends to are exempt. Team mode (agent-teams.js):
- * agents the user grouped share locks too (deps.team), except a whole-file rewrite, exclusive for
- * WHOLE_MS; the same holds between separate panels of one lead tree (deps.tree: a lead and its
- * Technically Not sub-agents), whose edits would otherwise overwrite each other. A refusal tells
- * the holder once per file + requester every ALERT_MS (deps.notify), so agents talk instead of
- * overwriting each other. Shell-command edits (sed, scripts) skip the edit hook, so they are caught
- * after the fact (inferred from timing): agent-hooks.js reports each Claude Code Bash/PowerShell
- * call (shellStart/shellEnd) and the project watcher's changes arrive in diskChanges(). A held file
- * that changes while another agent's shell command runs tells both agents; one the holder didn't
- * change itself tells the holder; a free file changed while exactly one agent's (lead tree's) shell
+ * Technically Not · desktop/file-locks.js — One agent edits a file at a time. A lock is per project
+ * + file (path relative to the project root, lowercased on Windows) and owned by one terminal
+ * panel. Claude Code takes it automatically before Edit/Write (agent-hooks.js PreToolUse, a refused
+ * edit is denied); other CLIs take it with `tnai lock FILE...` (agent-mesh.js; cooperative).
+ * Released by `tnai unlock`, the holder's task ending (taskEnded), the panel exiting or closing, or
+ * LOCK_MS after the holder's last edit of that file. The same lead tree (deps.family) shares locks;
+ * shared ledgers every agent appends to are exempt. Team mode (agent-teams.js): agents the user
+ * grouped share locks too (deps.team), except a whole-file rewrite, exclusive for WHOLE_MS; the
+ * same holds between separate panels of one lead tree (deps.tree: a lead and its Technically Not
+ * sub-agents), whose edits would otherwise overwrite each other. A refusal tells the holder once
+ * per file + requester every ALERT_MS (deps.notify), so agents talk instead of overwriting each
+ * other. Shell-command edits (sed, scripts) skip the edit hook, so they are caught after the fact
+ * (inferred from timing): agent-hooks.js reports each Claude Code Bash/PowerShell call
+ * (shellStart/shellEnd) and the project watcher's changes arrive in diskChanges(). A held file that
+ * changes while another agent's shell command runs tells both agents; one the holder didn't change
+ * itself tells the holder; a free file changed while exactly one agent's (lead tree's) shell
  * command runs is locked to that agent. Only content edits count (edited()): reads, attribute
  * marks, temp files, folders and git-ignored files (generated output, ignoredFiles()) never do.
  * Main process only.
@@ -163,14 +163,19 @@ function acquire(project, file, owner) {
       h.name +
       '` to split the work (who takes which files), or work on something else and try again later. The lock ends when ' +
       h.name +
-      ' runs `tnai unlock`, stops, or leaves the file alone for ' +
+      ' runs `tnai unlock`, finishes its task, stops, or leaves the file alone for ' +
       LOCK_MS / 60e3 +
-      ' min.';
+      ' min. You are next in line: if you are still working when it ends, the file passes to you and you are told.';
 
     // Who was last refused this file, kept on the lock itself so a view can say "X waits" beside
     // the holder (the thread layout's shared files row). It goes with the lock when that ends, and
     // earlier when that agent is known to have stopped waiting (stopWaiting below).
-    h.wanted = { paneId: owner.paneId, name: owner.name || '', at: now() };
+    h.wanted = {
+      paneId: owner.paneId,
+      name: owner.name || '',
+      provider: owner.provider || '',
+      at: now(),
+    };
     changed(project);
     const ak = k + '\n' + key + '\n' + owner.paneId,
       last = alerted.get(ak);
@@ -186,7 +191,7 @@ function acquire(project, file, owner) {
               r +
               ', which you hold (file lock), and was told to wait. If you are done with it, run `tnai unlock ' +
               r +
-              '`; otherwise `tnai send ' +
+              '` (it also ends by itself when your task ends); otherwise `tnai send ' +
               owner.name +
               '` to agree who does what. No reply needed if neither applies.' +
               // The holder sits idle on an answer from the very agent its lock blocks
@@ -220,6 +225,10 @@ function acquire(project, file, owner) {
     at: fresh ? now() : h.at,
     last: now(),
     edit: !!owner.edit || (!fresh && !!h.edit),
+
+    // editing: the edit hook's call is still running (until editDone). The write can land well
+    // after this moment (a permission prompt), and its change is the holder's own.
+    ...(owner.edit ? { editing: now() } : !fresh && h.editing ? { editing: h.editing } : {}),
     wholeAt: owner.whole ? now() : h?.wholeAt || 0,
 
     // the holder edited its file again: whoever was refused it still waits
@@ -235,8 +244,8 @@ function acquire(project, file, owner) {
 
 // The agent of this panel no longer waits for a file: its name leaves every lock that showed it as
 // the one waiting (in one project, or in all of them when no project key is given). Only what is
-// known ends a wait, never a guess from time passing: the agent took a file (acquire) or its panel
-// is gone (releasePane). Returns whether a lock changed.
+// known ends a wait, never a guess from time passing: the agent took a file (acquire), its task
+// ended (taskEnded) or its panel is gone (releasePane). Returns whether a lock changed.
 function stopWaiting(paneId, onlyProjectKey) {
   let any = false;
   for (const [k, m] of locks) {
@@ -257,7 +266,7 @@ function release(project, files, paneId) {
   if (m)
     for (const [key, h] of m)
       if (h.paneId === paneId && (!files || files.some(f => fold(rel(project, f)) === key))) {
-        m.delete(key);
+        if (!handOn(m, key, h, 'unlocked it')) m.delete(key);
         released.push(h.file);
       }
   if (m && !m.size) locks.delete(projectKey(project));
@@ -265,12 +274,67 @@ function release(project, files, paneId) {
   return { released };
 }
 
+// A freed lock goes to the agent waiting for it (wanted) while that agent is still working
+// (deps.busy): it is next in line, so a third agent cannot take the file first, and it is told
+// once (a working Claude Code gets the notice after its next tool call). An idle waiter gets
+// nothing: a notice would start a whole new task, and it takes the file by editing when it is
+// back. Returns whether the lock was handed on.
+function handOn(map, key, h, why) {
+  const waiter = h.wanted;
+  if (!waiter || waiter.paneId === h.paneId || !deps.busy?.(waiter.paneId)) return false;
+  map.set(key, {
+    file: h.file,
+    paneId: waiter.paneId,
+    name: waiter.name || waiter.paneId,
+    provider: waiter.provider || '',
+    at: now(),
+    last: now(),
+    edit: false,
+    wholeAt: 0,
+  });
+  tell(
+    waiter.paneId,
+    '[from Technically Not] ' +
+      h.file +
+      ' is free now (' +
+      h.name +
+      ' ' +
+      why +
+      ') and held for you, as next in line: edit it when you are ready. If you no longer need it, run `tnai unlock ' +
+      h.file +
+      '`. No reply needed.'
+  );
+  return true;
+}
+
+// The agent's task ended (agent-turns.js onEnd: it finished, was stopped or interrupted, or waits
+// for the user). An agent at rest edits nothing, so its locks end now instead of LOCK_MS later,
+// each passed to the agent waiting for it; its next task takes them again by editing (user
+// decision 2026-10-14: agents kept asking idle holders to unlock). An agent at rest also waits for
+// no file: a freed lock never passes to an idle waiter (handOn), so its "waits" beside a held file
+// would only stay there wrong.
+function taskEnded(paneId) {
+  for (const [k, m] of [...locks]) {
+    let n = 0;
+    for (const [key, h] of m)
+      if (h.paneId === paneId) {
+        if (!handOn(m, key, h, 'finished its task')) m.delete(key);
+        n++;
+      } else if (h.wanted && h.wanted.paneId === paneId) {
+        delete h.wanted;
+        n++;
+      }
+    if (!m.size) locks.delete(k);
+    if (n) changed(k);
+  }
+}
+
 function releasePane(paneId) {
   for (const [k, m] of [...locks]) {
     let n = 0;
     for (const [key, h] of m)
       if (h.paneId === paneId) {
-        m.delete(key);
+        if (!handOn(m, key, h, 'was closed')) m.delete(key);
         n++;
       } else if (h.wanted && h.wanted.paneId === paneId) {
         // a closed panel waits for nothing
@@ -282,6 +346,17 @@ function releasePane(paneId) {
   }
   for (const ak of [...alerted.keys()]) if (ak.endsWith('\n' + paneId)) alerted.delete(ak);
   shells.delete(paneId);
+}
+
+// Claude Code's Edit/Write of this file finished (agent-hooks.js PostToolUse, also when it failed).
+// Its write is on disk now: the holder's own edit counts from here, not from the hook before it,
+// so a change the watcher reports a little later is not taken for someone else's.
+function editDone(project, file, paneId) {
+  const r = rel(project, file),
+    h = r ? table(project)?.get(fold(r)) : null;
+  if (!h || !kin(h.paneId, paneId)) return;
+  h.last = now();
+  delete h.editing;
 }
 
 // A Claude Code shell command (Bash/PowerShell, not run in the background) started / ended;
@@ -354,25 +429,22 @@ const IGNORE_MS = 5 * 60e3,
   ignoredSeen = new Map(); // project key + '\n' + rel key → { ignored, at }
 
 // The answer of `git check-ignore --stdin -z` for these paths: the ignored ones, folded. Anything
-// but exit code 0 (1: none ignored; no git, not a repo, the 3 s timeout) → none.
+// but exit code 0 (1: none ignored; no git, not a repo, the 3 s timeout) → none. Started from a
+// worker thread (process-starter.js): a process start held the main process 100 to 800 ms now and
+// then on a busy PC, and this runs for every watcher batch with new paths while agents work.
 const checkIgnore = (project, ask) =>
-  new Promise(resolve => {
-    try {
-      const child = require('child_process').execFile(
-        'git',
-        ['check-ignore', '--stdin', '-z'],
-        { cwd: path.resolve(String(project)), encoding: 'utf8', timeout: 3000, windowsHide: true },
-        (error, stdout) =>
-          resolve(error ? new Set() : new Set(String(stdout).split('\0').filter(Boolean).map(fold)))
-      );
-
-      // git gone before it read its input: the callback above answers
-      child.stdin.on('error', () => {});
-      child.stdin.end(ask.join('\0') + '\0');
-    } catch {
-      resolve(new Set());
-    }
-  });
+  require('./process-starter')
+    .start(
+      'git',
+      ['check-ignore', '--stdin', '-z'],
+      { cwd: path.resolve(String(project)), encoding: 'utf8', timeout: 3000, windowsHide: true },
+      { rerun: true, input: ask.join('\0') + '\0' }
+    )
+    .then(
+      ({ error, stdout }) =>
+        error ? new Set() : new Set(String(stdout).split('\0').filter(Boolean).map(fold)),
+      () => new Set()
+    );
 
 async function ignoredFiles(project, files) {
   const k = projectKey(project),
@@ -414,7 +486,8 @@ function diskChanges(project, batch) {
   if (!project || !Array.isArray(batch) || !batch.length || batch.some(c => c?.lane))
     return Promise.resolve();
   const active = shelling(project),
-    k = projectKey(project);
+    k = projectKey(project),
+    arrived = now();
   if (!table(project) && !active.length) return Promise.resolve();
   const leads = active.filter((o, i) => !active.slice(0, i).some(p => kin(p.paneId, o.paneId)));
   const paths = [];
@@ -433,7 +506,8 @@ function diskChanges(project, batch) {
         edits.filter(r => !ignored.has(r)),
         active,
         leads,
-        k
+        k,
+        arrived
       );
     })
     .catch(e => {
@@ -451,7 +525,9 @@ function pruneAlerted() {
   }
 }
 
-function applyChanges(project, batch, edits, active, leads, k) {
+// arrived: when the watcher's batch came in. The disk and git are asked first, so applying can run
+// seconds later; the holder's own edit is measured to the batch, not to that moment.
+function applyChanges(project, batch, edits, active, leads, k, arrived) {
   pruneAlerted();
   const m = table(project); // as the locks stand now: one taken while the disk was asked is seen
   const toHolder = new Map(),
@@ -464,8 +540,11 @@ function applyChanges(project, batch, edits, active, leads, k) {
       continue;
     }
 
-    // the holder's own edit or command
-    if (now() - h.last < OWN_EDIT_MS || active.some(o => kin(o.paneId, h.paneId))) continue;
+    // the holder's own edit (still running, or done within OWN_EDIT_MS before the batch or any time
+    // after it) or command
+    const ownEdit =
+      (h.editing && now() - h.editing < SHELL_MAX_MS) || h.last > (arrived || now()) - OWN_EDIT_MS;
+    if (ownEdit || active.some(o => kin(o.paneId, h.paneId))) continue;
     const others = active.filter(o => !kin(o.paneId, h.paneId));
 
     // locked by `tnai lock`: the holder's own edits aren't seen, so no guess
@@ -563,7 +642,8 @@ function setNames(list) {
 module.exports = {
   // deps: { notify(paneId, text) → Promise, family(paneA, paneB) → bool (lead tree or team: shares
   // locks), team(paneA, paneB) → bool (user team, not the same tree), tree(paneA, paneB) → bool
-  // (same lead tree), now?() → ms }
+  // (same lead tree), busy?(paneId) → bool (its task is running: a freed lock passes to it), now?()
+  // → ms }
   init(sender, dependencies) {
     send = sender || send;
     deps = dependencies || {};
@@ -571,6 +651,8 @@ module.exports = {
   acquire,
   release,
   releasePane,
+  taskEnded,
+  editDone,
   list,
   setNames,
   exempt,

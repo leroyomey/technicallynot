@@ -23,6 +23,7 @@ const load = Module._load;
 Module._load = (req, ...rest) =>
   req === 'electron' ? { app: { getPath: () => userData }, dialog: {} } : load(req, ...rest);
 const mesh = require('../../desktop/agent-mesh');
+const notices = require('../../desktop/agent-notices');
 
 let ok = true;
 const check = (cond, label) => {
@@ -52,9 +53,17 @@ const writes = [],
   drafts = new Set();
 const ended = new Set();
 
+// a message held behind the target's unsent text: its onDone, and the notices its sender got
+const heldCase = { hold: false, onDone: null, notices: [] };
+const midTask = { on: false };
+
 // panes whose task has ended (agent-turns busy() false); what a key written to a pane sets off (the
 // OpenCode cases)
 let onWrite = () => {};
+
+// paneId -> the time from which agent-turns stopped() says 'reply' ('' before it: Claude Code has
+// not written its stop line yet; speed audit item 5)
+const stopAt = new Map();
 (async () => {
   const sessions = ['pane-A', 'pane-B'].map(paneId => ({
     paneId,
@@ -74,7 +83,10 @@ let onWrite = () => {};
       },
     },
     turns: {
-      stopped: paneId => (silent.has(paneId) ? 'restored' : 'reply'),
+      stopped: paneId => {
+        if (stopAt.has(paneId)) return Date.now() >= stopAt.get(paneId) ? 'reply' : '';
+        return silent.has(paneId) ? 'restored' : 'reply';
+      },
       busy: paneId => !ended.has(paneId),
     },
     attention: {
@@ -119,8 +131,21 @@ let onWrite = () => {};
         return { error: 'stand-in' };
       },
     },
-    submit: async (paneId, body) => {
-      delivered.push({ paneId, body });
+    // a held message that is dropped is told to its sender (heldCase below)
+    // the mid-task route (agent-notices.js): on only for the block that checks it, so the older
+    // checks keep their typed-in delivery to agents the stand-in calls busy
+    get notices() {
+      return midTask.on ? notices : null;
+    },
+    notify: async (paneId, text) => {
+      heldCase.notices.push({ paneId, text });
+    },
+    submit: async (paneId, body, options = {}) => {
+      if (heldCase.hold && options.holdIfDraft) {
+        heldCase.onDone = options.holdIfDraft.onDone;
+        return { ok: true, state: 'held', heldId: 'h1', reason: 'draft' };
+      }
+      delivered.push({ paneId, body, at: Date.now() });
       setTimeout(() => onDeliver(paneId, body), 50);
       return { ok: true, state: 'sent' };
     },
@@ -265,6 +290,103 @@ let onWrite = () => {};
         (delivered.length > mark ? JSON.stringify(delivered.at(-1).body) : 'nothing') +
         (r.out.trim() ? ', said: ' + r.out.trim().split('\n')[0] : '')
     );
+
+    // Double quotes in a message typed as an argument arrive as typed: from Windows PowerShell,
+    // PowerShell 7 (both hand a .cmd 'say "hi"' as "say "hi""), cmd.exe and Git Bash.
+    const lastBody = () => (delivered.length > mark ? delivered.at(-1).body : '');
+    const arrives = (label, expected) =>
+      check(
+        r.code === 0 && lastBody() === '[from Claude Code · Alpha] ' + expected,
+        label + ': ' + JSON.stringify(lastBody() || r.out.trim())
+      );
+    const quoteCases = [
+      ['\'say "hi"\'', 'say "hi"'],
+      ['\'say "hi there" now\'', 'say "hi there" now'],
+      ['\'nospace"x"\'', 'nospace"x"'],
+      ["'plain words'", 'plain words'],
+      ['two words', 'two words'],
+    ];
+    const pwsh = path.join(
+      process.env.ProgramFiles || 'C:\\Program Files',
+      'PowerShell',
+      '7',
+      'pwsh.exe'
+    );
+    const shells = [['powershell.exe', 'Windows PowerShell']];
+    if (fs.existsSync(pwsh)) shells.push([pwsh, 'PowerShell 7']);
+    for (const [exe, shellName] of shells) {
+      for (const [typed, expected] of quoteCases) {
+        mark = delivered.length;
+        r = await new Promise(resolve =>
+          execFile(
+            exe,
+            [
+              '-NoProfile',
+              '-NonInteractive',
+              '-EncodedCommand',
+              Buffer.from('tnai send Beta ' + typed, 'utf16le').toString('base64'),
+            ],
+            { cwd: project, env: psEnv, windowsHide: true, timeout: 60000 },
+            (error, stdout, stderr) =>
+              resolve({ code: error ? error.code : 0, out: String(stdout) + String(stderr) })
+          )
+        );
+        arrives(shellName + ' → tnai.cmd: tnai send Beta ' + typed, expected);
+      }
+    }
+
+    // cmd.exe: the user's own quotes around the whole message are taken off, quotes inside kept
+    const cmdCases = [
+      ['"say "hi""', 'say "hi"'],
+      ['"hello world"', 'hello world'],
+      ['say "hi"', 'say "hi"'],
+      ['"hello" and "bye"', '"hello" and "bye"'],
+    ];
+    for (const [typed, expected] of cmdCases) {
+      mark = delivered.length;
+      r = await new Promise(resolve =>
+        execFile(
+          'cmd.exe',
+          ['/d', '/c', 'tnai send Beta ' + typed],
+          {
+            cwd: project,
+            env: psEnv,
+            windowsHide: true,
+            timeout: 60000,
+            windowsVerbatimArguments: true,
+          },
+          (error, stdout, stderr) =>
+            resolve({ code: error ? error.code : 0, out: String(stdout) + String(stderr) })
+        )
+      );
+      arrives('cmd.exe → tnai.cmd: tnai send Beta ' + typed, expected);
+    }
+
+    // Git Bash runs the sh stand-in `tnai`, not tnai.cmd; quotes and the pipe arrive as typed
+    const gitBash = path.join(
+      process.env.ProgramFiles || 'C:\\Program Files',
+      'Git',
+      'bin',
+      'bash.exe'
+    );
+    if (fs.existsSync(gitBash)) {
+      const bash = script =>
+        new Promise(resolve =>
+          execFile(
+            gitBash,
+            ['-c', script],
+            { cwd: project, env: psEnv, windowsHide: true, timeout: 60000 },
+            (error, stdout, stderr) =>
+              resolve({ code: error ? error.code : 0, out: String(stdout) + String(stderr) })
+          )
+        );
+      mark = delivered.length;
+      r = await bash('tnai send Beta \'say "hi there" now\'');
+      arrives('Git Bash: tnai send Beta \'say "hi there" now\'', 'say "hi there" now');
+      mark = delivered.length;
+      r = await bash("printf '%s' '" + tricky + "' | tnai send Beta -");
+      arrives('Git Bash: piped message arrives as typed', tricky);
+    } else console.log('info Git Bash not found, its cases skipped');
   }
   r = await tnai('A', 'ask', 'Nobody', 'hello?');
   check(r.code === 1 && /No agent "Nobody"/.test(r.out), 'ask: unknown agent refused');
@@ -418,6 +540,27 @@ let onWrite = () => {};
       writes.length === 2 &&
       writes[1].paneId === 'pane-A',
     'intervene: a different target is not rate-limited by the first'
+  );
+
+  // Speed audit item 5: Claude Code writes its stop line 710 ms after the Esc (260 ms after the
+  // 450 ms settle). The message goes within 50 ms of that line, not on the next 250 ms check.
+  writes.length = 0;
+  mesh._test.forgetIntervened();
+  before = delivered.length;
+  let escAt = 0;
+  onWrite = (paneId, data) => {
+    if (paneId === 'pane-B' && data === '\x1b' && !escAt) {
+      escAt = Date.now();
+      stopAt.set('pane-B', escAt + 710);
+    }
+  };
+  r = await tnai('A', 'intervene', 'Beta', 'late stop line');
+  onWrite = () => {};
+  stopAt.clear();
+  const lateGap = (delivered[before]?.at || 0) - escAt;
+  check(
+    r.code === 0 && /^Interrupted Beta/.test(r.out) && lateGap >= 710 && lateGap < 820,
+    'intervene: the message goes as soon as the stop line is seen (' + lateGap + ' ms after Esc)'
   );
 
   // OpenCode stops only on a second Esc soon after the first (desktop test real-opencode): two
@@ -711,6 +854,98 @@ let onWrite = () => {};
     'send: any other closed agent is revived the general way'
   );
   ownCase.hit = null;
+
+  // A message held behind the target's unsent text and dropped after the 10 minutes: the sender
+  // hears in one line that it was not delivered and why (learned 2026-10-14: it was told "queued"
+  // and never more).
+  // Beta has finished its task here: a working Claude Code agent reads messages mid-task instead
+  // (the block after this one).
+  ended.add('pane-B');
+  heldCase.hold = true;
+  r = await tnai('A', 'send', 'Beta', 'the held one');
+  heldCase.hold = false;
+  check(r.code === 0 && typeof heldCase.onDone === 'function', 'send: held behind unsent text');
+  heldCase.onDone({
+    ok: false,
+    state: 'expired',
+    error: 'The unsent text in its input was not sent or cleared within 10 min.',
+  });
+  await new Promise(resolve => setTimeout(resolve, 50));
+  check(
+    heldCase.notices.length === 1 &&
+      heldCase.notices[0].paneId === 'pane-A' &&
+      /message to Beta was not delivered: The unsent text .* within 10 min\./.test(
+        heldCase.notices[0].text
+      ),
+    'send: a dropped held message is told to its sender: ' + (heldCase.notices[0]?.text || 'none')
+  );
+  heldCase.onDone({ ok: true, state: 'sent' });
+  check(heldCase.notices.length === 1, 'send: a held message delivered later tells nobody');
+
+  // A WORKING Claude Code agent reads another agent's message after its next tool call, not
+  // interrupted and not left in its queue until the task ends.
+  ended.delete('pane-B');
+  midTask.on = true;
+  let typed = delivered.length;
+  r = await tnai('A', 'send', 'Beta', 'no need for the pencil block any more');
+  check(
+    r.code === 0 &&
+      /after its next step/.test(r.out) &&
+      delivered.length === typed &&
+      notices._test.size('pane-B') === 1,
+    'send to a working Claude Code agent: held for its next step, nothing typed: ' + r.out.trim()
+  );
+  const taken = notices.take('pane-B');
+  check(
+    /^Message from another agent/.test(taken) &&
+      taken.includes('[from Claude Code · Alpha] no need for the pencil block any more') &&
+      notices._test.size('pane-B') === 0,
+    'send mid-task: its next tool call gets it as an agent message: ' + taken.split('\n').at(-1)
+  );
+
+  // --later: the sender said it can wait, so it goes the old way (typed in, the CLI queues it).
+  typed = delivered.length;
+  r = await tnai('A', 'send', '--later', 'Beta', 'whenever you are done');
+  check(
+    r.code === 0 &&
+      delivered.length === typed + 1 &&
+      delivered.at(-1).body === '[from Claude Code · Alpha] whenever you are done' &&
+      notices._test.size('pane-B') === 0,
+    'send --later: typed in as before, not held for the next step'
+  );
+
+  // No tool call before the task ends: the message is typed in then, never lost.
+  typed = delivered.length;
+  await tnai('A', 'send', 'Beta', 'one more thing');
+  ended.add('pane-B');
+  notices.flush('pane-B');
+  await new Promise(resolve => setTimeout(resolve, 50));
+  check(
+    delivered.length === typed + 1 && /one more thing/.test(delivered.at(-1).body),
+    'send mid-task: still held when the task ends, it is typed in'
+  );
+
+  // close by name: an agent whose own name has a comma closes as one name; a word that is no
+  // agent's whole name is still split at commas (`tnai close A,B`)
+  midTask.on = false;
+  mesh.setNames([
+    { paneId: 'pane-A', name: 'Alpha' },
+    { paneId: 'pane-B', name: 'Fix, Test', idle: true },
+  ]);
+  r = await tnai('A', 'close', '--user', 'Fix, Test');
+  check(
+    r.code === 0 && /Fix, Test \(idle/.test(r.out) && !/No agent/.test(r.out),
+    'close: a name with a comma closes by name: ' + r.out.trim().slice(0, 90)
+  );
+  mesh.setNames([
+    { paneId: 'pane-A', name: 'Alpha' },
+    { paneId: 'pane-B', name: 'Beta', idle: true },
+  ]);
+  r = await tnai('A', 'close', '--user', 'Zed,Beta');
+  check(
+    r.code === 0 && /Beta \(idle/.test(r.out) && /No agent "Zed"/.test(r.out),
+    'close: comma-separated names are still split: ' + r.out.trim().slice(0, 90)
+  );
 
   mesh.stop();
   fs.rmSync(tmp, { recursive: true, force: true });

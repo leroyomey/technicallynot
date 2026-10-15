@@ -343,6 +343,27 @@ try {
       '"'
   );
 
+  // folded by default to one summary line; a press opens the list of files and folds it again
+  const sum = sharedRow?.querySelector('.tnt-shared-sum');
+  const fileList = sharedRow?.querySelector('.tnt-shared-list');
+  check(
+    !!sum &&
+      sum.getAttribute('aria-expanded') === 'false' &&
+      !shown(fileList) &&
+      /1 file held/.test(sum.textContent) &&
+      sum.textContent.includes(leadName) &&
+      /1 waiting/.test(sum.textContent),
+    'the held files are folded to one line by default: "' + (sum?.textContent || 'none') + '"'
+  );
+  sum?.click();
+  const opensList = shown(fileList) && sum.getAttribute('aria-expanded') === 'true';
+  await shot('thread-helpers-files-open');
+  sum?.click();
+  check(
+    opensList && !shown(fileList),
+    'a press on the summary opens the list of held files and a second press folds it'
+  );
+
   button?.click();
   const side = threads.slot('side');
   const sideTalk = await until(() => {

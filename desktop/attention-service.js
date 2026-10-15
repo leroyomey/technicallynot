@@ -12,6 +12,14 @@
 
 const QUIET_MS = 600; // output quiet this long → look at the pane's final screen for a question
 const SETTLE_MS = 800; // a question cleared this long (and still clear) → deliver held prompts
+
+// A Claude Code task ended (its Stop hook) and every prompt held for it waited only for that task,
+// none for a question: they go after this much instead of SETTLE_MS. Claude Code asks its questions
+// during a task (permission and question hooks), never after Stop, so the long settle, which lets a
+// question drawn on the screen be seen, has nothing to wait for. Every other check of the delivery
+// timer still runs. Other CLIs keep SETTLE_MS: their task end and questions are read off their
+// record and screen.
+const END_SETTLE_MS = 150;
 const TAIL_KEEP = 12000; // raw output kept per pane; trimmed in one slice to TAIL_TRIM when over
 const TAIL_TRIM = 6000;
 
@@ -375,7 +383,20 @@ function closeNotes(paneId) {
 const working = paneId => !!turns?.busy?.(paneId);
 const waitsOn = (p, paneId) => blocker(paneId) || (working(paneId) ? { kind: 'busy' } : null);
 
-function schedule(paneId) {
+// After a task ended: END_SETTLE_MS for a Claude Code panel whose held prompts all waited only for
+// its task (none was held for a question, none came from another computer), else SETTLE_MS.
+function settleAfterEnd(paneId) {
+  const p = panes.get(paneId);
+  const onlyTask =
+    !!p &&
+    p.held.length > 0 &&
+    !p.remoteIn &&
+    p.held.every(h => !h.remote && h.heldFor !== 'question');
+  return onlyTask && cliFn(paneId) === 'Claude Code' ? END_SETTLE_MS : SETTLE_MS;
+}
+
+// wait: how long the delivery timer waits (SETTLE_MS, or settleAfterEnd's answer at a task end)
+function schedule(paneId, wait = SETTLE_MS) {
   const p = panes.get(paneId);
   if (!p || !p.held.length || p.delivering || p.deliverTimer || waitsOn(p, paneId)) return;
   p.deliverTimer = setTimeout(async () => {
@@ -423,7 +444,7 @@ function schedule(paneId) {
     p.delivering = false;
     done(h, paneId, result);
     schedule(paneId);
-  }, SETTLE_MS);
+  }, wait);
 }
 
 // Every held prompt ends here exactly once (sent, cancelled, gone, expired): the window drops it, a
@@ -455,6 +476,9 @@ function holdIfBlocked(paneId, { text, paste = true, agent, ifBusy = false } = {
     paste,
     agent,
     at: Date.now(),
+
+    // what it was held for first: one held for a question keeps the full settle (settleAfterEnd)
+    heldFor: b ? 'question' : 'task',
   };
   pane(paneId).held.push(h);
   changed(paneId);
@@ -500,6 +524,7 @@ function holdIfDraft(
     waitDraft: true,
     from: from || null,
     onDone,
+    heldFor: asked ? 'question' : 'task',
   };
   if (forDraft && !keep)
     h.expire = setTimeout(() => {
@@ -809,7 +834,7 @@ async function sendRemote(p, h, paneId) {
     result = await submitFn(paneId, h.text, { agent: h.agent, remote: h.remote, claimed: true });
   } catch {}
   if (result?.ok === true) return result;
-  remoteEnded(paneId); // also when submit never ran (the plan lock in main.js)
+  remoteEnded(paneId); // also when submit never ran
   return NOT_SENT;
 }
 
@@ -1199,7 +1224,16 @@ module.exports = {
       clearItem(paneId, 'unsent');
       remoteGone(paneId);
       remoteEnded(paneId);
-      schedule(paneId);
+
+      // the calls above may already have set the full settle for the held prompts: a shorter one
+      // replaces it
+      const wait = settleAfterEnd(paneId);
+      const p = panes.get(paneId);
+      if (p?.deliverTimer && wait < SETTLE_MS) {
+        clearTimeout(p.deliverTimer);
+        p.deliverTimer = null;
+      }
+      schedule(paneId, wait);
     });
 
     // a task that ended began after the note (it is only set on an idle agent): the text was taken;

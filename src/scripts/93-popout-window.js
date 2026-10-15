@@ -4,9 +4,8 @@
  * outside its own window). Same mechanism as the Overview grid panels (79): a same-origin child
  * window named tnai-panel-<id> (desktop/panel-windows.js), the page's styles and theme copied in,
  * Technically Not's window buttons in the panel's header (66), its place and size remembered per
- * panel. The panel comes back when its window closes, Technically Not reloads or the plan lock (34)
- * ends pop-outs. The owner keeps its own element and listeners; it adds the `.out` class while
- * popped out. Users: 44 Result.
+ * panel. The panel comes back when its window closes or Technically Not reloads. The owner keeps
+ * its own element and listeners; it adds the `.out` class while popped out. Users: 44 Result.
  */
 (() => {
   const native = window.tnaiNative;
@@ -115,9 +114,6 @@
     o.onBack?.();
     return true;
   }
-  window.addEventListener('tnai:lock', () => {
-    for (const id of [...outs.keys()]) back(id);
-  }); // plan lock (34): pop-outs come back
   window.addEventListener('pagehide', () => {
     for (const o of outs.values()) if (!o.win.closed) o.win.close();
   }); // Technically Not reloading or closing

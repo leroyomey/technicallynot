@@ -629,6 +629,20 @@
       from = null;
       soon();
     };
+
+    // A closed terminal: a pass still waiting would read a buffer that is gone, and the observer
+    // would keep watching the removed view (and keep this terminal alive). xterm has no dispose
+    // event, so the terminal's own dispose is wrapped, as 10 wraps its write.
+    const disposeTerm = term.dispose.bind(term);
+    term.dispose = () => {
+      clearTimeout(timer);
+      timer = 0;
+      stale = false;
+      io?.disconnect();
+      io = null;
+      for (const entry of known.values()) clearTimeout(entry.timer);
+      disposeTerm();
+    };
     term.onWriteParsed(soon);
     term.onResize(all); // rows were painted at the old width; wrapped lines move
     term.buffer.onBufferChange(all);

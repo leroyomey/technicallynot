@@ -27,8 +27,7 @@ const until = async (fn, ms = 15000) => {
   return null;
 };
 const shot = async name => {
-  console.log('TNAI_SHOT:' + name);
-  await wait(600);
+  await (window.TnaiTest?.shot?.(name) ?? wait(600));
 };
 let callId = 0;
 const main = (cmd, ...args) =>
@@ -123,7 +122,7 @@ try {
     async () => shellPrompt.test(await buffer(A)) && shellPrompt.test(await buffer(B)),
     8000
   );
-  window.TnaiRoute('overview');
+  window.TnaiThreads.open();
   await wait(300);
   window.TnaiLiveTasks.setTarget(A);
 

@@ -52,12 +52,34 @@ module.exports = win => {
       const picture = await win.webContents.capturePage();
       const size = picture.getSize();
       const zoom = win.webContents.getZoomFactor();
-      const scale = size.width / win.getContentSize()[0];
+      const [contentWidth, contentHeight] = win.getContentSize();
+      const scale = size.width / contentWidth;
       const bitmap = picture.toBitmap();
       const startX = Math.round(left * zoom * scale);
       const rowY = Math.min(size.height - 1, Math.round(middle * zoom * scale));
+
+      // A window that reads 0 wide (minimized) made the scale Infinity, and the loop below then
+      // never ended (x stayed Infinity) and filled the main process to 4 GB (learned 2026-10-14).
+      // No usable picture fails the step with the window's state instead.
+      if (!size.width || !size.height || !Number.isFinite(startX) || !Number.isFinite(rowY))
+        throw new Error(
+          'no picture to read: picture ' +
+            size.width +
+            ' x ' +
+            size.height +
+            ', window ' +
+            contentWidth +
+            ' x ' +
+            contentHeight +
+            (win.isMinimized() ? ', minimized' : '') +
+            (win.isVisible() ? '' : ', hidden')
+        );
       const row = [];
-      for (let x = startX - before; x <= startX + after; x++) {
+
+      // counted by offset, so the loop always ends after before + after + 1 pixels
+      for (let offset = -before; offset <= after; offset++) {
+        const x = startX + offset;
+
         // four bytes a pixel, in the order blue, green, red, alpha
         const at = (rowY * size.width + Math.max(0, Math.min(size.width - 1, x))) * 4;
         row.push([bitmap[at + 2], bitmap[at + 1], bitmap[at]]);

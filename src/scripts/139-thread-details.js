@@ -268,11 +268,51 @@
   const sameWords = (first, second) =>
     plainPrompt(first).text.replace(/\s+/g, ' ') === plainPrompt(second).text.replace(/\s+/g, ' ');
 
-  // A tool call in plain words: the agent's own description of a command when it gave one (the raw
-  // command stays on hover).
-  const nowText = now =>
-    now.tool + (now.label || now.detail ? ' · ' + (now.label || now.detail) : '');
-  const nowRaw = now => (now?.label && now.detail ? now.detail : '');
+  // The last part of a file path ("C:\…\src\app.js" → "app.js").
+  const fileName = path =>
+    String(path || '')
+      .split(/[\\/]/)
+      .filter(Boolean)
+      .pop() || '';
+
+  // The head card's short line for a tool call: a verb and the file name or the agent's own label,
+  // never a whole path or command (the full text stays on hover, see nowFull).
+  const SHORT_VERBS = {
+    Edit: 'Editing',
+    MultiEdit: 'Editing',
+    NotebookEdit: 'Editing',
+    Write: 'Writing',
+    Read: 'Reading',
+    Bash: 'Running a command',
+    PowerShell: 'Running a command',
+    Grep: 'Searching the code',
+    Glob: 'Looking for files',
+    WebFetch: 'Reading a web page',
+    WebSearch: 'Searching the web',
+    Skill: 'Using skill',
+    TodoWrite: 'Updating its plan',
+    Agent: 'Starting a sub-agent',
+    Task: 'Starting a sub-agent',
+  };
+
+  function nowShort(now) {
+    const verb = SHORT_VERBS[now.tool];
+    if (/^mcp__tnai__tnai_/.test(now.tool)) return 'Coordinating agents';
+    if (!verb) {
+      const short = String(now.label || '').slice(0, 60);
+      return 'Using ' + now.tool + (short ? ' · ' + short : '');
+    }
+    if (/^(Edit|MultiEdit|NotebookEdit|Write|Read)$/.test(now.tool)) {
+      const name = fileName(now.detail || now.label);
+      return name ? verb + ' ' + name : verb;
+    }
+    if (now.tool === 'Skill') return verb + (now.detail ? ' ' + fileName(now.detail) : '');
+    if (now.label && now.label.length <= 60) return now.label;
+    return verb;
+  }
+
+  // The full tool call for the hover text of the short line.
+  const nowFull = now => (now ? [now.tool, now.label, now.detail].filter(Boolean).join(' · ') : '');
 
   // What the agent is doing right now, from the freshest real signal: its reported tool, its
   // latest file action (inferred), or its process state.
@@ -283,10 +323,12 @@
     if (question) return 'Waiting for your answer · ' + question.text;
     if (session.status === 'needs-you')
       return window.TnaiNeedsYou?.label?.(session.paneId) || 'Needs you';
-    if (team?.lead) return 'Using ' + nowText(team.lead);
+    if (team?.lead) return nowShort(team.lead);
     const action = window.TnaiFileActivity?.now?.(session.paneId);
     if (action && Date.now() - action.at < 120000)
-      return action.verb.charAt(0).toUpperCase() + action.verb.slice(1) + ' ' + action.path;
+      return (
+        action.verb.charAt(0).toUpperCase() + action.verb.slice(1) + ' ' + fileName(action.path)
+      );
     const running = (team?.subs || []).filter(sub => sub.status === 'running').length;
     if (running) return running + ' sub-agent' + (running > 1 ? 's' : '') + ' running';
 
@@ -610,7 +652,8 @@
       view.head.dataset.status = session.status || '';
     setText(view.state, word);
     setText(view.doing, doing);
-    const raw = session.running && doing.startsWith('Using ') ? nowRaw(team?.lead) : '';
+    const raw =
+      session.running && team?.lead && doing === nowShort(team.lead) ? nowFull(team.lead) : '';
     if (view.doing.title !== raw) view.doing.title = raw;
     const empty = [
       ['queue', 'no queued prompts'],
@@ -647,8 +690,8 @@
         [
           [
             'Now',
-            session.running && sub.status === 'running' && sub.now ? nowText(sub.now) : '',
-            nowRaw(sub.now),
+            session.running && sub.status === 'running' && sub.now ? nowShort(sub.now) : '',
+            nowFull(sub.now),
           ],
           ['Tool calls', sub.tools ? String(sub.tools) : ''],
           [

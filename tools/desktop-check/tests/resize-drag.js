@@ -1,7 +1,7 @@
 // Technically Not tools · desktop-check/tests/resize-drag.js — How long the window stops drawing
 // while its edge is dragged (a lag spike when a small window is made bigger). With eight PowerShell
-// panels open it drags the window from small to large and back in 16 ms steps, on Overview and on
-// the Terminal page, once over sizes that change the zoom (main.js fitZoom) and once over sizes
+// threads open it drags the window from small to large and back in 16 ms steps, on the Threads page
+// and on All threads, once over sizes that change the zoom (main.js fitZoom) and once over sizes
 // that keep it. Per drag: the longest gap between two frames, each gap over 100 ms with the zoom at
 // that moment, the time in long tasks, resize events, zoom changes, how many sizes each pty was
 // sent in one drag (each makes an agent CLI redraw its whole screen), and the functions that used
@@ -178,12 +178,10 @@ try {
     'setup: 8 PowerShell panels running (' + G.sessions().filter(s => s.running).length + ')'
   );
   const res = {};
-  for (const [page, sel] of [
-    ['Threads', 'overview'],
-    ['All threads page', 'terminal'],
-  ]) {
-    // the route the three-dots menu's rows call
-    window.TnaiRoute(sel);
+  for (const page of ['Threads', 'All threads page']) {
+    // what the three-dots menu's rows call
+    if (page === 'Threads') window.TnaiThreads.open();
+    else check(await window.TnaiTest.openAllThreads(), 'All threads page shown');
     await wait(1000);
     res[page + ' same'] = await drag(page + ', drag at one zoom', SAME, LARGE);
     res[page + ' zoom'] = await drag(page + ', drag across the zoom steps', SMALL, LARGE);

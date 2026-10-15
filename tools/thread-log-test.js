@@ -657,6 +657,37 @@ check(
   );
 }
 
+// ---------- a prompt sent while the agent worked ----------
+// Claude Code records it as a "queued_command" attachment inside the running turn, not as a user
+// line; a background task's notice comes the same way and is not the user's prompt.
+{
+  const queued = (prompt, commandMode) =>
+    JSON.stringify({
+      type: 'attachment',
+      isSidechain: false,
+      timestamp: at(30),
+      attachment: { type: 'queued_command', prompt, commandMode, origin: { kind: 'human' } },
+    });
+  const sent = claude.entries([
+    queued(
+      '[TN.ai] [New task while you work on "the cart"] If it belongs to that work, fold it in. New task: Is Obsidian needed?',
+      'prompt'
+    ),
+    queued('<task-notification>done</task-notification>', 'task-notification'),
+    JSON.stringify({
+      type: 'attachment',
+      timestamp: at(31),
+      attachment: { type: 'todo_reminder' },
+    }),
+  ]);
+  check(
+    sent.length === 1 && sent[0].kind === 'you' && sent[0].text === 'Is Obsidian needed?',
+    "a prompt sent while the agent worked shows as the user's prompt, and only that (" +
+      JSON.stringify(sent) +
+      ')'
+  );
+}
+
 // ---------- where the file is ----------
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'tnai-thread-log-'));
 const home = path.join(scratch, 'home');

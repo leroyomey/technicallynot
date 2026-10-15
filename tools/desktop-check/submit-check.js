@@ -245,6 +245,31 @@ const enters = id => writes.filter(([p, d]) => p === id && d === '\r').length;
   );
   check(gone.state === 'gone' && !gone.ok, 'no process → gone');
 
+  // The user types between an agent message's paste and its Enter: no Enter, so the user's keys
+  // are not sent with the message. The user's own prompt is pressed as before.
+  {
+    pane('earlyAgent', 'Claude Code');
+    pane('earlyPerson', 'Claude Code');
+    setTimeout(() => ptys.write('earlyAgent', 'h'), 50);
+    setTimeout(() => ptys.write('earlyPerson', 'h'), 50);
+    const [agentSent, personSent] = await Promise.all([
+      submitter.submit('earlyAgent', 'done: report'),
+      submitter.submit('earlyPerson', 'my prompt', { person: true }),
+    ]);
+    check(
+      agentSent.state === 'not-submitted' &&
+        enters('earlyAgent') === 0 &&
+        unsent.includes('earlyAgent'),
+      'user typed before the Enter → agent message not sent, left in the input (' +
+        agentSent.state +
+        ')'
+    );
+    check(
+      personSent.state === 'sent' && enters('earlyPerson') === 1,
+      "the user's own prompt with a key before the Enter → sent as before"
+    );
+  }
+
   // OpenCode's /compact: through its server link when it is on and idle (a stand-in behind the real
   // desktop/opencode-link.js), typed otherwise.
   {

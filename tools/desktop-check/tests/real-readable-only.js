@@ -231,12 +231,11 @@ try {
     check(view().mode() === 'read', 'it opens as its conversation');
   } else {
     // ---- All threads: the thread is started, then everything happens on its card ----
-    const made = await agents.open(TOOL);
+    const made = await window.TnaiTest.open(TOOL);
     paneId = made?.paneId || (await until(fresh, 30000))?.paneId || '';
     check(!!paneId, 'a Claude Code session started');
     if (!paneId) throw new Error('no session started');
-    window.TnaiRoute('terminal');
-    await until(() => window.TnaiAllThreads?.state().on, 8000);
+    check(await window.TnaiTest.openAllThreads(8000), 'the All threads page is open');
     window.TnaiAllThreads.show(paneId);
     const cardOf = () =>
       document.querySelector('.tat-card[data-pane="' + CSS.escape(paneId) + '"]');
@@ -418,7 +417,7 @@ try {
   check(
     !seen.modes.has('agents-mode') && (page === 'all' || !seen.modes.has('terminal-mode')),
     page === 'all'
-      ? 'the layout never had agents-mode (All threads is the Terminal page, showing threads)'
+      ? 'the layout never had agents-mode (All threads shares the route terminal-mode)'
       : 'the layout never had terminal-mode or agents-mode'
   );
   note('prompts sent: ' + prompts);

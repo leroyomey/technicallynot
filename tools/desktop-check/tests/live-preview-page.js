@@ -1,11 +1,12 @@
-// Technically Not tools · desktop-check/tests/live-preview-page.js — Live preview page (65, left
-// nav): opens from the nav, lists package.json's dev script, Start runs a tiny node server in a
-// real Terminal pane and comes back to the page, the preview loads (marker via postMessage),
-// leaving and returning keeps the same iframe (no reload), Pop out moves the preview into its own
-// window that stays live on another page and docks on close / Bring back, Stop ends the server, a
-// non-localhost address is refused. Screenshots: page running + at 1024×768. Returns {ok, log}.
-// package.json is written like an agent's edit (main-process fs): the app re-reads the scripts only
-// when its watcher reports the file, and its own Save is left out of that.
+// Technically Not tools · desktop-check/tests/live-preview-page.js — Live preview page (65):
+// opens from the three-dots menu's "Live preview" row, lists package.json's dev script, Start runs
+// a tiny node server in a real Terminal panel and comes back to the page, the preview loads (marker
+// via postMessage), leaving and returning keeps the same iframe (no reload), Pop out moves the
+// preview into its own window that stays live on another page and docks on close / Bring back, Stop
+// ends the server, a non-localhost address is refused. Screenshots: page running + at 1024×768.
+// Returns {ok, log}. package.json is written like an agent's edit (main-process fs): the app
+// re-reads the scripts only when its watcher reports the file, and its own Save is left out of
+// that.
 const mainCall = (cmd, ...args) =>
   new Promise((resolve, reject) => {
     const id = 'pk' + Date.now();
@@ -39,7 +40,8 @@ const shot = async name => {
 const bytes = text => new TextEncoder().encode(text);
 const markers = [];
 
-// which frame sent each marker: the Overview's Live preview thumbnail (94) loads the same page too
+// which frame sent each marker: another Live preview view (All threads' column) can load the same
+// page too
 const sources = [];
 window.addEventListener('message', event => {
   if (typeof event.data === 'string' && event.data.startsWith('TNAI_PREVIEW_MARKER:')) {
@@ -71,18 +73,32 @@ try {
 
   const layout = document.querySelector('.layout'),
     page = document.getElementById('livePreviewPage');
-  const nav = document.querySelector('.side-item[data-view="live-preview"]');
-  check(!!nav && !!page && !!window.TnaiLivePreviewPage, 'nav item, page and API exist');
-  nav.click();
+
+  // The page opens the way a person opens it: the three-dots button, then its "Live preview" row.
+  // The old left navigation (and its "only this item is active" check) is gone since 2026-10-11.
+  const shown = element => !!element && element.getClientRects().length > 0;
+  const menuRow = async () => {
+    const menu = () => document.querySelector('.tnt-menu.tnt-menu-full');
+    if (!shown(menu())) document.querySelector('.top .tnt-menu-btn')?.click();
+    await until(() => shown(menu()), 3000);
+    return [...(menu()?.querySelectorAll('.tnt-menu-row') || [])].find(
+      row => row.querySelector('span')?.textContent.trim() === 'Live preview'
+    );
+  };
+  const openPage = async () => {
+    const row = await menuRow();
+    row?.click();
+    return !!row;
+  };
+  check(
+    !!(await menuRow()) && !!page && !!window.TnaiLivePreviewPage,
+    'menu row, page and API exist'
+  );
+  await openPage();
   await wait(200);
   check(
     layout.classList.contains('preview-mode') && getComputedStyle(page).display !== 'none',
-    'nav opens the page'
-  );
-  check(
-    nav.classList.contains('active') &&
-      !document.querySelector('.side-item.active:not([data-view="live-preview"])'),
-    'only the Live preview nav item is active'
+    'the menu row opens the page'
   );
   const pr = page.getBoundingClientRect();
   check(
@@ -148,14 +164,17 @@ try {
   const frame = page.querySelector('.lpp-stage iframe'),
     fromStage = () => sources.filter(w => w === frame.contentWindow).length,
     loads = fromStage();
-  window.TnaiRoute('overview');
+
+  // The Threads page, as the menu's "Threads" row opens it.
+  window.TnaiThreads.open();
   await wait(150);
   check(
     !layout.classList.contains('preview-mode') && getComputedStyle(page).display === 'none',
     'another page hides it'
   );
+  const row = await menuRow();
   const t0 = performance.now();
-  nav.click();
+  row?.click();
   const shownMs = performance.now() - t0;
   check(
     page.querySelector('.lpp-stage iframe') === frame,
@@ -194,7 +213,7 @@ try {
   );
   const onTop = pwin?.document.querySelector('.lpp-ontop');
   check(!!onTop && !onTop.hidden, 'On top shown in the window');
-  window.TnaiRoute('overview');
+  window.TnaiThreads.open();
   await wait(300);
   check(
     !pwin.closed && !!pwin.document.querySelector('.lp iframe'),
@@ -212,7 +231,7 @@ try {
     ),
     'closing the window brings the preview back'
   );
-  nav.click();
+  await openPage();
   await wait(300);
   check(
     /Pop out/.test(page.querySelector('.lpp-stage .lpp-pop')?.textContent || ''),

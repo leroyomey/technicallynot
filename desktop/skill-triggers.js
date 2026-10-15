@@ -53,6 +53,28 @@ const STOP = new Set([
   'media',
   'issue',
   'watch',
+  // 2026-10-14, skills audit: everyday words in skill names ("what's open before the release" named
+  // tnai-open-source, "the work is done" tnai-cloud-work). Those skills keep their keywords
+  // ("open source", "cloud session", "public copy") and one other name word.
+  'open',
+  'source',
+  'work',
+  'copy',
+  // Same audit: name words that offered a skill on everyday sentences ("run the window test",
+  // "the app is slow", "one more thing, look at the layout", "deploy the website"). Each of these
+  // skills keeps phrase keywords that still match ("bench test", "mock of the app", "css layout").
+  'test',
+  'run',
+  'app',
+  'one',
+  'look',
+  'layout',
+  'css',
+  'deploy',
+  'performance',
+  // tnai-bug-sweep's name words fired on "fix this bug"; it keeps "bug sweep" and its phrases.
+  'bug',
+  'sweep',
 ]);
 const cache = new Map(); // SKILL.md path -> { mtime, skill }
 

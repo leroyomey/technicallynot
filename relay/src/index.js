@@ -11,6 +11,8 @@
 //   POST /remote/ticket    headers X-Relay-Device, X-Relay-Time, X-Relay-Proof → { ticket }
 //   GET  /remote/connect?ticket=…   → WebSocket
 //   GET  /remote/presence  same three headers → which devices are connected
+//   POST /remote/forget?d=…  same three headers → that device's record is removed (not while it
+//                            is connected)
 import { RelayHub } from './hub.js';
 import { b64url, fromB64url, hmacHex, json, safeEqual } from './util.js';
 
@@ -344,10 +346,26 @@ async function presence(request, env) {
   return (await hubOf(env)).fetch(new Request('https://hub/presence'));
 }
 
+// A device the user no longer wants listed (an old computer, a test device) is removed. Only a
+// computer may ask, never the phone key, and the device to remove is part of the proof, so a proof
+// removes that one device and no other. A connected device is refused (hub.js drop).
+async function forget(request, env) {
+  const gone = new URL(request.url).searchParams.get('d') || '';
+  if (!DEVICE.test(gone)) throw new Refused(400, 'invalid_device');
+  const { device, time } = await proven(request, env, 'forget:' + gone);
+  if (device.startsWith(PHONE_ID_START)) throw new Refused(403, 'not_allowed');
+
+  // counted and single use like a ticket's proof
+  const asked = await ask(env, device, time);
+  if (asked.status !== 200) return asked;
+  return (await hubOf(env)).fetch(new Request('https://hub/drop?d=' + encodeURIComponent(gone)));
+}
+
 const ROUTES = {
   'POST /remote/ticket': ticket,
   'GET /remote/connect': connect,
   'GET /remote/presence': presence,
+  'POST /remote/forget': forget,
 };
 
 // The phone app is a web page on another address, and a browser lets a page read an answer from

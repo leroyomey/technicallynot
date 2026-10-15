@@ -1,19 +1,17 @@
 /*
- * Technically Not tools · desktop-check/tests/plan-lock.js — The Technically Not account + plan
- * lock end to end against the TEST-ONLY fake accounts server and fake Google in plan-lock.main.js:
- * flag off → never locked; flag on + signed out → lock shown and pty:start refused in main; Google
- * sign-in (PKCE + loopback → /auth/exchange) → signed Pro pass → unlocked, "Pro" + Manage
- * subscription in the account menu, token/pass encrypted on disk; plan none → locked and refused,
- * Subscribe opens the signed-in website link; Check again unlocks; email + password (wrong
- * password, authenticator code); pass signed with another key → ignored, locked; pass expired while
- * offline → locked with the reconnect text; clock that only moves forward (PC clock set back →
- * 'clock', kept across a restart, fresh pass recovers, exp checked on the high-water mark, server
- * Date ahead → 'clock'); TNAI_DEV_UNLOCK; release flag ignores dev overrides; Sign in with GitHub
- * (denied, linked by verified email, no verified email, GitHub unreachable, no client ID);
- * computers (device_id kept in tnai-device.json across restart and sign-out, sent on every sign-in
- * route; 4th computer → list in the dialog, Cancel, expired ticket, Sign out and continue →
- * /auth/device-replace → signed in); main's central IPC guard: while locked fs/git/skills/ terminal
- * input/pop-outs are refused in main (auth, window, updates still answer), unlocked they work.
+ * Technically Not tools · desktop-check/tests/account-signin.js — The Technically Not account end
+ * to end against the TEST-ONLY fake accounts server and fake Google in account-signin.main.js. The
+ * app has no plan lock, so nothing is ever refused for a plan: signed out, with plan none or with
+ * no valid pass a terminal panel starts and files, git, skills and pop-outs work. Google sign-in
+ * (PKCE + loopback → /auth/exchange) → signed Pro pass kept, token/pass encrypted on disk, the
+ * account menu holds only the account and Sign out; email + password (wrong password, authenticator
+ * code); pass signed with another key → ignored; pass expired while offline → not current by
+ * itself; clock that only moves forward (exp checked on the high-water mark, server Date ahead
+ * raises it, a fresh pass recovers); the app sends its version and names an update when the server
+ * asks for one; release flag ignores dev overrides; Sign in with GitHub (denied, linked by verified
+ * email, no verified email, GitHub unreachable, no client ID); computers (device_id kept in
+ * tnai-device.json across restart and sign-out, sent on every sign-in route; 4th computer → list in
+ * the dialog, Cancel, expired ticket, Sign out and continue → /auth/device-replace → signed in).
  * PowerShell panels only (agent 'Terminal'), no agent CLI, no prompt, no real network. Returns {ok,
  * log}.
  */
@@ -53,15 +51,13 @@ const main = (cmd, ...args) =>
 const A = window.TnaiAuth,
   pty = window.tnaiNative.pty;
 const st = () => A.state();
-const lock = () => document.querySelector('.tnai-lock-overlay');
-const lockShown = () => !!lock() && !lock().hidden;
-const dialog = () => document.querySelector('.tnai-auth-overlay:not(.tnai-lock-overlay)');
+const dialog = () => document.querySelector('.tnai-auth-overlay');
 let n = 0;
 
-// Main's central IPC guard (main.js LOCK_FREE): capabilities other than pty:start, called straight
-// through the bridge as a tampered renderer would.
+// What a plan lock used to refuse, called straight through the bridge: files, git, skills, app
+// info, update and account state, and a pop-out window. With no plan lock all of it answers.
 const N = window.tnaiNative;
-const guarded = async () => {
+const capabilities = async () => {
   const [list, read, git, skills, info, upd, auth] = await Promise.all([
     N.fs.list(''),
     N.fs.read('README.md'),
@@ -71,17 +67,16 @@ const guarded = async () => {
     N.update.state(),
     N.auth.state(),
   ]);
-  const pop = window.open('about:blank', 'tnai-panel-plan-lock-probe');
+  const pop = window.open('about:blank', 'tnai-panel-account-probe');
   const popped = !!pop;
   try {
     pop?.close();
   } catch {}
   return { list, read, git, skills, info, upd, auth, popped };
 };
-const refused = r =>
-  r?.ok === false && r.error?.code === 'locked' && /locked/i.test(r.error?.message || '');
+const allWork = g => g.list?.ok && g.read?.ok && g.git?.ok && g.skills?.ok && g.popped;
 const tryStart = async () => {
-  const id = 'plan-lock-' + Date.now() + '-' + ++n;
+  const id = 'account-signin-' + Date.now() + '-' + ++n;
   const r = await pty.start({ paneId: id, agent: 'Terminal', mode: 'run', cols: 80, rows: 24 });
   if (r?.ok) {
     await pty.stop(id).catch(() => {});
@@ -94,65 +89,21 @@ check(!!A && !!window.tnaiNative.auth, 'window.TnaiAuth and the native auth brid
 await main('ready');
 await A.ready();
 
-// 1. Flag off (the shipped default): signed out, nothing locks.
+// 1. Signed out: no plan lock anywhere, everything works.
 check(
-  st().available && !st().lock.enforced && !st().lock.locked && !lockShown(),
-  'flag off: signed out is not locked, no lock shown'
+  st().available && !('lock' in st()) && !document.querySelector('.tnai-lock-overlay'),
+  'signed out: the state has no lock and the page has no lock screen'
 );
 let r = await tryStart();
-check(r.ok, 'flag off: a terminal panel starts');
+check(r.ok, 'signed out: a terminal panel starts');
+let g = await capabilities();
+check(
+  allWork(g) && !!g.info?.version && g.auth?.ok && g.upd,
+  'signed out: fs:list, fs:read, git:status, skills:list, a pop-out, app info, account and update state all answer'
+);
 
-// 2. Flag on, signed out → locked; main refuses new panels.
-await main('enforce', true);
-await A.ready();
-check(st().lock.locked && st().lock.reason === 'signed-out', 'flag on + signed out: locked');
-check(
-  lockShown() &&
-    /Sign in to Technically Not/.test(lock().textContent) &&
-    !!lock().querySelector('[data-lock=signin]') &&
-    !!lock().querySelector('[data-lock=subscribe]'),
-  'lock shows Sign in and See plans'
-);
-check(!lock().querySelector('.tnai-auth-x'), 'the lock has no close button');
-r = await tryStart();
-check(
-  !r.ok && r.error?.code === 'locked' && /locked/i.test(r.error?.message || ''),
-  'signed out: main refuses pty:start (' + (r.error?.message || 'started!') + ')'
-);
-let g = await guarded();
-check(
-  refused(g.list) && refused(g.read) && refused(g.git) && refused(g.skills),
-  'locked: main refuses fs:list, fs:read, git:status, skills:list (' +
-    JSON.stringify([g.list, g.git].map(x => x?.error?.code || x?.ok)) +
-    ')'
-);
-check(!g.popped, 'locked: main refuses a pop-out window');
-check(
-  !!g.info?.version && g.auth?.ok && g.auth.value?.lock?.locked && g.upd && !refused(g.upd),
-  'locked: app info, account state and update state still answer'
-);
-const winBtn = document.querySelector('.win-ctrls button');
-if (winBtn) {
-  const b = winBtn.getBoundingClientRect(),
-    hit = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
-  check(winBtn.contains(hit), 'window buttons stay clickable above the lock');
-}
-const outside = document.querySelector('#composerInput, textarea');
-outside?.focus();
-
-// The test window never has the keyboard, and a window without it sends no focusin: the event the
-// lock listens for is sent by hand then, from the field that was focused.
-const windowHasKeyboard = document.hasFocus();
-if (!windowHasKeyboard) outside?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-check(
-  lock().contains(document.activeElement),
-  'focus stays in the lock (window has the keyboard: ' + windowHasKeyboard + ')'
-);
-await shot('plan-lock-signed-out');
-
-// 3. Sign in with Google from the lock → Pro pass → unlocked (no trial of any kind: only a
-// subscription unlocks).
-lock().querySelector('[data-lock=signin]').click();
+// 2. The sign-in dialog.
+A.open();
 await wait(120);
 check(
   !!dialog() &&
@@ -160,7 +111,7 @@ check(
     /Continue with Google/.test(dialog().textContent) &&
     !!dialog().querySelector('input[name=email]') &&
     !!dialog().querySelector('input[name=password]'),
-  'Sign in opens the dialog: Google + email and password'
+  'the dialog opens: Google + email and password'
 );
 const browsers = (await window.tnaiNative.auth.browsers())?.value || [];
 check(
@@ -174,7 +125,9 @@ check(
     browsers.length +
     ' installed browsers listed (plus Default browser) only when there is a choice'
 );
-await shot('plan-lock-signin');
+await shot('account-signin-dialog');
+
+// 3. Sign in with Google → Pro pass kept; the account menu has no plan and no subscription.
 await main('set', { plan: 'pro', key: 'good', expIn: 7 * 86400, online: true });
 await main('googlePlan', {
   action: 'approve',
@@ -206,14 +159,13 @@ check(
   /close this tab/i.test((await until(() => main('lastBrowse')))?.text || ''),
   'browser got the “return to Technically Not” page'
 );
-check(!!(await until(() => !st().lock.locked && !lockShown())), 'Pro pass: unlocked, lock gone');
 check(
-  st().plan?.plan === 'pro' &&
+  !!(await until(() => st().plan?.plan === 'pro')) &&
     st().plan.status === 'active' &&
     st().plan.subscribed &&
     st().plan.current &&
     !('daysLeft' in st().plan),
-  'plan: Pro, subscribed, no trial fields (' + JSON.stringify(st().plan) + ')'
+  'plan pass: Pro, subscribed, no trial fields (' + JSON.stringify(st().plan) + ')'
 );
 check(st().user?.name === 'Ada Lovelace' && dialog().hidden, 'signed in as Ada, dialog closed');
 check(!/apptok-|EdDSA/.test(JSON.stringify(st())), 'renderer state carries no token or pass');
@@ -225,76 +177,29 @@ const menu = document.querySelector('#tnaiUser .tnai-user-menu');
 check(
   !!menu &&
     !menu.hidden &&
-    /^Pro/.test(menu.querySelector('[data-plan]')?.textContent || '') &&
-    !/trial/i.test(menu.textContent) &&
-    /Manage subscription/.test(menu.textContent),
-  'account menu: “Pro” + Manage subscription, no trial'
-);
-await shot('plan-lock-menu');
-document.body.click();
-await wait(50);
-r = await tryStart();
-check(r.ok, 'unlocked: a terminal panel starts');
-g = await guarded();
-check(
-  g.list?.ok && g.read?.ok && g.git?.ok && g.skills?.ok,
-  'unlocked: fs:list, fs:read, git:status, skills:list work (' +
-    JSON.stringify([g.list?.ok, g.read?.ok, g.git?.ok, g.skills?.ok]) +
+    !menu.querySelector('[data-plan]') &&
+    !/Subscribe|subscription|Update card|Plan/.test(menu.textContent) &&
+    /Sign out/.test(menu.textContent),
+  'account menu: the account and Sign out, no plan line and no subscription buttons (' +
+    menu?.textContent.replace(/\s+/g, ' ').trim() +
     ')'
 );
-check(g.popped, 'unlocked: a pop-out window opens');
-
-// 4. Plan none (no subscription) → locked, refused in main; Subscribe opens the signed-in website
-// link.
-await main('set', { plan: 'none' });
-await A.check();
-check(
-  st().lock.locked &&
-    st().lock.reason === 'no-plan' &&
-    lockShown() &&
-    /Subscribe to keep building/.test(lock().textContent),
-  'plan none: locked with Subscribe'
-);
-check(
-  /A\*{5} L\*{5}/.test(lock().querySelector('[data-lock-account]')?.textContent || '') &&
-    !/Lovelace/.test(lock().querySelector('[data-lock-account]')?.textContent || ''),
-  'lock names the signed-in account, name masked'
-);
-r = await tryStart();
-check(!r.ok && r.error?.code === 'locked', 'plan none: main refuses pty:start');
-await shot('plan-lock-no-plan');
-lock().querySelector('[data-lock=subscribe]').click();
-check(
-  !!(await until(async () =>
-    (await main('browsed')).some(u => /\/site\/account\.html\?code=one-time&upgrade=pro$/.test(u))
-  )),
-  'Subscribe opens the one-time signed-in website link (login-link, next=upgrade)'
-);
-
-// 5. Check again after paying → unlocked; menu offers Manage subscription.
-await main('set', { plan: 'pro' });
-lock().querySelector('[data-lock=check]').click();
-check(
-  !!(await until(() => !st().lock.locked && !lockShown())),
-  'Check again with an active subscription: unlocked'
-);
-document.querySelector('#tnaiUser [data-auth=menu]').click();
-await wait(80);
-check(
-  /Manage subscription/.test(
-    document.querySelector('#tnaiUser .tnai-user-menu')?.textContent || ''
-  ) && /^Pro/.test(document.querySelector('#tnaiUser [data-plan]')?.textContent || ''),
-  'paid: menu shows Pro + Manage subscription'
-);
+await shot('account-signin-menu');
 document.body.click();
 await wait(50);
 
-// 6. Sign out → locked; email sign-in; a pass signed with another key is never trusted.
+// 4. Plan none: nothing is refused.
+await main('set', { plan: 'none' });
+await A.check();
+check(st().plan?.plan === 'none', 'plan none: the pass says so');
+r = await tryStart();
+g = await capabilities();
+check(r.ok && allWork(g), 'plan none: a terminal panel starts and everything answers');
+await main('set', { plan: 'pro' });
+
+// 5. Sign out; email sign-in; a pass signed with another key is never trusted.
 let out = await A.signOut();
-check(
-  out?.status === 'signed-out' && out.revoked && st().lock.reason === 'signed-out' && lockShown(),
-  'sign out: server told, locked again'
-);
+check(out?.status === 'signed-out' && out.revoked && !st().signedIn, 'sign out: server told');
 check(!(await main('inspect')).file, 'sign out: account file removed');
 await main('set', { key: 'rogue', plan: 'pro' });
 res = await A.signInEmail({ email: 'bob@example.com', password: 'wrong' });
@@ -316,162 +221,103 @@ res = await A.signInEmail({
 });
 check(res?.status === 'signed-in' && st().signedIn, 'email + password + code: signed in');
 check(
-  st().lock.locked &&
-    st().lock.reason === 'unverified' &&
-    !st().plan &&
-    /couldn’t verify/.test(st().problem),
-  'pass signed with another key: ignored, still locked (' + st().lock.reason + ')'
+  !st().plan && /couldn’t verify/.test(st().problem),
+  'pass signed with another key: ignored (' + st().problem + ')'
 );
 r = await tryStart();
-check(!r.ok && r.error?.code === 'locked', 'bad signature: main refuses pty:start');
+check(r.ok, 'no valid pass: a terminal panel still starts');
 
-// 7. A pass that expires while offline → locked with the reconnect text (no timer polling: one
-// expiry timer).
+// 6. A pass that expires while offline is no longer current, by itself (one expiry timer, no
+// polling).
 await main('set', { key: 'good', plan: 'pro', expIn: 3 });
 await A.check();
-check(!st().lock.locked, 'short pass: unlocked while valid');
+check(st().plan?.current === true, 'short pass: current while valid');
 await main('set', { online: false });
-check(!!(await until(() => st().lock.locked, 9000)), 'pass reached its exp: locked by itself');
 check(
-  st().lock.reason === 'expired' && /Reconnect to check your subscription/.test(lock().textContent),
-  'expired: “Reconnect to check your subscription”'
+  !!(await until(() => st().plan && st().plan.current === false, 9000)),
+  'pass reached its exp: not current by itself'
 );
 await A.check();
-check(
-  st().lock.locked && /Offline/.test(st().problem) && /Reconnect/.test(lock().textContent),
-  'Check again while offline: still locked, says offline'
-);
-await shot('plan-lock-offline');
+check(/Offline/.test(st().problem), 'a check while offline says offline');
 await main('restart');
 await A.ready();
 check(
-  st().signedIn && st().lock.locked && st().lock.reason === 'expired',
-  'after a restart (read back from disk): still signed in, still locked'
+  st().signedIn && st().plan?.current === false,
+  'after a restart (read back from disk): still signed in, pass still not current'
 );
 
-// 7b. A clock that only moves forward: the high-water mark (max of now, pass iat, server time) is
+// 7. A clock that only moves forward: the high-water mark (max of now, pass iat, server time) is
 // kept encrypted with the pass.
 await main('set', { online: true, expIn: 7 * 86400, plan: 'pro', key: 'good', skewMs: 0 });
 await A.check();
 let hw = await main('highWater');
 check(
-  !st().lock.locked && Math.abs(hw - Date.now()) < 60e3,
-  'back online with Pro: unlocked, high-water mark ≈ now (' + (hw - Date.now()) + ' ms)'
-);
-await main('setHighWater', Date.now() + 2 * 3600e3);
-await A.ready();
-check(
-  st().lock.locked && st().lock.reason === 'clock' && /clock is behind/.test(lock().textContent),
-  'PC clock set back 2 h (below the high-water mark): locked with “clock” (' +
-    st().lock.reason +
-    ')'
-);
-r = await tryStart();
-check(!r.ok && r.error?.code === 'locked', 'clock set back: main refuses pty:start');
-await shot('plan-lock-clock');
-await main('restart');
-await A.ready();
-check(
-  st().lock.reason === 'clock',
-  'after a restart: the high-water mark was read back from disk, still “clock”'
-);
-await wait(1100);
-await A.check();
-hw = await main('highWater');
-check(
-  !st().lock.locked && Math.abs(hw - Date.now()) < 60e3,
-  'reconnect: a fresh pass restarts the high-water mark from the server time, unlocked'
+  st().plan?.current && Math.abs(hw - Date.now()) < 60e3,
+  'back online with Pro: current, high-water mark ≈ now (' + (hw - Date.now()) + ' ms)'
 );
 await main('set', { expIn: 300 });
 await wait(1100);
 await A.check();
-check(!st().lock.locked, '5-minute pass: unlocked');
+check(st().plan?.current, '5-minute pass: current');
 await main('setHighWater', Date.now() + 9 * 60e3);
 await A.ready();
 check(
-  st().lock.locked && st().lock.reason === 'expired',
-  'clock within 10 min of the high-water mark but the mark is past the pass exp: locked “expired” (' +
-    st().lock.reason +
-    ')'
+  st().plan?.current === false,
+  'the high-water mark past the pass exp: the pass is not current, whatever the PC clock says'
 );
-await main('set', { expIn: 7 * 86400, skewMs: 2 * 3600e3 });
+await main('restart');
+await A.ready();
+check(st().plan?.current === false, 'after a restart: the high-water mark was read back from disk');
+await main('set', { expIn: 7 * 86400 });
 await wait(1100);
 await A.check();
 hw = await main('highWater');
 check(
-  st().lock.locked && st().lock.reason === 'clock' && hw > Date.now() + 2 * 3600e3 - 60e3,
-  'server time (Date header + pass iat) 2 h ahead of the PC: locked with “clock” (' +
-    st().lock.reason +
-    ')'
+  st().plan?.current && Math.abs(hw - Date.now()) < 60e3,
+  'reconnect: a fresh pass restarts the high-water mark from the server time, current again'
+);
+await main('set', { skewMs: 2 * 3600e3 });
+await wait(1100);
+await A.check();
+hw = await main('highWater');
+check(
+  hw > Date.now() + 2 * 3600e3 - 60e3,
+  'server time (Date header + pass iat) 2 h ahead of the PC: the high-water mark follows it'
 );
 await main('set', { skewMs: 0 });
 await main('setHighWater', Date.now());
 await A.ready();
 
-// 7b. Server minimum app version (MIN_APP_VERSION): a build older than it locks at once, even with
-// a pass that hasn't run out.
+// 7b. Server minimum app version (MIN_APP_VERSION): the account names an update as required;
+// nothing is refused.
 await main('set', { minVersion: '' });
 await A.check();
 const sentV = await main('lastVersion');
 check(
-  !st().lock.locked && sentV.sent && sentV.sent === sentV.app,
-  'the app sends its version (X-TNAI-Version ' + sentV.sent + ') and is unlocked'
+  sentV.sent && sentV.sent === sentV.app,
+  'the app sends its version (X-TNAI-Version ' + sentV.sent + ')'
 );
 await main('set', { minVersion: '99.0.0' });
 await A.check();
 check(
-  st().lock.locked &&
-    st().lock.reason === 'update-required' &&
-    /no longer supported/.test(lock()?.textContent || '') &&
-    /Update Technically Not/.test(lock()?.textContent || ''),
-  'server floor above this build: locked “update-required” with a valid pass (' +
-    st().lock.reason +
-    ')'
+  /no longer supported/.test(st().problem),
+  'server floor above this build: the account says an update is needed (' + st().problem + ')'
 );
 r = await tryStart();
-check(!r.ok, 'update required: a terminal panel is refused in main');
+check(r.ok, 'update required: a terminal panel still starts');
 await main('set', { minVersion: '' });
 await A.check();
-check(!st().lock.locked, 'floor lowered again: the next check unlocks');
+check(!/no longer supported/.test(st().problem), 'floor lowered again: the message goes');
 
-// 8. Back online; developer unlock; flag off never locks.
-await main('set', { online: true, expIn: 7 * 86400, plan: 'none' });
-await A.check();
-check(st().lock.reason === 'no-plan', 'online again, plan none: locked');
-await main('devUnlock', true);
-await A.ready();
-check(
-  !st().lock.locked && st().lock.devUnlock && !lockShown(),
-  'TNAI_DEV_UNLOCK=1 (from source): not locked'
-);
-await main('enforce', false);
+// 8. A release build ignores every developer override.
 const rel = await main('releaseSnapshot');
 check(
-  !rel.devUnlock &&
-    !rel.lockDevUnlock &&
-    !rel.testKey &&
-    !rel.insecureOk &&
-    rel.apiUrl === rel.pkgUrl &&
-    rel.off === (rel.pkgUrl === '') &&
-    rel.enforce === rel.pkgEnforce,
-  'release flag (build-info.json) while not packaged: TNAI_DEV_UNLOCK, TNAI_ENFORCE_PLAN=0, TNAI_ACCOUNTS_URL, TNAI_PASS_TEST_KEY and test endpoints ignored (' +
+  !rel.testKey && !rel.insecureOk && rel.apiUrl === rel.pkgUrl && rel.off === (rel.pkgUrl === ''),
+  'release flag (build-info.json) while not packaged: TNAI_ACCOUNTS_URL, TNAI_PASS_TEST_KEY and test endpoints ignored (' +
     JSON.stringify(rel) +
     ')'
 );
-await main('enforce', true);
-await A.ready();
-check(
-  !st().lock.locked && st().lock.devUnlock,
-  'back to a copy from source: developer unlock works again'
-);
-await main('devUnlock', false);
-await main('enforce', false);
-await A.ready();
-check(!st().lock.locked && !lockShown(), 'flag off: plan none is not locked');
-r = await tryStart();
-check(r.ok, 'flag off: a terminal panel starts with plan none');
 await A.signOut();
-check(!st().lock.locked, 'flag off: signed out is not locked');
 
 // 9. Sign in with GitHub: denied, linked by a verified primary email, no verified email (own
 // account + notice), GitHub unreachable, not configured.
@@ -487,7 +333,7 @@ check(
       getComputedStyle(dialog().querySelector('[data-provider=google]')).borderTopColor,
   'dialog: Continue with GitHub, enabled, same button style as Google'
 );
-await shot('plan-lock-github-button');
+await shot('account-signin-github-button');
 await main('githubPlan', { action: 'ignore' });
 let gh = A.signIn('github');
 check(
@@ -528,8 +374,7 @@ check(
   res?.status === 'signed-in' &&
     st().signedIn &&
     st().user.email === 'bob@example.com' &&
-    st().user.providers.join() === 'password,github' &&
-    !st().lock.locked,
+    st().user.providers.join() === 'password,github',
   'GitHub approved: signed in, joined to the email account by the verified primary email (' +
     JSON.stringify(st().user) +
     ')'
@@ -649,7 +494,7 @@ check(
   !/dt-/.test(JSON.stringify(st()) + dialog().innerHTML),
   'the one-time ticket never reaches the renderer'
 );
-await shot('plan-lock-device-limit');
+await shot('account-signin-device-limit');
 dialog().querySelector('[data-auth-act=back]').click();
 await wait(80);
 check(
@@ -734,7 +579,7 @@ check(
     JSON.stringify(res?.status || res?.error) +
     ')'
 );
-await shot('plan-lock-totp-step');
+await shot('account-signin-totp-step');
 codeForm().code.value = '000000';
 codeForm().requestSubmit();
 check(
@@ -770,8 +615,8 @@ check(!!(await until(() => st().signedIn)), 'a recovery code signs in too');
 await A.signOut();
 
 // The run stayed quiet: every sign-in above made the app ask for the keyboard, and none of it
-// reached Windows; the pop-out of step 3 was made hidden (quiet-window.js, set up in
-// plan-lock.main.js).
+// reached Windows; the pop-outs of steps 1 and 4 were made hidden (quiet-window.js, set up in
+// account-signin.main.js).
 const quiet = await main('quiet');
 check(
   quiet.asked.focus > 0 && !quiet.active && !quiet.focusable && !quiet.onMain,

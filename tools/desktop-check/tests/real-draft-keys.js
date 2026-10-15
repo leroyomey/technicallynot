@@ -14,12 +14,16 @@ let ok = true;
 const G = window.TnaiAgents,
   N = window.tnaiNative;
 
-// The panel's own terminal is the screen (a replay of saved output into a scratch terminal drew
+// The thread's CLI screen is the screen (a replay of saved output into a scratch terminal drew
 // Claude Code's input box wrong in the first run: its redraws are relative to where the cursor
-// was). dispose is a no-op here: the view stays.
+// was). The terminal panels underneath are never drawn since 2026-10-13, so the thread is opened
+// on its CLI screen. dispose is a no-op here: the view stays.
 async function vtOf(paneId) {
-  const term = G.views().find(v => v.paneId === paneId && v.where === 'Terminal page panel')?.term;
-  if (!term) return null;
+  const view = window.TnaiThreadView;
+  if (view.shown() !== paneId) window.TnaiThreads.show(paneId);
+  if (view.mode() !== 'term') view.setMode('term');
+  const term = view.term();
+  if (!term || term.tnaiPaneId !== paneId) return null;
   await new Promise(done => term.write('', done)); // everything received so far is parsed
   return { buffer: term.buffer, rows: term.rows, cols: term.cols, dispose() {} };
 }

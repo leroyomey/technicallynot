@@ -120,8 +120,7 @@ try {
         'top bar chip after the telemetry chips shows the clicked Claude Code agent: ' +
           (c?.textContent || 'none')
       );
-      console.log('TNAI_SHOT:plan-limits-chip');
-      await wait(500);
+      await (window.TnaiTest?.shot?.('plan-limits-chip') ?? wait(500));
       c = await pick('chip-codex');
       if (window.TnaiPlanLimits.get('Codex', '')?.windows?.length)
         check(
@@ -174,12 +173,12 @@ try {
   );
   window.TnaiTheme?.set('light');
   await wait(400);
-  console.log('TNAI_SHOT:plan-limits-light');
-  await wait(1500); // capture is async: give it time before the theme switch
+
+  // capture is async: give it time before the theme switch
+  await (window.TnaiTest?.shot?.('plan-limits-light') ?? wait(1500));
   window.TnaiTheme?.set('dark');
   await wait(400);
-  console.log('TNAI_SHOT:plan-limits-dark');
-  await wait(450);
+  await (window.TnaiTest?.shot?.('plan-limits-dark') ?? wait(450));
   window.TnaiTheme?.set('light');
 } catch (err) {
   check(false, 'threw: ' + (err?.stack || err));

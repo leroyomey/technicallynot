@@ -40,8 +40,7 @@ const main = (cmd, ...args) =>
   });
 const shot = async name => {
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  console.log('TNAI_SHOT:' + name);
-  await wait(600);
+  await (window.TnaiTest?.shot?.(name) ?? wait(600));
 };
 
 const threads = window.TnaiThreads,

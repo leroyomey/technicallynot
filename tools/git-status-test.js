@@ -33,13 +33,14 @@ async function run() {
   git('add', 'a.txt');
   git('commit', '-q', '-m', 'first');
 
-  // Count the git runs the service starts (before it is loaded: it takes execFile then).
-  const childProcess = require('child_process');
-  const realExecFile = childProcess.execFile;
+  // Count the git runs the service starts: every git start goes through process-starter.js (a
+  // worker thread since 2026-10-14), so the count is taken there.
+  const processStarter = require('../desktop/process-starter.js');
+  const realStart = processStarter.start;
   let runs = 0;
-  childProcess.execFile = function (...args) {
+  processStarter.start = function (...args) {
     if (Array.isArray(args[1]) && args[1].includes('status')) runs++;
-    return realExecFile.apply(this, args);
+    return realStart.apply(this, args);
   };
 
   const service = require('../desktop/git-service.js');
@@ -81,7 +82,7 @@ async function run() {
       { runs, files: afterCommit.value?.files }
     );
   } finally {
-    childProcess.execFile = realExecFile;
+    processStarter.start = realStart;
     service.stop();
     fs.rmSync(repo, { recursive: true, force: true });
   }

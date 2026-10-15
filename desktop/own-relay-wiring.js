@@ -48,7 +48,7 @@ function createOwnRelayWiring({ ownRelay, userAuth, remote }) {
       throw { status: 0, code: e?.code || 'network' };
     }
 
-    // signed out or the plan is locked: tried again when the account changes
+    // signed out: tried again when the account changes
     if (!r) throw { status: 401, code: 'signed_out' };
     if (!r.ok || typeof r.body?.ticket !== 'string')
       throw { status: r.status, code: r.body?.error || 'refused' };
@@ -58,7 +58,7 @@ function createOwnRelayWiring({ ownRelay, userAuth, remote }) {
   // The devices that can be paired with: the ones on the user's relay, or the account's.
   const devices = async () => {
     if (onOwnRelay()) return ownRelay.devices(selfId());
-    const r = await userAuth.accountCall('GET', '/me/devices', undefined, { allowLocked: true });
+    const r = await userAuth.accountCall('GET', '/me/devices');
     return r?.ok && Array.isArray(r.body?.devices) ? r.body.devices : [];
   };
 
@@ -135,7 +135,20 @@ function createOwnRelayWiring({ ownRelay, userAuth, remote }) {
     return r.ok ? { ok: true, ...changed() } : r;
   }
 
-  return { selfId, who, url, getTicket, devices, freeIds, get, set, clear };
+  // Remove an unpaired computer from the user's own relay (Remove on its card). A paired one is
+  // refused: Forget is its way out, which also tells that computer. The list is read again after,
+  // so the page shows what the relay now holds.
+  async function forgetDevice(id) {
+    if (!ownRelay.active()) return { ok: false, error: 'no_relay' };
+    const service = remote();
+    if ((service.state().computers || []).some(c => c.id === id))
+      return { ok: false, error: 'paired' };
+    const r = await ownRelay.forget(selfId(), id);
+    if (!r.ok) return r;
+    return { ok: true, state: await service.refresh() };
+  }
+
+  return { selfId, who, url, getTicket, devices, freeIds, get, set, clear, forgetDevice };
 }
 
 module.exports = { createOwnRelayWiring };

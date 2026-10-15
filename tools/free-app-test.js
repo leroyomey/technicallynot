@@ -104,8 +104,6 @@ global.fetch = async url => {
 // A copy run from source listens to these; the test must see what package.json alone gives.
 for (const name of [
   'TNAI_ACCOUNTS_URL',
-  'TNAI_ENFORCE_PLAN',
-  'TNAI_DEV_UNLOCK',
   'TNAI_SELFTEST',
   'TNAI_GOOGLE_CLIENT_ID',
   'GOOGLE_CLIENT_ID',
@@ -148,8 +146,6 @@ async function topBarControl(authState) {
     state: async () => ({ ok: true, value: authState }),
     onChange: () => {},
     onNotice: () => {},
-    onLapse: () => {},
-    onRefused: () => {},
   };
   const window = {
     tnaiNative: auth ? { auth } : undefined,
@@ -190,7 +186,6 @@ const PAGE_STATE = {
   signedIn: false,
   user: null,
   plan: null,
-  lock: { enforced: false, locked: false },
   checking: false,
   problem: '',
   flow: null,
@@ -199,10 +194,10 @@ const PAGE_STATE = {
 // ---------- The checks ----------
 
 async function run() {
-  // 1. The setting, and that nothing locks.
+  // 1. The setting, and that there is no plan lock.
   const pkg = JSON.parse(read('package.json'));
   check('package.json names no accounts server', pkg.tnaiAccountsUrl === '', pkg.tnaiAccountsUrl);
-  check('package.json does not enforce a plan', pkg.tnaiEnforcePlan === false, pkg.tnaiEnforcePlan);
+  check('package.json has no plan-lock setting', !('tnaiEnforcePlan' in pkg));
 
   const userAuth = require('../desktop/user-auth.js');
   const sent = [];
@@ -216,13 +211,10 @@ async function run() {
   const state = userAuth.publicState();
   check('the desktop process says accounts are off', state.off === true, state.off);
   check('nobody is signed in', state.signedIn === false && state.user === null, state.user);
-  check('nothing locks', state.lock.locked === false && state.lock.enforced === false, state.lock);
-  check('a new panel may start', userAuth.gate().ok === true, userAuth.gate());
-  check('every bridge call is let through', userAuth.gateCached().ok === true);
+  check('the account has no lock', !('lock' in state) && !('gate' in userAuth), Object.keys(state));
 
   // 2. No call leaves for an accounts server.
   check('there is no accounts server address', userAuth.apiBase() === '', userAuth.apiBase());
-  check('there is no app token', userAuth.appToken() === null);
   check(
     'a call for another module is not sent',
     (await userAuth.accountCall('POST', '/remote/ticket')) === null

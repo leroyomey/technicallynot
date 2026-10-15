@@ -15,7 +15,7 @@
  * the request that mark belongs to, else false, remoteStarted(panelId), remoteOpen() → how many
  * such panels this computer's user has not closed yet } turns { busy(panelId), stopped(panelId) →
  * 'reply' | 'restored' | '' } attention { blocker, hasDraft, remotePasted, unsent } submit
- * prompt-submit.js `submit` locked() → truthy while the plan lock holds abort(panelId) → Promise<{
+ * prompt-submit.js `submit` abort(panelId) → Promise<{
  * ok }> (OpenCode) panelKey(panelId) → Promise<the project key of the folder that panel's process
  * runs in, '' when it has none> folderKey(folder) → Promise<the project key of a folder>
  * parentsOf(nodeId) → the panel ids a sub-agent's node hangs under wait(ms) → Promise (the clock a
@@ -92,7 +92,6 @@ function createRemoteActions({
   turns,
   attention,
   submit,
-  locked,
   abort,
   panelKey,
   questions = () => [],
@@ -102,15 +101,6 @@ function createRemoteActions({
   parentsOf = () => [],
   wait = ms => new Promise(resolve => setTimeout(resolve, ms)),
 }) {
-  // A lock that cannot be asked is a lock.
-  const isLocked = () => {
-    try {
-      return !!locked();
-    } catch {
-      return true;
-    }
-  };
-
   // What a panel runs at this moment, asked from the terminal service and the roster and never from
   // the kept agent list (change 3). remote-control.js gives a ticket, and takes an operation, only
   // when this says a running agent the app itself started in run mode, not a CLI typed by hand into
@@ -147,7 +137,7 @@ function createRemoteActions({
       .trim() || 'another computer') +
     '] ';
 
-  // A prompt from another computer (operation 1). The plan lock first (change 16), then the guarded
+  // A prompt from another computer (operation 1). The guarded
   // delivery of prompt-submit.js, which holds it on this computer while anything is in its way and
   // asks the guard again at every write (changes 2 and 4). `paste: true` is a literal and no
   // `agent` option is passed: the CLI is the one this computer's own terminal service says the
@@ -155,8 +145,7 @@ function createRemoteActions({
   // tail: '' or this computer's own " [Attached image: <path>]" words for files that came with the
   // prompt and were saved here.
   async function prompt({ key, panelId, text, from, guard, done, tail }) {
-    if (isLocked()) return 'refused';
-    const allowed = () => !isLocked() && guard() === true;
+    const allowed = () => guard() === true;
     const r = await submit(String(panelId), String(text), {
       paste: true,
       remote: {
@@ -180,8 +169,8 @@ function createRemoteActions({
   // agent's text goes in. wrote(out): called in the turn of the write with exactly what is written
   // (remote-say.js ties the turn it starts to it).
   async function say({ key, panelId, text, from, mark, tail, guard, done, wrote }) {
-    if (isLocked() || typeof mark !== 'string' || !mark.startsWith('[from ')) return 'refused';
-    const allowed = () => !isLocked() && guard() === true;
+    if (typeof mark !== 'string' || !mark.startsWith('[from ')) return 'refused';
+    const allowed = () => guard() === true;
     const r = await submit(String(panelId), String(text), {
       paste: true,
       remote: {
@@ -216,7 +205,7 @@ function createRemoteActions({
   // ever typed behind text that may be there.
   async function interrupt(panelId, guard) {
     const a = agentNow(panelId);
-    if (isLocked() || !a || guard() !== true) return 'refused';
+    if (!a || guard() !== true) return 'refused';
     if (attention.blocker(panelId) || attention.hasDraft(panelId) || !turns.busy(panelId))
       return 'refused';
     if (mesh.interruptLeft(panelId) > 0) return 'refused';
@@ -257,7 +246,7 @@ function createRemoteActions({
   // compares the ticket), so a PowerShell panel, a sign-in run or another process that took the
   // panel since is never stopped from another computer (change 3).
   function stop(panelId, guard) {
-    if (isLocked() || !appStarted(agentNow(panelId)) || guard() !== true) return 'refused';
+    if (!appStarted(agentNow(panelId)) || guard() !== true) return 'refused';
     return ptys.stop(panelId) === true ? 'done' : 'failed';
   }
 
@@ -364,7 +353,7 @@ function createRemoteActions({
   // minutes, and the switch, the pairing or the open project can change meanwhile. A no starts
   // nothing. remote: what startOptions gave for a marked start.
   async function mayStart(remote, folder) {
-    if (isLocked() || !remote || typeof remote.guard !== 'function') return false;
+    if (!remote || typeof remote.guard !== 'function') return false;
     let key = '';
     try {
       key = await folderKey(folder);
@@ -372,7 +361,7 @@ function createRemoteActions({
       /* no key: the guard says no */
     }
     try {
-      return !isLocked() && remote.guard(key) === true;
+      return remote.guard(key) === true;
     } catch {
       return false;
     }
@@ -388,16 +377,16 @@ function createRemoteActions({
   // yet allowed in is asked about on this computer first, and nobody else can answer that). After
   // it: the panel the window names must be the very one that started under this request's mark,
   // else whatever opened is stopped.
-  // 2. the opened panel's own project key is read. After it: the plan lock, that the panel runs an
+  // 2. the opened panel's own project key is read. After it: that the panel runs an
   // agent the app started, and the guard with that key (the right, the pairing, the session, the
   // project the message named), else the panel is stopped.
   // 3. the first prompt goes in through the guarded delivery, after the new agent's own start
-  // questions were answered here (it is held while one is open). The same three are asked in the
+  // questions were answered here (it is held while one is open). The same two are asked in the
   // turn of every write of it. Not taken: the panel is stopped. From the message only the CLI's
   // name from the fixed list and the text reach this; no model, effort, name or folder is passed
   // on.
   async function start({ cli, text, from, guard }) {
-    if (isLocked() || typeof guard !== 'function') return 'refused';
+    if (typeof guard !== 'function') return 'refused';
     if (!STARTABLE.includes(cli)) return 'refused';
     let r = null;
     try {
@@ -439,7 +428,7 @@ function createRemoteActions({
     }
     const allowed = () => {
       try {
-        return !isLocked() && appStarted(agentNow(panelId)) && guard(key) === true;
+        return appStarted(agentNow(panelId)) && guard(key) === true;
       } catch {
         return false;
       }
@@ -476,7 +465,7 @@ function createRemoteActions({
 
   async function chooseAnswer({ panelId, ask, label, pick, guard }) {
     const a = agentNow(panelId);
-    if (isLocked() || !a || a.cli !== 'OpenCode' || guard() !== true) return 'refused';
+    if (!a || a.cli !== 'OpenCode' || guard() !== true) return 'refused';
     let open = [];
     try {
       open = questions() || [];

@@ -34,8 +34,7 @@ const frame = () =>
   ]);
 const shot = async name => {
   await frame();
-  console.log('TNAI_SHOT:' + name);
-  await wait(600);
+  await (window.TnaiTest?.shot?.(name) ?? wait(600));
 };
 const layout = document.querySelector('.layout'),
   bar = document.querySelector('.top'),

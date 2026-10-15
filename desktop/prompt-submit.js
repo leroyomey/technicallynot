@@ -221,10 +221,26 @@ async function submit(
     } catch {
       /* a listener's error is not the prompt's */
     }
+    const pastedAt = Date.now();
     write(paneId, paste ? '\x1b[200~' + body + '\x1b[201~' : body);
     await sleep(enterDelay(cli, body));
     if (!same())
       return { ok: false, state: 'gone', error: 'The agent in that thread stopped before Enter.' };
+
+    // Someone typed into this panel between the paste and our Enter: those keys now sit in the
+    // input with the message, and Enter would send them along. An agent's or the app's message
+    // then waits in the input unsent, the user decides. The user's own prompt is pressed as
+    // before.
+    if (person !== true && (typedAt.get(paneId) || 0) >= pastedAt) {
+      did.stop = 'typed';
+      attention?.unsent(paneId, body);
+      return {
+        ok: false,
+        state: 'not-submitted',
+        error:
+          'Someone typed in that thread while the text went in, so Enter was not pressed: the text waits in its input.',
+      };
+    }
     const canConfirm = turns.canConfirm(paneId, cli) && paste;
     const waiting = canConfirm ? confirmed(paneId, CONFIRM_MS) : null;
     const enterAt = Date.now();

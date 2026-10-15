@@ -309,11 +309,16 @@ function relPath(file, root) {
   return /^[a-z]:\//i.test(f) || f.startsWith('/') || f.includes('../') ? '' : f;
 }
 
+// PATH_RE backtracks over a whole unbroken run of path characters, so its cost grows with the
+// square of the run's length (8,000 characters took about 90 ms). A real path is far shorter than
+// PATH_RUN_MAX, so a longer run (base64, a minified line) is blanked before matching.
+const PATH_RUN_MAX = 400;
+const LONG_PATH_RUN = new RegExp('[\\w.@:\\\\/-]{' + (PATH_RUN_MAX + 1) + ',}', 'g');
+
 function mentionedFiles(text, root) {
+  const searchable = String(text || '').replace(LONG_PATH_RUN, ' ');
   return [
-    ...new Set(
-      (String(text || '').match(PATH_RE) || []).map(f => relPath(f, root)).filter(Boolean)
-    ),
+    ...new Set((searchable.match(PATH_RE) || []).map(f => relPath(f, root)).filter(Boolean)),
   ].slice(0, 30);
 }
 

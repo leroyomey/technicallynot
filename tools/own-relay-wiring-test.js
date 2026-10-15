@@ -89,7 +89,7 @@ function world() {
   };
 
   // the several-computers service: the account it stored pairings under, and how many
-  const stored = { account: '', pairings: 0, wipes: 0 };
+  const stored = { account: '', pairings: 0, wipes: 0, pairedIds: [] };
   const remote = {
     // with this computer's id and the relay's address as they are at that moment
     relayGoing() {
@@ -113,7 +113,15 @@ function world() {
     },
     state() {
       calls.push(['state']);
-      return { on: true, marker: 'state-of-the-service' };
+      return {
+        on: true,
+        marker: 'state-of-the-service',
+        computers: stored.pairedIds.map(id => ({ id })),
+      };
+    },
+    async refresh() {
+      calls.push(['refresh']);
+      return { self: {}, marker: 'refreshed' };
     },
   };
   const wiring = createOwnRelayWiring({ ownRelay, userAuth, remote: () => remote });
@@ -179,9 +187,9 @@ async function outcome(promise) {
     w.account.reply = () => ({ ok: true, body: { devices: [{ id: 'd1', name: 'Laptop' }] } });
     const devices = await w.wiring.devices();
     check(
-      "no relay: the device list is the account's, asked so that it also works behind the lock",
+      "no relay: the device list is the account's",
       same(devices, [{ id: 'd1', name: 'Laptop' }]) &&
-        same(w.calls, [['accountCall', 'GET', '/me/devices', undefined, { allowLocked: true }]]),
+        same(w.calls, [['accountCall', 'GET', '/me/devices']]),
       w.calls
     );
     w.account.reply = () => ({ ok: false, body: { devices: [{ id: 'd1' }] } });
@@ -903,34 +911,15 @@ async function outcome(promise) {
     );
   }
 
-  // ---- the plan lock and an own relay ----
-  // The lock is off in the public app (package.json tnaiEnforcePlan false), so none of this is
-  // met there. In a build where it is on, this holds:
-  // reading which relay is set and removing it always work (ending a
-  // connection never needs a plan), setting one is refused with the rest of the app, and an own
-  // relay asks no plan for a ticket. These checks keep those three as they are.
+  // ---- an own relay never asks the account ----
   {
-    const fs = require('fs');
-    const path = require('path');
-    const mainText = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'main.js'), 'utf8');
-    const lockFreeList = (/const LOCK_FREE = new Set\(\[([\s\S]*?)\]\)/.exec(mainText) || [])[1];
-    const lockFree = channel => new RegExp("'" + channel + "'").test(lockFreeList || '');
-    check(
-      'lock: reading the relay and removing it work behind the lock',
-      lockFree('remote:ownRelay') && lockFree('remote:clearOwnRelay')
-    );
-    check('lock: setting a relay does not', !!lockFreeList && !lockFree('remote:setOwnRelay'));
-    check(
-      'lock: the public app does not enforce a plan',
-      require('../package.json').tnaiEnforcePlan === false
-    );
     const w = world();
     w.wiring.set(RELAY, SECRET, false);
     w.calls.length = 0;
     w.account.reply = () => null;
     const ticket = await w.wiring.getTicket();
     check(
-      'lock: an own relay gives its ticket whatever the account says, and the account is not asked',
+      'an own relay gives its ticket whatever the account says, and the account is not asked',
       ticket === 'ticket-from-own-relay' && w.calls.every(c => c[0] !== 'accountCall'),
       w.calls
     );
@@ -1036,6 +1025,39 @@ async function outcome(promise) {
       "check: a bad address and a bad secret give set()'s errors",
       same(w.ownRelay.check('http://example.com', SECRET), { ok: false, error: 'bad_url' }) &&
         same(w.ownRelay.check(RELAY, 'a'.repeat(40)), { ok: false, error: 'bad_secret' })
+    );
+  }
+
+  // ---- Remove an unpaired computer from the own relay ----
+  {
+    const w = world();
+    check(
+      'forgetDevice: no relay set, nothing is asked',
+      same(await w.wiring.forgetDevice('relay-device-0002'), { ok: false, error: 'no_relay' }) &&
+        !w.calls.some(c => c[0] === 'fetch')
+    );
+    w.wiring.set(RELAY, SECRET, true);
+    w.stored.pairedIds = ['relay-device-0009'];
+    const from = w.calls.length;
+    check(
+      'forgetDevice: a paired computer is refused and the relay is not asked',
+      same(await w.wiring.forgetDevice('relay-device-0009'), { ok: false, error: 'paired' }) &&
+        !w.calls.slice(from).some(c => c[0] === 'fetch')
+    );
+    const r = await w.wiring.forgetDevice('relay-device-0002');
+    const asked = w.calls.slice(from).find(c => c[0] === 'fetch');
+    check(
+      "forgetDevice: the relay is asked to remove that device, under this computer's id",
+      asked &&
+        asked[1] === 'POST' &&
+        asked[2].endsWith('/remote/forget?d=relay-device-0002') &&
+        asked[3] === w.wiring.selfId(),
+      asked
+    );
+    check(
+      'forgetDevice: then the list is read again and handed back',
+      r.ok === true && r.state?.marker === 'refreshed' && w.calls.some(c => c[0] === 'refresh'),
+      r
     );
   }
 

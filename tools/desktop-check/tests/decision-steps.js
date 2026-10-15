@@ -1,10 +1,10 @@
 /*
  * Technically Not tools · desktop-check/tests/decision-steps.js — A report with several "- Decide:"
  * lines (real context store, fed by decision-steps.main.js on a real PowerShell thread; the send to
- * the agent is stood in, nothing is typed into it): every decision is kept, the one decision row on
- * the agent's card and the one section on the next-steps card step through them in order without
- * changing size, the answers go to the agent as one message that names each decision, and each
- * decision is marked answered on its own. Returns {ok, log}.
+ * the agent is stood in, nothing is typed into it): every decision is kept, the waiting decision
+ * (51 `deciding`) and the one section on the next-steps card step through them in order, the
+ * section without changing size, the answers go to the agent as one message that names each
+ * decision, and each decision is marked answered on its own. Returns {ok, log}.
  */
 const log = [],
   wait = ms => new Promise(r => setTimeout(r, ms));
@@ -57,9 +57,15 @@ try {
     return true;
   };
   window.TnaiThreads.open();
-  const card = await until(() => document.querySelector('.tnai-card[data-pane="' + paneId + '"]'));
 
-  // 1. Both decisions are kept; the card's one row shows the first.
+  // The old Overview and its agent cards are deleted, and with them the card's one decision row
+  // that stepped from Decision 1 to Decision 2 (its look and its buttons are no longer checked).
+  // The flow behind that row is the app's own (49 `decide`, 51 `deciding`), and the visible
+  // next-steps card in part 4 steps the same way; here it is driven the way the row's buttons
+  // drove it (`TnaiContext.decide(id, option, 'send')`). The thread's own buttons (.tnt-decide in
+  // the Readable view) are checked by thread-readable.
+
+  // 1. Both decisions are kept; the first is the one waiting.
   await main('finish', paneId, 'Elm', '[TN.ai] Pick a store', REPORT('Which store?'));
   const e1 = await until(() =>
     C.entries().find(
@@ -79,33 +85,6 @@ try {
     d1?.id === e1?.id + '#0' && /Decision 1 of 2/.test(d1?.question || ''),
     'the waiting decision is the first: ' + d1?.id + ' "' + d1?.question + '"'
   );
-  A.repaint();
-  const box = card.querySelector('.tnai-card-decide'),
-    q = () => box.querySelector('.c-decide').textContent,
-    opts = () => [...box.querySelectorAll('[data-act="decide"]')];
-  check(
-    !!(await until(
-      () => !box.hidden && /Decision 1 of 2: Which store\?/.test(q()) && opts().length === 2
-    )),
-    'card row: Decision 1 with its two options ("' + q() + '")'
-  );
-
-  // The old Overview's "waiting on you" list (.pgo-ask) is deleted. The agent's card keeps the
-  // same decision row, so the stepping is read there; the thread's own buttons (.tnt-decide in the
-  // Readable view) are checked by thread-readable.
-  const asks = () => (box.hidden ? [] : [box]),
-    ask = () => asks()[0],
-    askQ = () => q(),
-    askOpts = () => opts();
-  check(
-    !!(await until(
-      () =>
-        asks().length === 1 &&
-        /Decision 1 of 2: Which store\?/.test(askQ()) &&
-        askOpts().length === 2
-    )),
-    'card row: one row for this agent, Decision 1 with its two options ("' + askQ() + '")'
-  );
   const sum = C.summaryFor(paneId, e1.startedAt),
     perResult = !!sum && !('brief' in sum.dataset),
     sumRows = sum?.querySelectorAll?.('.s-row[data-k="choices"]').length;
@@ -116,18 +95,15 @@ try {
       : 'Result summary: not visited (it shows the standing brief here, not this result)'
   );
 
-  // 2. Answering the first sends nothing yet and the same row moves on to the second, same size.
-  askOpts()[0].click();
+  // 2. Answering the first sends nothing yet and the waiting decision moves on to the second.
+  // Options are in the report's order with the recommended one first: Memory, Disk.
+  C.decide(d1.id, 0, 'send');
+  const d2 = await until(() =>
+    N.deciding(paneId)?.id === e1.id + '#1' ? N.deciding(paneId) : null
+  );
   check(
-    !!(await until(
-      () =>
-        /Decision 2 of 2: Ship it today\?/.test(askQ()) &&
-        askOpts().length === 2 &&
-        askOpts()[0].textContent.startsWith('Yes') &&
-        /Decision 2 of 2/.test(q()) &&
-        opts().length === 2
-    )),
-    'after the first answer the same row shows Decision 2 ("' + askQ() + '")'
+    !!d2 && /Decision 2 of 2: Ship it today\?/.test(d2.question || ''),
+    'after the first answer the waiting decision is Decision 2 ("' + (d2?.question || '') + '")'
   );
   const m2 = await marksNow();
   check(
@@ -136,18 +112,12 @@ try {
       sent.length +
       ')'
   );
-
-  // (The row's equal height was the old visible Overview row's; the agent's card is hidden, so its
-  // height is 0. The next-steps card below keeps the equal-height check on a visible section.)
-  check(
-    asks().length === 1 && N.deciding(paneId)?.id === e1.id + '#1',
-    'still one row, now for ' + N.deciding(paneId)?.id
-  );
   console.log('TNAI_SHOT:decision-steps-second');
   await wait(600);
 
   // 3. The last answer sends one message naming both decisions and marks each answered.
-  askOpts()[1].click();
+  // Decision 2's options: Yes (recommended), No.
+  C.decide(e1.id + '#1', 1, 'send');
   check(!!(await until(() => sent.length === 1)), 'the last answer sends one message');
   const text = sent[0]?.[1] || '';
   check(
@@ -167,13 +137,10 @@ try {
     );
   });
   check(!!m3, 'both decisions are marked answered, each on its own key');
-  check(
-    !!(await until(() => box.hidden && !asks().length && !N.deciding(paneId))),
-    'the row goes away once all are answered'
-  );
-  opts()[0]?.click();
+  check(!!(await until(() => !N.deciding(paneId))), 'no decision waits once all are answered');
+  C.decide(e1.id + '#0', 0, 'send');
   await wait(150);
-  check(sent.length === 1, 'a late second click sends nothing more');
+  check(sent.length === 1, 'a late second answer sends nothing more');
 
   // 4. The next-steps card: one decision section that steps the same way, and the own-words reply
   // names its decision too.

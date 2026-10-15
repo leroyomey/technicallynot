@@ -48,6 +48,7 @@ const G = window.TnaiAgents;
 const go = async view => {
   // what the three-dots menu's rows call ('overview' is the Threads page, 'terminal' All threads)
   if (view === 'overview') window.TnaiThreads.open();
+  else if (view === 'terminal') await window.TnaiTest.openAllThreads();
   else window.TnaiRoute(view);
   await wait(400);
 };

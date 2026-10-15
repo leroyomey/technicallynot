@@ -30,11 +30,6 @@ app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 // Fresh profile each run, with a connected project folder seeded on disk.
 app.setPath('userData', path.join(profile, 'user-data'));
 
-// package.json turns the plan lock on, and a throwaway profile is signed out: self-tests run with
-// the lock off (a dev-copy override) unless the caller set it; plan-lock turns it on and off
-// itself.
-if (process.env.TNAI_ENFORCE_PLAN === undefined) process.env.TNAI_ENFORCE_PLAN = '0';
-
 // A test never writes into the user's real Codex home or ~/.agents/skills, whichever launcher
 // started it (check.ps1 sets neither): Codex's profile file (agent-registry.js codexProfile) and
 // the skill copies (skill-service.js syncHomeSkills) go into this run's profile. Learned
@@ -74,6 +69,63 @@ fs.writeFileSync(
   path.join(app.getPath('userData'), 'project-folder.json'),
   JSON.stringify({ root: project })
 );
+
+// Every terminal this run starts, so the way out can end each one and wait for its exit. A test
+// app used to leave with terminals still open: node-pty's exit-wait thread then woke during the
+// process teardown and failed its own assert (conpty.cc line 106, remove_pty_baton), which opens a
+// "Microsoft Visual C++ Runtime Library · Assertion failed" box on the user's screen, or the app
+// crashed after RESULT: PASS.
+const openTerminals = new Set();
+let startedTerminals = 0,
+  terminalWatchError = '';
+try {
+  const nodePty = require(
+    require.resolve('node-pty', {
+      paths: [path.resolve(__dirname, '..', '..', 'desktop')],
+    })
+  );
+  const spawnTerminal = nodePty.spawn;
+  nodePty.spawn = (...args) => {
+    const proc = spawnTerminal(...args);
+    const entry = { proc };
+    entry.exited = new Promise(resolve => {
+      proc.onExit(() => {
+        openTerminals.delete(entry);
+        resolve();
+      });
+    });
+    openTerminals.add(entry);
+    startedTerminals++;
+    return proc;
+  };
+} catch (error) {
+  terminalWatchError = error.message;
+}
+
+// Ends every terminal the app still has (one at a time, as the app closes panels) and waits until
+// each has exited, at most `limitMs`; a terminal still open then is killed directly and waited for
+// briefly. Answers how many were still open at the start and how many never exited.
+async function endTerminals(limitMs) {
+  const before = openTerminals.size;
+  if (!before) return { before, left: 0 };
+  try {
+    const ptys = require('../../desktop/pty-service');
+    ptys.unwarm();
+    for (const session of ptys.list()) ptys.stop(session.paneId);
+  } catch {}
+  const allExited = () => Promise.all([...openTerminals].map(entry => entry.exited));
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  await Promise.race([allExited(), wait(limitMs)]);
+  for (const entry of openTerminals)
+    try {
+      entry.proc.kill();
+    } catch {}
+  await Promise.race([allExited(), wait(2000)]);
+
+  // The exit-wait thread finishes just after it reports the exit: give it a moment to end.
+  await wait(200);
+  return { before, left: openTerminals.size };
+}
 
 // TNAI_CHECK_BY_HAND (the two-window try, `remote-check.js hand`): a person uses this window, so
 // nothing is answered for them and the app draws as it does installed (no test renderer, no
@@ -186,10 +238,51 @@ function pageTestHelper() {
     return !!(await until(() => window.TnaiAllThreads?.on, ms));
   }
 
-  window.TnaiTest = { open, startThread, openAllThreads, sawTerminalPage: () => seen };
+  // ---------- pictures ----------
+  // Saves desktop-NAME.png and answers true once the main process has written it (false after
+  // 10 s). A test that switches the look or closes something right after a picture waits for this:
+  // with a fixed wait, a stalled main process took "Light" pictures after the switch back to Dark
+  // (learned 2026-10-14).
+  const savedShots = new Map();
+  window.__tnaiShotSaved = name => {
+    savedShots.get(name)?.(true);
+    savedShots.delete(name);
+  };
+
+  function shot(name, ms = 10000) {
+    return new Promise(resolve => {
+      savedShots.set(name, resolve);
+      console.log('TNAI_SHOT:' + name);
+      setTimeout(() => resolve(false), ms);
+    });
+  }
+
+  window.TnaiTest = { open, startThread, openAllThreads, shot, sawTerminalPage: () => seen };
 }
 
 module.exports = win => {
+  // Each time the window is minimized during the run: the second it happened and how. A call to
+  // win.minimize() is the window's own Minimize button (66 asks main for it) or a test; anything
+  // else came from outside (the taskbar, a key, another program). The result prints it as "note
+  // window minimized …", so a failed size, layout or picture check shows how the window was put
+  // away (learned 2026-10-14: a real mouse moved onto new test windows and clicked their Minimize
+  // button about 1.8 s after they appeared, and the size guard below then stopped the test).
+  const runStart = Date.now();
+  const minimizedAt = [];
+  let minimizeCalled = false;
+  const minimizeNow = win.minimize.bind(win);
+  win.minimize = () => {
+    minimizeCalled = true;
+    minimizeNow();
+  };
+  win.on('minimize', () => {
+    const second = ((Date.now() - runStart) / 1000).toFixed(1) + ' s';
+    minimizedAt.push(
+      second + (minimizeCalled ? ' (its Minimize button or the test)' : ' (from outside)')
+    );
+    minimizeCalled = false;
+  });
+
   // Child dialogs (desktop prompt) are answered automatically: 'Named by test'.
   // Other windows (pop-outs) have no form and are left alone.
   // A test's .main.js can set global.__tnaiKeepPrompts to inspect a prompt window instead
@@ -272,6 +365,7 @@ module.exports = win => {
   // window.__tnaiMainDone[id](result).
   const mainFile = testFile.replace(/\.js$/, '.main.js');
   const mainApi = fs.existsSync(mainFile) ? require(mainFile)(win, profile) : null;
+  let windowPutAway = false;
   if (mainApi)
     win.webContents.on('console-message', async event => {
       if (!event.message.startsWith('TNAI_MAIN:')) return;
@@ -281,6 +375,35 @@ module.exports = win => {
         result = { ok: true, value: await mainApi[cmd](...(args || [])) };
       } catch (error) {
         result = { ok: false, error: error.message };
+      }
+
+      // A window the user minimized or hid during the run takes no new size and its page keeps
+      // its old width, so every layout check after a `size` step would fail for no fault of the
+      // app (the window reads 0 x 0 while the page keeps its old size). The size call fails here
+      // with one line naming the window's state, and the test stops there. The window is never
+      // restored for the test: the user put it away.
+      if (cmd === 'size' && result.ok && !win.isDestroyed()) {
+        const [contentWidth, contentHeight] = win.getContentSize();
+        const lost = win.isMinimized() || !win.isVisible() || !contentWidth || !contentHeight;
+        if (lost) {
+          const state =
+            (win.isMinimized() ? 'minimized' : 'not minimized') +
+            ', ' +
+            (win.isVisible() ? 'shown' : 'hidden') +
+            ', ' +
+            contentWidth +
+            ' x ' +
+            contentHeight;
+          const text =
+            'the window did not take ' +
+            (args || []).join(' x ') +
+            ' (' +
+            state +
+            '): it was minimized or hidden from outside, so its layout cannot be measured; run the test again and leave its window as it is';
+          lines.push('FAIL WINDOW PUT AWAY: ' + text);
+          windowPutAway = true;
+          result = { ok: false, error: text };
+        }
       }
       win.webContents
         .executeJavaScript(
@@ -293,15 +416,23 @@ module.exports = win => {
         .catch(() => {});
     });
 
-  // A test can log `TNAI_SHOT:<name>` to save a screenshot of the current page (wait ~400 ms
-  // after).
-  win.webContents.on('console-message', event => {
+  // A test can log `TNAI_SHOT:<name>` to save a screenshot of the current page; `await
+  // TnaiTest.shot(name)` does that and waits until the file is written. A frame is asked for first,
+  // because a window that draws no frames hands capturePage its last one (learned 2026-10-14).
+  win.webContents.on('console-message', async event => {
     const m = /^TNAI_SHOT:(\w[\w-]*)$/.exec(event.message);
-    if (m)
-      win.webContents.capturePage().then(img => {
-        fs.mkdirSync(out, { recursive: true });
-        fs.writeFileSync(path.join(out, 'desktop-' + m[1] + '.png'), img.toPNG());
-      });
+    if (!m || win.isDestroyed()) return;
+    try {
+      win.webContents.invalidate();
+      await new Promise(resolve => setTimeout(resolve, 150));
+      const img = await win.webContents.capturePage();
+      fs.mkdirSync(out, { recursive: true });
+      fs.writeFileSync(path.join(out, 'desktop-' + m[1] + '.png'), img.toPNG());
+      if (win.isDestroyed()) return;
+      win.webContents
+        .executeJavaScript('window.__tnaiShotSaved?.(' + JSON.stringify(m[1]) + ')')
+        .catch(() => {});
+    } catch {}
   });
 
   // Real OS-level input: a test logs `TNAI_INPUT:{"id":..,"events":[{type:'mouseDown',x,y,..}]}`
@@ -365,6 +496,24 @@ module.exports = win => {
           img.toPNG()
         );
     } catch {}
+
+    // Terminals end before the app does (see openTerminals); the time limit leaves 15 s, so this
+    // waits at most 6 s plus 2 s for a direct kill.
+    const terminals = await endTerminals(6000);
+    if (minimizedAt.length)
+      lines.push('note window minimized during the run at ' + minimizedAt.join(', '));
+    lines.push(
+      'Terminals: ' +
+        (terminalWatchError
+          ? 'not watched (' + terminalWatchError + ')'
+          : startedTerminals + ' started') +
+        ', at the end ' +
+        terminals.before +
+        ' open, ' +
+        (terminals.before - terminals.left) +
+        ' ended' +
+        (terminals.left ? ', ' + terminals.left + ' never exited' : '')
+    );
     process.stdout.write(lines.join('\n') + '\nRESULT: ' + (code ? 'FAIL' : 'PASS') + '\n');
     try {
       win.destroy();
@@ -419,7 +568,7 @@ module.exports = win => {
         );
         lines.push(...(result?.log || []));
       }
-      code = result?.ok ? 0 : 1;
+      code = result?.ok && !windowPutAway ? 0 : 1;
 
       // The page reports the old Terminal page a moment after it shows: give a last report the
       // time to arrive before the answer is read.

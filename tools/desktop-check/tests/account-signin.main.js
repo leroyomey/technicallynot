@@ -1,12 +1,12 @@
 /*
- * Technically Not tools · desktop-check/tests/plan-lock.main.js — Main-process side of the
- * plan-lock self-test (loaded by run.js): a TEST-ONLY fake accounts server (/auth/exchange,
+ * Technically Not tools · desktop-check/tests/account-signin.main.js — Main-process side of the
+ * account-signin self-test (loaded by run.js): a TEST-ONLY fake accounts server (/auth/exchange,
  * /auth/login, /auth/device-replace, /entitlements, /auth/refresh, /auth/logout, /app/login-link; 3
  * computers per account, 409 device_limit + one-time ticket) that signs plan passes with a test
  * Ed25519 key (or a rogue key), the fake Google provider and fake GitHub OAuth App (fake-oidc.js)
  * for the browser part (GitHub's code is swapped here with the server-only secret), and a scripted
  * "system browser". Points user-auth.js at them through the self-test-only env overrides. Methods
- * are called from plan-lock.js via TNAI_MAIN.
+ * are called from account-signin.js via TNAI_MAIN.
  *
  * Every sign-in ends with the app asking for the keyboard (user-auth.js, finishSignIn), and the
  * test opens a pop-out: quiet-window.js makes both do nothing here, so the run never takes the
@@ -82,7 +82,7 @@ module.exports = win => {
             subscribed: false,
             features: [],
             limits: { projects: 0, panes: 0 },
-          }; // status: e.g. 'canceled' or 'unpaid' (plan-lapse)
+          }; // status: e.g. 'canceled' or 'unpaid' (plan pass)
     const data =
       b64url(JSON.stringify({ alg: 'EdDSA', typ: 'JWT' })) +
       '.' +
@@ -359,7 +359,6 @@ module.exports = win => {
     base = 'http://127.0.0.1:' + server.address().port;
     Object.assign(process.env, {
       TNAI_ACCOUNTS_URL: base,
-      TNAI_ENFORCE_PLAN: '0',
       TNAI_PASS_TEST_KEY: good.publicKey.export({ type: 'spki', format: 'der' }).toString('base64'),
       TNAI_GOOGLE_CLIENT_ID: google.clientId,
       TNAI_GOOGLE_CLIENT_SECRET: google.clientSecret,
@@ -367,7 +366,6 @@ module.exports = win => {
       TNAI_GITHUB_CLIENT_ID: githubApp.clientId,
       TNAI_AUTH_TEST_GITHUB: ghBase,
     });
-    delete process.env.TNAI_DEV_UNLOCK;
     T.setBrowser(async url => {
       browsed.push(url);
       if (url.startsWith(issuer))
@@ -393,15 +391,6 @@ module.exports = win => {
       return true;
     },
     lastVersion: () => ({ sent: s.lastVersion, app: require('electron').app.getVersion() }),
-    enforce: on => {
-      process.env.TNAI_ENFORCE_PLAN = on ? '1' : '0';
-      return true;
-    },
-    devUnlock: on => {
-      if (on) process.env.TNAI_DEV_UNLOCK = '1';
-      else delete process.env.TNAI_DEV_UNLOCK;
-      return true;
-    },
     googlePlan: plan => {
       provider.plan('google', plan);
       return true;
@@ -450,9 +439,9 @@ module.exports = win => {
     dropTokens: () => {
       s.tokens.clear();
       return true;
-    }, // every app session ends on the server (plan-lapse: this computer signed out)
+    }, // every app session ends on the server (this computer signed out)
     restart: () => T.restart(),
-    // Release build (build-info.json) pretended in main: config snapshot + lock, then back to a dev
+    // Release build (build-info.json) pretended in main: config snapshot, then back to a dev
     // copy in the same tick (no network call can start).
     releaseSnapshot: () => {
       const p = require('../../../package.json'),
@@ -460,16 +449,12 @@ module.exports = win => {
         c = T.config();
       T.setRelease(false);
       return {
-        devUnlock: c.devUnlock,
-        enforce: c.enforce,
-        pkgEnforce: p.tnaiEnforcePlan === true,
         apiUrl: c.apiUrl,
         pkgUrl: String(p.tnaiAccountsUrl || '').replace(/\/+$/, ''),
         // accounts are switched off exactly when the build names no accounts server
         off: st.off === true,
         testKey: c.publicKey !== require('../../../desktop/plan-pass').PUBLIC_KEY,
         insecureOk: c.insecureOk,
-        lockDevUnlock: !!st.lock.devUnlock,
       };
     },
     setHighWater: async ms => {

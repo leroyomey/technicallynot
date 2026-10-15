@@ -9,6 +9,7 @@ const { createOwnRelay, cleanUrl, cleanSecret } = require('../desktop/own-relay.
 
 let passed = 0,
   failed = 0;
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 function check(name, ok, got) {
   if (ok) passed++;
@@ -920,6 +921,25 @@ function fakeBackend({ available = true } = {}) {
       list
     );
 
+    // Remove: B is connected, so the relay keeps it; an id never seen is "removed" (nothing there)
+    check(
+      'forget: a connected device is refused as online',
+      same(await own.forget(A, B), { ok: false, error: 'online' })
+    );
+    seen.length = 0;
+    check(
+      'forget: a device that is not connected is removed',
+      (await own.forget(A, 'gone-device-01')).ok === true
+    );
+    check(
+      'forget: the call names the device and carries no secret',
+      seen[0]?.url === 'https://relay.test/remote/forget?d=gone-device-01' &&
+        !JSON.stringify(seen[0]).includes(SECRET)
+    );
+    check(
+      'forget: a bad id is not sent',
+      same(await own.forget(A, 'bad id'), { ok: false, error: 'invalid_device' })
+    );
     check(
       'a device id the relay would refuse is not sent',
       (await own.ticket('bad id').catch(e => e)).code === 'device_required'

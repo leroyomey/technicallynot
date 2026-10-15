@@ -1,12 +1,12 @@
 // Technically Not desktop · git-service.js — Git for the connected project folder: status (repo
 // facts, branch, changed files) for the agent worktree actions (35), and the shared runner
-// worktree-service.js and agent-context.js use. Runs `git` with execFile (no shell), cwd = the
-// project folder, never prompts; pushes `git:changed` when .git/HEAD, index or refs change (also
-// Technically Not worktrees' HEAD/index).
+// worktree-service.js and agent-context.js use. Runs `git` with execFile from a worker thread (no
+// shell), cwd = the project folder, never prompts; pushes `git:changed` when .git/HEAD, index or
+// refs change (also Technically Not worktrees' HEAD/index).
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { execFile } = require('child_process');
+const processStarter = require('./process-starter');
 
 let getRoot = () => null,
   send = () => {};
@@ -38,11 +38,17 @@ function git(args, { timeout = READ_MS, cwd = root(), okCodes = [0], env: extra 
       LC_ALL: 'C',
       ...extra,
     };
-    execFile(
-      'git',
-      ['-c', 'core.quotepath=off', '-c', 'color.ui=false', '-c', 'core.fsmonitor=false', ...args],
-      { cwd, env, timeout, maxBuffer: MAX_BUFFER, windowsHide: true },
-      (error, stdout, stderr) => {
+
+    // Started from a worker thread: a git start held the main process 100 to 740 ms now and then
+    // (stall log 2026-10-14, `ipc git:status` and `ipc context:state`). Not run again if the worker
+    // ends meanwhile, since some git commands write.
+    processStarter
+      .start(
+        'git',
+        ['-c', 'core.quotepath=off', '-c', 'color.ui=false', '-c', 'core.fsmonitor=false', ...args],
+        { cwd, env, timeout, maxBuffer: MAX_BUFFER, windowsHide: true }
+      )
+      .then(({ error, stdout, stderr }) => {
         if (error && error.code === 'ENOENT')
           return reject(
             fail('Git is not installed on this PC (git was not found on PATH).', 'NoGit')
@@ -71,8 +77,7 @@ function git(args, { timeout = READ_MS, cwd = root(), okCodes = [0], env: extra 
             )
           ); // a big stdout is output, never error text
         resolve({ stdout: String(stdout), stderr: String(stderr), code });
-      }
-    );
+      }, reject);
   });
 }
 

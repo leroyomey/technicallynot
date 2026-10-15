@@ -84,12 +84,11 @@ try {
   );
 
   // The input box read from the screen (71 boxEmpty; the fault: a message held for an
-  // input that was empty). Fake Claude Code screens are drawn into this panel's own terminal view;
-  // the shell never gets them.
-  const term = window.TnaiAgents.views().find(
-      v => v.paneId === paneId && v.where === 'Terminal page panel'
-    )?.term,
-    rule = '─'.repeat(40);
+  // input that was empty). Fake Claude Code screens are drawn into the terminal of this thread's
+  // CLI screen (the panel underneath is never drawn); the shell never gets them.
+  const shownTerm = window.TnaiThreadView.term();
+  const term = shownTerm?.tnaiPaneId === paneId ? shownTerm : null;
+  const rule = '─'.repeat(40);
   const draw = rows =>
     new Promise(done => term.write('\r\n' + rows.join('\r\n') + '\r\n  auto mode on', done));
   const reads = async rows => {

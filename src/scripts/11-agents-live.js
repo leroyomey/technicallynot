@@ -3135,6 +3135,12 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
     // one task per click: the next send follows the usual target again (now this agent)
     if (r.explicit) setNewAgent(false);
 
+    // A new agent the user asked for (New thread, New agent, Ctrl+Enter) is opened as its thread
+    // at once while the Threads page shows, so the user lands on the thread they just started.
+    // On any other page the page stays as it is.
+    const askedForNew = r.kind === 'new' && (r.explicit || forceNew || !!newAgent);
+    if (askedForNew && window.TnaiThreads?.visible?.()) window.TnaiThreads.show?.(chosen.paneId);
+
     // cleared above, before the awaits: text typed or dictated since then stays
     input.dispatchEvent(new Event('input', { bubbles: true }));
     say(

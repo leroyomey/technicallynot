@@ -266,20 +266,38 @@ module.exports = (win, profile) => {
   let ready = false,
     end = null;
 
-  // Another computer's agents on this window's Agents page (src/scripts/116-remote-agents.js),
-  // read and pressed as its user would. what: 'read' says what
-  // the page shows (the groups and rows of other computers, the open detail with the rows of its
-  // terminal box, the composer's hint and draft); 'select' clicks that agent's row; 'press' presses
-  // the button of the open detail that carries those words; 'send' types into the composer and
-  // presses Send; 'enter' presses Send once more. Runs inside the window.
+  // Another computer's agents in this window's thread list, and the detail of one in the thread's
+  // main area on the Threads page (src/scripts/119, 138, 116-remote-agents.js), read and pressed as
+  // its user would. what: 'read' says what the page shows (the groups and rows of other computers,
+  // the open detail with the rows of its terminal box, the composer's hint and draft); 'select'
+  // clicks that agent's row; 'press' presses the button of the open detail that carries those
+  // words; 'send' types into the composer and presses Send; 'enter' presses Send once more. Runs
+  // inside the window.
   const farAgentsInWindow = async ({ what, key, text }) => {
-    const page = document.getElementById('agentsPage'),
+    const threads = window.TnaiThreads,
+      list = threads?.slot?.('list') || null,
+      main = threads?.slot?.('main') || null,
       wait = ms => new Promise(r => setTimeout(r, ms));
-    const rows = () => [...page.querySelectorAll('.ap-row.ap-far-row')],
+    const rows = () => [...(list?.querySelectorAll('.tnt-th[data-remote]') || [])],
       far = () => {
-        const f = page.querySelector('.ap-agent.ap-far');
-        return f && !f.hidden ? f : null;
+        const f = main?.querySelector(':scope > .tnh-view .ap-far');
+        return f && !f.hidden && f.getClientRects().length ? f : null;
       };
+
+    // A group is an "On COMPUTER" heading of the list; its computer is the first part of the key
+    // of the row under it.
+    const groups = () =>
+      [...(list?.querySelectorAll('.tnt-proj') || [])]
+        .filter(head => /^On /.test(head.querySelector('span')?.textContent || ''))
+        .map(head => {
+          let next = head.nextElementSibling;
+          while (next && !next.dataset?.remote && !next.classList.contains('tnt-proj'))
+            next = next.nextElementSibling;
+          return {
+            name: head.querySelector('span').textContent,
+            computer: next?.dataset?.remote ? next.dataset.remote.split('\n')[0] : '',
+          };
+        });
     const input = document.querySelector(
         '.composer textarea, .composer [contenteditable], #prompt'
       ),
@@ -318,16 +336,14 @@ module.exports = (win, profile) => {
     const f = far(),
       term = f?.querySelector('.ap-term');
     return {
-      onPage: document.querySelector('.layout').classList.contains('agents-mode'),
-      groups: [...page.querySelectorAll('.ap-far-group')]
-        .filter(g => !g.hidden)
-        .map(g => ({ name: g.querySelector('span').textContent, computer: g.dataset.computer })),
+      onPage: !!threads?.visible?.(),
+      groups: groups(),
       rows: rows()
         .filter(r => !r.hidden)
         .map(r => ({
           key: r.dataset.remote,
           name: r.querySelector('b').textContent,
-          tag: r.querySelector('em').textContent,
+          tag: r.querySelector('.tnt-th-tool')?.textContent || '',
           selected: r.getAttribute('aria-selected') === 'true',
         })),
       detail: f
@@ -832,9 +848,13 @@ module.exports = (win, profile) => {
         win.webContents.once('did-finish-load', () => resolve(true));
         win.webContents.reload();
       }),
+    // 'threads' opens the Threads page; any other view goes by the hidden old navigation's route
+    // for it (devices: the Devices page).
     page: ({ view }) =>
       inWindow(
-        `(() => { const nav = document.querySelector('.side-item[data-view=${JSON.stringify(String(view))}]'); nav?.click(); return !!nav; })()`
+        view === 'threads'
+          ? `(() => { window.TnaiThreads?.open(); return !!window.TnaiThreads; })()`
+          : `(() => { const nav = document.querySelector('.side-item[data-view=${JSON.stringify(String(view))}]'); nav?.click(); return !!nav; })()`
       ),
     // A task and its end in a panel, told to this app as the real CLI's hooks tell them (the
     // stand-in has no model): the prompt it took, then the stop with its final message. For proof

@@ -155,7 +155,13 @@ try {
   check(prompt().value === '', 'and the prompt box stays empty');
 
   // ---- Cancel prompt and edit it
+  // Sent with one attachment chip, in 11 dispatch's order: beginSend, record, commit.
+  const files = window.TnaiAttachments;
+  files.add([new File(['hello'], 'notes.txt')]);
+  const snap = files.beginSend();
   window.TnaiLiveTasks.record(shell, 'make the header sticky', 'test');
+  snap.commit();
+  check(files.count() === 0, 'the sent chip has left the box');
   check(!!(await busy(shell)), 'Stop shows again for the next command');
   stopButton().click();
   (await until(() => menuShown(), 2000))?.querySelector('[data-row=cancel]').click();
@@ -165,12 +171,22 @@ try {
     prompt().value === 'make the header sticky',
     'and the last prompt is back in the box ("' + prompt().value + '")'
   );
+  check(
+    files.count() === 1 && files.list()[0].name === 'notes.txt',
+    'and its attachment chip is back too (' + files.count() + ')'
+  );
+
+  // A later prompt without chips: Cancel must not bring back the earlier prompt's chip.
+  files.clear();
+  window.TnaiLiveTasks.record(shell, 'second prompt', 'test');
+  check(files.takeSent(shell) === 0, 'a prompt sent without chips gives none back');
 } catch (error) {
   ok = false;
   log.push('ERROR ' + (error?.stack || error));
 }
 prompt().value = '';
 prompt().dispatchEvent(new Event('input', { bubbles: true }));
+window.TnaiAttachments?.clear();
 for (const paneId of opened) await agents.stop(paneId).catch(() => {});
 await main('cleanup').catch(() => {});
 return { ok, log };

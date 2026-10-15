@@ -30,8 +30,8 @@ const drawn = element => {
 await window.TnaiAuth.ready();
 check(window.TnaiAuth.state().off === true, 'the app says accounts are off');
 check(
-  window.TnaiAuth.state().lock?.locked !== true,
-  'not locked: ' + JSON.stringify(window.TnaiAuth.state().lock)
+  !('lock' in window.TnaiAuth.state()) && !document.querySelector('.tnai-lock-overlay'),
+  'no plan lock: no lock in the state and no lock screen in the page'
 );
 
 // what must not be on any page

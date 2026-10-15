@@ -1586,7 +1586,6 @@ function handoffFor(cwd, more = {}) {
         disk: { text: null },
         project: null,
         key: '',
-        locked: false,
         rel: { rel: 'ahead', n: 1 },
         hand: { calls: [], word: 'done', list: [] },
       };
@@ -1620,7 +1619,6 @@ function handoffFor(cwd, more = {}) {
         project: () => c.project,
         projectKey: () => c.key,
         relate: async () => c.rel,
-        planLocked: () => c.locked,
         handover: {
           handoff: o => {
             c.hand.calls.push(o);
@@ -1807,18 +1805,15 @@ function handoffFor(cwd, more = {}) {
         [call && call.short, op]
       );
       const g1 = call.guard();
-      B.locked = true;
-      const g2 = call.guard();
-      B.locked = false;
       B.key = 'd'.repeat(40);
       const g3 = call.guard();
       B.key = KEY;
       B.svc.setControl(IDA, false);
       const g4 = call.guard();
       check(
-        "hand over: the guard handed to git's runner says no for a locked plan, another project open, and the right gone",
-        g1 === true && g2 === false && g3 === false && g4 === false,
-        [g1, g2, g3, g4]
+        "hand over: the guard handed to git's runner says no for another project open, and the right gone",
+        g1 === true && g3 === false && g4 === false,
+        [g1, g3, g4]
       );
     }
     B.svc.setControl(IDA, true);
@@ -1895,16 +1890,13 @@ function handoffFor(cwd, more = {}) {
         [r1.sent, r2.sent, call && call.short]
       );
       const g1 = call.guard();
-      A.locked = true;
-      const g2 = call.guard();
-      A.locked = false;
       A.project = { root: 'd'.repeat(40), head: HEADA };
       const g3 = call.guard();
       A.project = { root: KEY, head: HEADA };
       check(
-        'bring: its guard says no for a locked plan and when another project was opened meanwhile',
-        g1 === true && g2 === false && g3 === false,
-        [g1, g2, g3]
+        'bring: its guard says no when another project was opened meanwhile',
+        g1 === true && g3 === false,
+        [g1, g3]
       );
       A.hand.list = [shortB];
       finish('done');
@@ -1950,13 +1942,6 @@ function handoffFor(cwd, more = {}) {
       await w.advance(200);
       check('bring: a runner that throws is "failed"', A.pc(IDB).brought.state === 'failed');
       const calls = A.hand.calls.length;
-      A.locked = true;
-      const locked = A.svc.bring(IDB);
-      A.locked = false;
-      check(
-        'bring: not while the plan is locked',
-        locked.sent === 'not_sent' && A.hand.calls.length === calls
-      );
       B.project = { root: 'e'.repeat(40), head: HEADB };
       B.svc.projectChanged();
       await w.advance(8000);

@@ -279,14 +279,50 @@
   // removed), so 68's per-attachment notes survive until apply() reads them.
   const inFlight = new Set();
 
+  // The chips of the prompt last sent to each agent, kept after a successful send so "Cancel
+  // prompt and edit it" (150) can bring them back with its words (takeSent). 11 record() names
+  // each agent that got a prompt (tnai:prompt-sent) before it commits; a send without chips
+  // forgets the agent's older ones, so Cancel never brings back the chips of an earlier prompt.
+  const sentTo = new Map();
+  const collecting = new Set();
+  window.addEventListener('tnai:prompt-sent', event => {
+    const paneId = event.detail?.paneId;
+    if (!paneId) return;
+    sentTo.delete(paneId);
+    collecting.forEach(panes => panes.push(paneId));
+  });
+
+  function takeSent(paneId) {
+    const kept = sentTo.get(paneId);
+    sentTo.delete(paneId);
+    if (!kept?.length) return 0;
+    kept.forEach(item => {
+      // commit() let go of the thumbnails: a picture gets a new one from its file, a clip asks
+      // for its still again (as clipItem does)
+      item.url = item.kind === 'image' && item.file ? URL.createObjectURL(item.file) : '';
+      if (item.kind === 'clip' && item.ref)
+        window.TnaiClips?.info(item.ref).then(clip => {
+          if (clip?.still && !item.url) {
+            item.url = clip.still;
+            if (items.includes(item)) render();
+          }
+        });
+    });
+    putBack(kept);
+    return kept.length;
+  }
+
   function beginSend() {
     const snapshot = items;
     items = [];
     snapshot.forEach(i => inFlight.add(i.id));
     render();
+    const panes = [];
+    collecting.add(panes);
     let settled = false;
     const settle = () => {
       settled = true;
+      collecting.delete(panes);
       snapshot.forEach(i => inFlight.delete(i.id));
     };
     return {
@@ -295,6 +331,7 @@
         if (settled) return;
         settle();
         snapshot.forEach(i => i.url && URL.revokeObjectURL(i.url));
+        panes.forEach(paneId => sentTo.set(paneId, snapshot));
       },
       restore() {
         if (settled) return;
@@ -951,6 +988,7 @@
     clear,
     prepare,
     beginSend,
+    takeSent,
     forRemote,
     pasted: clipPasted,
     sending: id => inFlight.has(id),

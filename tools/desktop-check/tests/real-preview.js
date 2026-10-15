@@ -3,8 +3,10 @@
  * few cents of the user's usage) follows the built-in Live preview rule
  * (desktop/hidden-skills/45-live-preview.md) without being told about it: asked to build a small
  * web page and show it, it must start a dev server and run `tnai preview`, not open an external
- * browser. The user is on the Terminal page, so the preview arrives as a bell notice with Open
- * (31). Permission questions are answered Yes in the pane. Hard cap: 5 min.
+ * browser. The prompt goes through the prompt box of the agent's open thread; the user stays on the
+ * Threads page, so the preview arrives as a bell notice with Open (31). Permission questions are
+ * answered Yes in the agent's terminal. Hard cap: 5 min. (Moved to threads 2026-10-14: it opened
+ * the old Terminal page and aimed the old composer's agent picker.)
  */
 const log = [],
   wait = ms => new Promise(r => setTimeout(r, ms));
@@ -88,12 +90,18 @@ try {
   await wait(2500);
   check(!!(await ready()), 'switched to Haiku');
 
-  const agentSel = document.querySelector('.tnai-pickers select');
-  const opt = [...(agentSel?.options || [])].find(o => o.value.includes(paneId));
-  if (opt) {
-    agentSel.value = opt.value;
-    agentSel.dispatchEvent(new Event('change', { bubbles: true }));
-  }
+  // Its thread, open on the Threads page: the prompt box under it is aimed at this agent.
+  window.TnaiThreads.open();
+  await until(() => window.TnaiThreads.visible(), 4000);
+  window.TnaiThreads.select(paneId);
+  check(
+    !!(await until(() => window.TnaiThreadView.shown() === paneId, 8000)),
+    'its thread is open on the Threads page'
+  );
+  check(
+    window.TnaiLiveTasks.target() === paneId,
+    'the prompt box is aimed at the thread (' + window.TnaiLiveTasks.target() + ')'
+  );
 
   // No mention of Live preview or `tnai preview`: the built-in rule has to bring it in.
   await send(
@@ -129,7 +137,7 @@ try {
   const item = bellNotice();
   check(
     !!item || window.TnaiLivePreviewPage.visible(),
-    'on the Terminal page it arrives as a bell notice "Preview ready" (or the page was already showing a preview)'
+    'on the Threads page it arrives as a bell notice "Preview ready" (or the page was already showing a preview)'
   );
   console.log('TNAI_SHOT:real-preview-bell');
   await wait(450);

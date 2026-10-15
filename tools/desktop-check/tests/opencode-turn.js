@@ -3,9 +3,10 @@
  * the app's screens with what the main process sends for one: an open agent:turn with source
  * opencode-db (desktop/agent-turns.js readOpenCode), tool steps in the shape agent-hooks.js onStep
  * emits (kind tool, no prompt or stop event), a checklist on the turn, and the turn ending by stop,
- * interrupted and error. Checks the card Now line (Thinking, then the tool), no inferred file row
- * once steps arrive, one chime per finished turn and none for a stopped one, skills in use cleared,
- * the Compact button, the context chip percent and the checklist count. No real CLI and no prompt:
+ * interrupted and error. Checks what the thread's row in the thread list says it does now
+ * (Thinking, then the tool), no inferred file row once steps arrive, one chime per finished turn
+ * and none for a stopped one, skills in use cleared, the context chip percent, the checklist count
+ * and the sub-agents as helpers and as their rows in the thread list. No real CLI and no prompt:
  * a PowerShell panel stands in for the OpenCode session (session list stubbed). Returns {ok, log}.
  */
 const log = [],
@@ -61,9 +62,20 @@ try {
       chimes++;
     };
   const root = String((await main('root')) || '').replace(/\\/g, '/');
-  const card = () =>
-    document.querySelector('.tnai-live-panel .tnai-card[data-pane="' + paneId + '"]');
-  const nowLine = () => card()?.querySelector('.c-now')?.textContent || '';
+
+  // What the agent does now is read on its own row in the thread list (the old Overview card and
+  // its "Now ·" line are deleted).
+  const nowLine = () =>
+    document.querySelector(
+      '.tnt-th[data-pane="' + CSS.escape(paneId) + '"]:not(.tnt-sub) .tnt-th-now'
+    )?.textContent || '';
+
+  // A sub-agent's own row under its lead in the thread list (its key is the lead's id, a NUL, and
+  // the call's id).
+  const subRow = key =>
+    [...document.querySelectorAll('.tnt-th.tnt-sub')].find(
+      row => row.dataset.key === paneId + String.fromCharCode(0) + key
+    );
   const mine = () => F.items().filter(i => i.paneId === paneId);
   const type = text => N.pty.submit(paneId, text, { paste: false }).catch(() => {});
   const turn = async (t, extra = {}) => {
@@ -102,7 +114,7 @@ try {
       ')'
   );
 
-  // 2. The turn opens (its own record): Thinking on the card, with no prompt event.
+  // 2. The turn opens (its own record): Thinking on its row, with no prompt event.
   const t1 = { startedAt: Date.now() };
   status = 'working';
   await turn(t1, {
@@ -118,15 +130,15 @@ try {
     'open turn: Thinking, tooltip names OpenCode (' + JSON.stringify(F.doing(paneId)) + ')'
   );
   check(
-    !!(await until(() => /Now · Thinking/.test(nowLine()), 4000)),
-    'card Now line: Thinking (' + nowLine() + ')'
+    !!(await until(() => /Thinking/.test(nowLine()), 4000)),
+    'its row in the thread list: Thinking (' + nowLine() + ')'
   );
 
-  // 3. Steps: the tool on the Now line; a file step; a skill step.
+  // 3. Steps: the tool on its row; a file step; a skill step.
   await step('Bash', 'npm test');
   check(
-    !!(await until(() => /Now · Running npm test/.test(nowLine()), 4000)),
-    'card Now line: the step’s tool (' + nowLine() + ')'
+    !!(await until(() => /Running npm test/.test(nowLine()), 4000)),
+    'its row in the thread list: the step’s tool (' + nowLine() + ')'
   );
   check(
     /step events/.test(F.doing(paneId)?.tip || ''),
@@ -217,7 +229,7 @@ try {
   );
   check(
     !F.doing(paneId) && !/Thinking|Running npm test/.test(nowLine()),
-    'finished turn: Now line no longer shows a tool (' + nowLine() + ')'
+    'finished turn: its row no longer shows a tool (' + nowLine() + ')'
   );
   check(
     window.TnaiFileActivity.skills(paneId).length === 0,
@@ -353,14 +365,17 @@ try {
       ')'
   );
   await turn(t4, { subAgents: 0, subTokens: { [child]: 4321 } });
+
+  // The sub-agent's row under its lead in the thread list. (The old agent card's token tooltip that
+  // named OpenCode's record went with the Overview; the number itself is checked below.)
   await go('overview');
-  const cardSub = await until(() => card()?.querySelector('.t-sub[data-key="oc-tu1"]'), 3000);
+  window.TnaiThreadList?.refresh?.();
+  const listSub = await until(() => subRow('oc-tu1'), 3000);
   check(
-    !!cardSub &&
-      /OpenCode’s own session record/.test(
-        [...cardSub.querySelectorAll('[title]')].map(x => x.title).join(' ')
-      ),
-    'agent card: the sub-agent row, token tooltip names OpenCode’s record (' + !!cardSub + ')'
+    !!listSub && /Check the docs/.test(listSub.textContent),
+    'thread list: the sub-agent has its row under its lead (' +
+      (listSub?.textContent.trim().slice(0, 80) || 'none') +
+      ')'
   );
   await main('event', paneId, {
     kind: 'sub-stop',
@@ -387,8 +402,7 @@ try {
       ')'
   );
 
-  // The sub-agent row on the agent's card (checked above) shows the count; here the number
-  // itself, as the turn carries it.
+  // The sub-agent's tokens, as the turn carries them.
   check(
     window.TnaiTurns.get(paneId)?.subTokens?.[child] === 4321,
     'sub-agent tokens from the turn (' +
@@ -401,12 +415,20 @@ try {
     const note = sideTalk()?.querySelector('.tnt-talk-empty');
     return note && !note.hidden && note.textContent;
   }, 5000);
+
+  // A control counts only when it is on screen: the view's own jump buttons ("Last report",
+  // "Latest") exist in every conversation and stay hidden while there is nothing to jump to.
+  const shownControls = [...sideTalk().querySelectorAll('button:not([disabled])')].filter(
+    button => !button.closest('[hidden]') && button.getClientRects().length > 0
+  );
   check(
     /OpenCode keeps no separate record/.test(viewText || '') &&
       /Details tab/.test(viewText || '') &&
-      !sideTalk().querySelector('button:not([disabled])'),
+      shownControls.length === 0,
     'helper’s conversation: a plain note that OpenCode keeps no record of it and where its work is, no control (' +
       (viewText || 'none') +
+      '; controls on screen: ' +
+      (shownControls.map(button => button.textContent.trim()).join(', ') || 'none') +
       ')'
   );
 
@@ -438,9 +460,13 @@ try {
     at: Date.now(),
   });
 
-  // the agent card's row (19) carries the wording (the same for Claude Code)
+  // the sub-agent's row in the thread list (119 subNow) carries the wording (the same for Claude
+  // Code)
   await go('overview');
-  const tu3 = () => card()?.querySelector('.t-sub[data-key="oc-tu3"]')?.textContent || '';
+  const tu3 = () => {
+    window.TnaiThreadList?.refresh?.();
+    return subRow('oc-tu3')?.textContent || '';
+  };
   check(
     !!(await until(
       () =>

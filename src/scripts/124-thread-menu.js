@@ -93,7 +93,8 @@
   }
 
   // The rows. `words` are what a search also finds the row by; `key` is a shortcut shown at the
-  // row's end; `searchOnly` rows are not in the list until a search finds them.
+  // row's end; `searchOnly` rows are not in the list until a search finds them. `place` names a
+  // place that has its own color (44-page-colors.css): the row's icon takes that color.
   const GROUPS = [
     {
       name: 'Work',
@@ -107,6 +108,7 @@
         {
           label: 'All threads',
           icon: 'square-terminal',
+          place: 'all',
           words: 'panels powershell workspace grid',
           go: route('terminal'),
         },
@@ -116,6 +118,7 @@
           // Threads page only the column opens.
           label: 'Terminal',
           icon: 'terminal',
+          place: 'terminal',
           words: 'powershell commands shell console command line own',
           go: () => {
             const open = () => window.TnaiOwnTerminal?.open();
@@ -126,6 +129,7 @@
         {
           label: 'Live preview',
           icon: 'monitor-play',
+          place: 'preview',
           words: 'devices side by side localhost browser phone tablet',
           go: page(() => window.TnaiLivePreviewPage?.open()),
         },
@@ -182,6 +186,15 @@
           icon: 'monitor-smartphone',
           words: 'computers pair phone',
           go: route('devices'),
+        },
+        {
+          // The Snapshots box (151): the last five pictures and clips, opened as a popover under
+          // the menu's button, so the page under it stays where it is.
+          label: 'Snapshots',
+          icon: 'zap',
+          words: 'screenshot screenshots picture pictures clip clips capture screen recent copy',
+          when: () => !!window.TnaiSnapshotShelf,
+          go: () => window.TnaiSnapshotShelf?.open(document.querySelector('.top .tnt-menu-btn')),
         },
         {
           label: 'Settings',
@@ -253,9 +266,11 @@
     // list.
     const key = row.key ? '<small class="tnt-menu-key">' + row.key + '</small>' : '';
     const words = (row.label + ' ' + row.words).toLowerCase();
+    const place = row.place ? '" data-place="' + row.place : '';
     return (
       '<button type="button" class="tnt-menu-row" role="menuitem" data-row="' +
       index +
+      place +
       '" data-words="' +
       words +
       '">' +

@@ -139,6 +139,38 @@ const selftest = inSelfTest ? require('../tools/desktop-check/run') : null;
 
 let win = null;
 
+// The "sessions still running" question, asked by the window's close and, on macOS, by Cmd+Q
+// (quit-guard.js). True when the user chose to stop them and quit.
+function confirmStopSessions(running) {
+  const choice = dialog.showMessageBoxSync(win && !win.isDestroyed() ? win : undefined, {
+    type: 'warning',
+    buttons: ['Stop and quit', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    message: running + ' terminal session' + (running > 1 ? 's are' : ' is') + ' still running.',
+    detail: 'Quitting Technically Not stops them.',
+  });
+  return choice === 0;
+}
+
+// Every `before-quit` step is registered through onQuit, after the quit guard: when the user
+// cancels the macOS quit question, none of them runs (quit-guard.js).
+const quitGuard = require('./quit-guard');
+app.on(
+  'before-quit',
+  quitGuard.create({
+    platform: process.platform,
+    running: () => ptys.list().filter(s => s.running).length,
+    ask: confirmStopSessions,
+  })
+);
+
+function onQuit(step) {
+  app.on('before-quit', event => {
+    if (!quitGuard.cancelled(event)) step(event);
+  });
+}
+
 // Window frame: no OS title bar. Minimize / maximize / close are Technically Not's own buttons at
 // the right end of its top bar (66-window-controls.js, CSS hover: instant and compact, unlike
 // Windows' overlay buttons), driven through window:control below.
@@ -363,11 +395,8 @@ function createWindow() {
       }
     });
 
-  // Plan lock: no pop-outs while locked (lockedOut below).
   win.webContents.setWindowOpenHandler(
-    details =>
-      (!lockedOut() && panelWindows.allow(details, path.join(__dirname, 'preload.js'))) ||
-      deny(details)
+    details => panelWindows.allow(details, path.join(__dirname, 'preload.js')) || deny(details)
   );
   win.webContents.on('did-create-window', (child, details) => {
     // Only Technically Not's own top frame may open a pop-out: a Live preview frame asking for a
@@ -510,15 +539,7 @@ function createWindow() {
   win.on('close', event => {
     const running = ptys.list().filter(s => s.running).length;
     if (!running) return;
-    const choice = dialog.showMessageBoxSync(win, {
-      type: 'warning',
-      buttons: ['Stop and quit', 'Cancel'],
-      defaultId: 1,
-      cancelId: 1,
-      message: running + ' terminal session' + (running > 1 ? 's are' : ' is') + ' still running.',
-      detail: 'Quitting Technically Not stops them.',
-    });
-    if (choice === 1) event.preventDefault();
+    if (!confirmStopSessions(running)) event.preventDefault();
   });
   win.on('closed', () => {
     win = null;
@@ -594,6 +615,7 @@ turns.init(
   {
     taskNoted: (paneId, text) => hooks.taskNote(paneId, text),
     spawnRefused: (paneId, toolUseId) => hooks.note(paneId, { kind: 'spawn-refused', toolUseId }),
+    compactTasks: (paneId, event) => hooks.note(paneId, event),
   }
 );
 watch.init(toWindow);
@@ -700,7 +722,13 @@ fileLocks.init(toWindow, {
   team: sameTeam,
   // a lead and its own sub-agents in separate panels: the same whole-file rewrite guard as a team
   tree: sameTree,
+  // a lock freed while the agent waiting for it still works passes to that agent
+  busy: paneId => turns.busy(paneId),
 });
+
+// An agent at rest holds no file: its locks end when its task ends, so nobody has to ask an idle
+// agent to unlock.
+turns.onEnd(paneId => fileLocks.taskEnded(paneId));
 
 // A team change: the window repaints its Team badges (88), and each member hears once who its
 // teammates are now (agent-peers.js teamNotice: Claude Code mid-task through its hooks; other CLIs
@@ -739,8 +767,7 @@ teams.init(async state => {
     }
 });
 
-// A held composer prompt is typed in later by main itself: while locked it is refused like one sent
-// now (plan lapse: no new prompts).
+// A held composer prompt is typed in later by main itself.
 attention.init(
   (channel, payload) => {
     toWindow(channel, payload);
@@ -753,10 +780,7 @@ attention.init(
   {
     turns,
     hooks,
-    submit: (...a) => {
-      const plan = lockedOut();
-      return plan ? { ok: false, state: 'error', error: plan.message } : promptSubmit.submit(...a);
-    },
+    submit: (...a) => promptSubmit.submit(...a),
     window: () => win,
     cli: paneId =>
       mesh.cliOf(paneId) ||
@@ -811,111 +835,6 @@ const trusted = event => {
   return !!f && !f.parent && /^file:/i.test(f.origin || '');
 };
 
-// Plan lock (user-auth.js), enforced here for every channel, not only by the renderer's lock
-// screen: while locked only the channels below work (account and sign-in, app info, window buttons,
-// the prompt dialog, app updates, settings reads, stopping or closing panels, and reads of
-// Technically Not's own in-memory run state: panel list/scrollback, agent graph, lifecycle, mesh
-// members, turns, events, open questions). Everything else (files, git, worktrees, GitHub, skills,
-// custom agents, agent CLI detection and accounts, starting or typing into terminals, previews,
-// pop-outs, voice, attachments, project context, usage) is refused: `handle` channels answer { ok:
-// false, error: { message, code: 'locked' } }, or for a raw read the empty value in LOCKED_EMPTY so
-// the page under the lock stays error-free; `on` channels are dropped. A window that started locked
-// reloads once it unlocks (34-user-auth.js), so nothing refused stays stale. Answering an open
-// permission prompt always works, so a turn that was running when the lock came can finish (plan
-// lapse, item 9). A lapse (any lock but a plain sign-out, user-auth.js `lapsed`) also keeps
-// LAPSE_READ: projects, files and summaries stay readable. A refused composer prompt, new panel or
-// keystroke tells the window (`auth:refused`), which shows the lock again.
-const LOCK_FREE = new Set([
-  'permission:answer',
-  'tnai:info',
-  'tnai:openNotices',
-  'tnai:prompt',
-  'window:control',
-  'update:state',
-  'update:check',
-  'update:download',
-  'update:install',
-  'update:prefs',
-  'update:openNotes',
-  'cli-updates:state',
-  'snapshot:state',
-  'agentRules:get',
-  'pty:list',
-  'pty:replay',
-  'pty:stop',
-  'pty:forget',
-  'pty:resize',
-  'graph:state',
-  'lifecycle:state',
-  'mesh:state',
-  'agentTurns:state',
-  'agentEvents:history',
-  'permission:pending',
-  'trust:pending',
-  'attention:list',
-  // Several computers: ending a connection must work without a plan (a stolen computer is forgotten
-  // whatever the account's state). Turning on, pairing and renaming stay locked.
-  'remote:unview',
-  /* ending a view of another computer's panel always works */
-  'remote:state',
-  'remote:forget',
-  'remote:choose',
-  'remote:stopEverywhere',
-  'remote:finishAnyway',
-  'remote:dismiss',
-  // reading which relay is set, and removing it: like ending a connection, these always work.
-  // Setting one stays behind the lock.
-  'remote:ownRelay',
-  'remote:clearOwnRelay',
-]);
-const LAPSE_READ = new Set([
-  'fs:root',
-  'fs:projects',
-  'fs:switch',
-  'fs:list',
-  'fs:stat',
-  'fs:read',
-  'fs:search',
-  'fs:lanes',
-  'context:state',
-]);
-const lockFree = channel => LOCK_FREE.has(channel) || channel.startsWith('auth:');
-const USER_ACTIONS = new Set(['pty:start', 'pty:submit', 'pty:write']);
-let refusedAt = 0;
-
-// Keystrokes (pty:write) tell the window at most every 500 ms; a refused prompt or panel always
-// does.
-const refusedAction = channel => {
-  if (!USER_ACTIONS.has(channel) || (channel === 'pty:write' && Date.now() - refusedAt < 500))
-    return;
-  if (channel === 'pty:write') refusedAt = Date.now();
-  toWindow('auth:refused', { channel });
-};
-const LOCKED_EMPTY = {
-  'agents:detect': () => [],
-  'fs:root': () => '',
-  'accounts:dirFor': () => '',
-  'git:worktreePanes': () => ({}),
-  'git:worktreeFree': () => [],
-  'fs:lanes': () => [],
-  'context:state': () => ({
-    project: '',
-    entries: [],
-    marks: {},
-    notes: [],
-    auto: true,
-    digest: null,
-  }),
-};
-const lockedOut = (channel = '') => {
-  const plan = userAuth.gateCached();
-  return plan.ok || (plan.lapsed && LAPSE_READ.has(channel)) ? null : plan;
-};
-const lockedReply = (channel, plan) =>
-  Object.hasOwn(LOCKED_EMPTY, channel)
-    ? LOCKED_EMPTY[channel]()
-    : { ok: false, error: { message: plan.message, code: 'locked' } };
-
 // Every channel registered here is a named section (stall-log.js), the ones outside `handle` below
 // too (pty:write, pty:resize, window:control, voice:hold, auth:*): 63% of stalled time had no name
 // (2026-10-07).
@@ -924,60 +843,36 @@ const ipc = {
   handle: (channel, fn, run = ipcTimed(channel, fn)) =>
     ipcMain.handle(channel, (event, ...args) => {
       if (!trusted(event)) throw new Error('Refused: not Technically Not');
-      const plan = !lockFree(channel) && lockedOut(channel);
-      if (plan) refusedAction(channel);
-      return plan ? lockedReply(channel, plan) : run(event, ...args);
+      return run(event, ...args);
     }),
   on: (channel, fn, run = ipcTimed(channel, fn)) =>
     ipcMain.on(channel, (event, ...args) => {
-      if (trusted(event) && (lockFree(channel) || !lockedOut(channel))) return run(event, ...args);
-      if (trusted(event)) refusedAction(channel);
+      if (trusted(event)) return run(event, ...args);
       if (channel === 'tnai:prompt') event.returnValue = null;
     }),
 };
 
-// The Technically Not account (accounts server) and the plan lock; registers the `auth:*` IPC
-// channels itself (user-auth.js). When the app locks, pop-outs dock (closing one docks it) and
-// view-only file windows close, so nothing usable stays outside the lock screen. A lock mid-session
-// also starts plan-lapse.js (PowerShell panels: notice, then closed).
-const planLapse = require('./plan-lapse');
-planLapse.init({ ptys, turns, send: toWindow });
+// The Technically Not account (accounts server); registers the `auth:*` IPC channels itself
+// (user-auth.js).
 userAuth.init(
   ipc,
   (channel, payload) => {
     toWindow(channel, payload);
     if (channel === 'auth:changed') {
-      if (payload?.lock?.locked) closeOutsideWindows();
-      planLapse.lockChanged(payload?.lock);
       remote.accountChanged(...remoteWho(payload?.user));
-      try {
-        remote.lockChanged(payload?.lock);
-      } catch {
-        /* no view */
-      }
 
-      /* the plan locked: this computer's own view of another one ends, nobody can look at it */
-      /* a lock or unlock: paired computers are told what they may control now */
+      // paired computers are told what they may control now
       remote.controlChanged();
     }
   },
   () => win
 );
 
-function closeOutsideWindows() {
-  // Pop-outs are the empty same-origin documents Technically Not fills (about:blank); file windows
-  // use tnai-view:. Prompt dialogs (data:) stay.
-  for (const w of BrowserWindow.getAllWindows())
-    if (w !== win && !w.isDestroyed() && /^(about:blank|tnai-view:)/.test(w.webContents.getURL()))
-      w.close();
-}
-
 const stalls = require('./stall-log');
 const handle = (channel, fn) => {
   const run = stalls.timed('ipc ' + channel, fn);
   ipc.handle(channel, (_event, ...args) => run(...args));
 }; // timed: a stall line can name the handler that blocked
-handle('auth:lapse', () => planLapse.state());
 handle('graph:state', () => graph.state());
 handle('graph:keep', (nodeId, on) => graph.keep(nodeId, on));
 handle('graph:settings', patch => graph.setSettings(patch));
@@ -1321,19 +1216,32 @@ handle('update:openNotes', () => updater.openNotes());
 // pushed to the bell.
 const cliUpdates = require('./cli-updates');
 app.whenReady().then(() => cliUpdates.init(state => toWindow('cli-updates:state', state)));
-app.on('before-quit', () => cliUpdates.stop());
+onQuit(() => cliUpdates.stop());
 handle('cli-updates:state', () => cliUpdates.state());
 
 // Snapshot to the clipboard (snapshot-service.js): global Ctrl+Shift+Alt+S (changeable in Settings)
 // while Technically Not runs; no image is saved to disk.
 const snapshot = require('./snapshot-service');
-app
-  .whenReady()
-  .then(() =>
-    snapshot.init(state => toWindow('snapshot:state', state), { allowed: () => !lockedOut() })
-  ); // no snapshot while locked
+app.whenReady().then(() => snapshot.init(state => toWindow('snapshot:state', state)));
 handle('snapshot:state', () => snapshot.state());
 handle('snapshot:setShortcut', accelerator => snapshot.setShortcut(accelerator));
+
+// The Snapshots box (snapshot-shelf.js): the last five pictures and five clips, in memory while
+// the app runs; the page asks for the list and hears every change.
+const shelf = require('./snapshot-shelf');
+shelf.init({
+  onChange: list => toWindow('snapshots:changed', list),
+  copyClip: snapshot.copyClip,
+});
+const shelfKind = kind => (kind === 'clip' ? 'clip' : 'picture');
+handle('snapshots:list', () => shelf.list());
+handle('snapshots:copy', (kind, id) =>
+  shelf
+    .copy(shelfKind(kind), String(id || ''))
+    .catch(error => ({ ok: false, error: { message: error.message } }))
+);
+handle('snapshots:remove', (kind, id) => shelf.remove(shelfKind(kind), String(id || '')));
+handle('snapshots:clear', () => shelf.clear());
 handle('cli-updates:check', () => cliUpdates.check());
 handle('fs:write', (rel, bytes, lane) => {
   if (!lane) watch.ignore(rel);
@@ -1348,7 +1256,7 @@ handle('git:status', () => gitService.status());
 // its worktree.
 const worktrees = require('./worktree-service');
 worktrees.init(toWindow);
-app.on('before-quit', () => worktrees.stop());
+onQuit(() => worktrees.stop());
 handle('git:worktrees', () => worktrees.list());
 handle('git:worktreeMerge', branch => worktrees.merge(branch));
 handle('git:worktreeRemove', (branch, options) =>
@@ -1490,11 +1398,6 @@ handle(
   stalls.sections('ipc pty:start', async (span, options) => {
     const paneId = options?.paneId,
       gen = ptys.generation(paneId);
-
-    // Plan lock (user-auth.js): while locked no agent CLI or terminal starts. Panels already
-    // running are left alone.
-    const plan = userAuth.gate();
-    if (!plan.ok) return { ok: false, error: { message: plan.message, code: plan.code } };
     if (ptyLaunching.has(paneId) && ptyLaunching.get(paneId) === gen)
       return { ok: false, error: { message: 'This panel is already starting.', code: 'busy' } };
 
@@ -1713,7 +1616,7 @@ handle(
 // A PowerShell kept ready for the next PowerShell panel (pty-service.js warm;
 // Settings › General). The window asks after it loads, after a PowerShell panel
 // started, and when the project, theme or setting changes: { on, theme }. Windows only (other
-// shells start at once); one at a time; none without a project folder or while the plan is locked.
+// shells start at once); one at a time; none without a project folder.
 let lastShellSize = { cols: 100, rows: 30 },
   readySeq = 0,
   warming = false;
@@ -1731,7 +1634,7 @@ handle('pty:warm', async opts => {
   // the checks that are about it.
   const test = selfTestName,
     quiet = !!test && !/^(powershell-link-speed|ready-shell)$/.test(test);
-  if (!opts || opts.on === false || quiet || !cwd || !userAuth.gate().ok) {
+  if (!opts || opts.on === false || quiet || !cwd) {
     drop();
     return false;
   }
@@ -1795,10 +1698,6 @@ handle('pty:forget', paneId => {
   return ptys.forget(paneId);
 });
 
-// While lapsed an agent finishing its turn may still release and list its file locks; everything
-// that starts or messages agents stays refused.
-const MESH_LAPSE_OPS = new Set(['lock', 'unlock', 'locks']);
-
 // Agent mesh (agent-mesh.js): which panes are agent sessions (incl. CLIs started by hand) and the
 // names the UI shows for them.
 const mesh = require('./agent-mesh');
@@ -1818,6 +1717,10 @@ mesh.init(
     teams,
     links,
     lifecycle,
+    // a held `tnai send` message that is dropped is told to its sender (agent-mesh.js onDone)
+    notify: appNotice,
+    // a working Claude Code agent reads another agent's message after its next tool call
+    notices: require('./agent-notices'),
     sayTurn: paneId => sayRules.inSay(paneId),
     sayList: project => sayComputers(project),
     remoteSay: o => sayAcross(o),
@@ -1833,15 +1736,11 @@ mesh.init(
         return true;
       }
     } /* `tnai rename` at most once a minute while a paired computer has full control here (security review 13, Low 11); the service answers "no" without reading anything while connecting is off (review 19, 3.2) */,
-    locked: op => {
-      const plan = lockedOut();
-      return plan && !(plan.lapsed && MESH_LAPSE_OPS.has(op)) ? plan.message : '';
-    },
     projects: async () =>
       ((await files.projects()).value?.projects || []).filter(p => !p.missing).map(p => p.path),
   }
 );
-app.on('before-quit', () => mesh.stop());
+onQuit(() => mesh.stop());
 
 // Several computers (remote-service.js). Off until the user
 // turns it on on the Devices page: until then no key is made and no connection, timer or file
@@ -1936,7 +1835,6 @@ const remote = remoteService.createRemoteService({
   remoteStartsToday: id => lifecycle.remoteStartsToday(id),
   remoteStartTaken: id => lifecycle.remoteStartNoted(id), // 20 a day, kept across a restart
   cancelHeld: key => attention.cancelRemote(String(key)),
-  planLocked: () => !!lockedOut(),
   // The live view. While a paired computer watches one of this
   // computer's agent panels, the window is asked to hand over that panel's screen as plain rows
   // (src/scripts/115-remote-view.js; they come back on `remote:screenRows`).
@@ -2058,7 +1956,6 @@ const remoteActions = require('./remote-actions').createRemoteActions({
   turns,
   attention,
   submit: (...a) => promptSubmit.submit(...a),
-  locked: () => lockedOut(),
   abort: paneId => require('./opencode-link').abort(paneId),
   // A choice from another computer: OpenCode's own list of open questions,
   // its own answer call, and the permission requests the app holds now.
@@ -2490,6 +2387,7 @@ ipc.handle('remote:setOwnRelay', (_e, url, secret, confirm) =>
   relayWiring.set(url, secret, confirm === true)
 );
 ipc.handle('remote:clearOwnRelay', (_e, confirm) => relayWiring.clear(confirm === true));
+ipc.handle('remote:forgetRelayDevice', (_e, id) => relayWiring.forgetDevice(String(id)));
 app.whenReady().then(() => remote.start());
 
 // Sleep and wake: when the system resumes the link looks at once instead of at the end of a wait
@@ -2526,7 +2424,7 @@ app.whenReady().then(() => {
     /* no power events on this system */
   }
 });
-app.on('before-quit', () => remote.quit());
+onQuit(() => remote.quit());
 
 // Live team awareness (agent-peers.js): who else works in the project now and whose task crosses an
 // agent's own; a lead and its sub-agents are one team.
@@ -2653,7 +2551,7 @@ handle('system:watch', on => {
   statsWanted = !!on;
   return statsSync();
 });
-app.on('before-quit', () => systemStats.stop());
+onQuit(() => systemStats.stop());
 
 // Voice prompts (voice-service.js, loaded lazily since most sessions never use the mic): local
 // speech-to-text under userData/voice.
@@ -2670,7 +2568,7 @@ const getVoice = () =>
   }));
 
 // stop the warm engine with the app, not only on process exit
-app.on('before-quit', () => voice && voice.dispose());
+onQuit(() => voice && voice.dispose());
 
 // model: the Voice model setting (fast | accurate | best; anything else is fast), see CHOICES in
 // voice-service.js. gpu: the Use graphics card setting (true = the Whisper models on an NVIDIA card
@@ -2842,7 +2740,7 @@ function saveAndStopAll() {
   flushAllSaves();
 }
 
-app.on('before-quit', () => {
+onQuit(() => {
   saveAndStopAll();
   for (const service of [watch, hooks, gitService])
     try {

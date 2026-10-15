@@ -73,9 +73,9 @@
 // computer's window to hand over that panel's screen while a view runs (the rows come back through
 // screen() below), or to stop. on.view(model) → what the open live-view dialog shows changed
 // (model: remote-view.js createWatcher; null = no view). mono() → milliseconds on a clock that only
-// goes forward. planLocked() → false only while the plan lets agents be used here (main.js
-// `lockedOut`); anything else refuses every operation. Pure Node apart from storageBackend(), so
-// tools/remote-service-test.js runs it as the app does. Nothing here may log a key or a code.
+// goes forward. Pure
+// Node apart from storageBackend(), so tools/remote-service-test.js runs it as the app does.
+// Nothing here may log a key or a code.
 const keys = require('./remote-keys.js');
 const { createLink } = require('./remote-link.js');
 const {
@@ -253,7 +253,6 @@ function createRemoteService({
   remoteStartsToday = null,
   remoteStartTaken = null,
   cancelHeld = () => 0,
-  planLocked = () => true,
   watchScreen = () => {},
   mono,
   on = {},
@@ -825,7 +824,7 @@ function createRemoteService({
 
   // A hand-over asked by another computer, in the turn of remote-control.js's checks: that computer
   // holds the right now, and the branch's name is this computer's own. Asked again before every
-  // fetch and before the write, with the plan lock.
+  // fetch and before the write.
   const syncHere = ({ peerId, commit, guard }) => {
     if (!handover || !syncOn(peerId)) return 'refused';
     const short = handoffShort(peerId);
@@ -834,7 +833,7 @@ function createRemoteService({
       handover.handoff({
         commit,
         short,
-        guard: () => !locked() && syncOn(peerId) && guard() === true,
+        guard: () => syncOn(peerId) && guard() === true,
       })
     ).then(
       w => {
@@ -1076,17 +1075,6 @@ function createRemoteService({
   }
 
   // ---- a prompt, an interrupt, a stop, a start from a paired computer ----
-  // The plan lock is asked first (change 16): while it holds
-  // no agent is "now", no CLI can be started and no ticket is given, so every operation is refused
-  // before it is taken, and a prompt already held is dropped at its write.
-  const locked = () => {
-    try {
-      return planLocked() !== false;
-    } catch {
-      return true;
-    }
-  };
-
   // What remote-control.js reads as the right: the pairing id the switch is on for, only while that
   // pairing is not paused and this computer is not stopping.
   const controlRight = id =>
@@ -1101,7 +1089,7 @@ function createRemoteService({
   const startable = () => {
     let have = [];
     try {
-      have = locked() ? [] : clis() || [];
+      have = clis() || [];
     } catch {
       /* none */
     }
@@ -1173,12 +1161,12 @@ function createRemoteService({
   }
 
   // Every delivery: only for an operation whose entry was just written (if that cannot be written,
-  // nothing is delivered, as for an answer), and the plan lock once more in the turn of the call.
+  // nothing is delivered, as for an answer).
   // Nothing of the message but what is named reaches the app's action.
-  const act = (fn, no) => {
+  const act = fn => {
     const ok = written;
     written = false;
-    return !ok ? 'failed' : locked() ? no : fn();
+    return !ok ? 'failed' : fn();
   };
 
   // The files a taken prompt names are written now, by the app's own saving, under names made on
@@ -1186,7 +1174,7 @@ function createRemoteService({
   // needs: the words for the agent, what the list shows, and the undo for a prompt that then does
   // not go in.
   const saveFiles = list => {
-    if (!remoteFiles || locked() || !Array.isArray(list)) return null;
+    if (!remoteFiles || !Array.isArray(list)) return null;
     const done = [],
       undo = () => {
         for (const x of done) {
@@ -1474,7 +1462,7 @@ function createRemoteService({
       tellFrom,
       ticket: (id, panelId) => (control && trust.open(id) ? control.ticketFor(id, panelId) : ''),
       stamp: id => (control && controlRight(id) ? control.stamp(id) : 0),
-      starts: id => (controlRight(id) && !locked() ? startable() : null),
+      starts: id => (controlRight(id) ? startable() : null),
       reply: shapeReply,
       // the git hand-over: said as one word too, only under its own sentence's mark
       syncable: id => !!handover && !!controlRight(id) && syncOn(id),
@@ -1483,8 +1471,7 @@ function createRemoteService({
       // Agents message agents: said as one word in `control` and as `m` on each row that may take
       // one now, only under its own mark.
       sayable: id => !!controlRight(id) && sayOn(id),
-      sayRow: (id, panelId) =>
-        !!controlRight(id) && sayOn(id) && !locked() && sayTarget(panelId) === true,
+      sayRow: (id, panelId) => !!controlRight(id) && sayOn(id) && sayTarget(panelId) === true,
       // A kept picture of that computer's panel goes when that computer, connected, does not say
       // this one may watch: its switch went off there, or a new
       // session began. While it is offline the picture stays, with its time.
@@ -1566,7 +1553,7 @@ function createRemoteService({
         ticket: (id, panelId) =>
           control && trust && trust.open(id) ? control.ticketFor(id, panelId) : '',
         agentName: panelId => {
-          const a = locked() ? null : agentNow(panelId);
+          const a = agentNow(panelId);
           return a && typeof a.name === 'string' ? a.name : '';
         },
         send: gateSend,
@@ -1641,13 +1628,13 @@ function createRemoteService({
         live: id => !!link && link.state().sessions.includes(id),
         peerName: shownName,
         files: {
-          offer: o => (locked() || !remoteFiles ? 'refused' : taker.offer(o)),
-          take: o => (locked() ? null : taker.take(o)),
+          offer: o => (!remoteFiles ? 'refused' : taker.offer(o)),
+          take: o => taker.take(o),
           save: list => saveFiles(list),
         },
         send: gateSend,
-        agentNow: panelId => (locked() ? null : agentNow(panelId)),
-        clis: () => (locked() ? [] : clis()),
+        agentNow: panelId => agentNow(panelId),
+        clis: () => clis(),
         openKey: myKey,
         remoteStarted: () => remoteStarted(),
         startsToday: typeof remoteStartsToday === 'function' ? id => remoteStartsToday(id) : null,
@@ -1655,29 +1642,26 @@ function createRemoteService({
         log: record,
         cancel: (key, panelId) => cancelHeld(key, panelId),
         prompt: ({ key, panelId, text, guard, from, done, tail }) =>
-          act(() => submitRemote({ key, panelId, text, from, guard, done, tail }), 'refused'),
-        interrupt: (panelId, guard) => act(() => interrupt(panelId, guard), 'refused'),
-        stop: (panelId, guard) => act(() => stopAgent(panelId, guard), 'refused'),
-        choose: o => act(() => chooseHere(o), 'refused'),
+          act(() => submitRemote({ key, panelId, text, from, guard, done, tail })),
+        interrupt: (panelId, guard) => act(() => interrupt(panelId, guard)),
+        stop: (panelId, guard) => act(() => stopAgent(panelId, guard)),
+        choose: o => act(() => chooseHere(o)),
         sync: ({ peerId, commit, guard }) =>
           // from the message: one commit id
-          act(() => syncHere({ peerId, commit, guard }), 'refused'),
+          act(() => syncHere({ peerId, commit, guard })),
         // a choice is answered only below the line pictures stop at
         busy: () => !(lastMinute() < LINK_SAFE),
         // An agent's message: the mark as the pairing id it was given for; the panel asked at
         // arrival and again at the write.
         say: {
           right: id => (trust && trust.open(id) && sayOn(id) ? prefs.say[id] : ''),
-          target: panelId => !locked() && sayTarget(panelId) === true,
-          deliver: o => act(() => sayHere({ ...o, computer: nameOf(o.peerId) }), 'refused'),
+          target: panelId => sayTarget(panelId) === true,
+          deliver: o => act(() => sayHere({ ...o, computer: nameOf(o.peerId) })),
           // computer: this computer's plain name for the other one, for the mark (the list's own
           // name carries the id's last characters, and the mark adds its own)
         },
         start: ({ cli, text, guard, from }) =>
-          act(
-            () => startAgent({ cli, text, from, guard: key => !locked() && guard(key) }),
-            'refused'
-          ),
+          act(() => startAgent({ cli, text, from, guard: key => guard(key) })),
       });
     link.start();
     try {
@@ -2204,14 +2188,6 @@ function createRemoteService({
       if (views) views.reask();
       if (prefs && prefs.on) push();
     },
-    // The plan lock came on: this computer's own view of another computer's panel ends.
-    lockChanged(lock) {
-      if (lock && lock.locked === true) {
-        this.unview('closed');
-        return true;
-      }
-      return false;
-    },
     // The CLIs that can be started here, the plan, or what a panel runs changed: every computer
     // that may control is told again.
     controlChanged() {
@@ -2400,13 +2376,7 @@ function createRemoteService({
         mine = myProject(),
         short = handoffShort(id);
       const theirs = v && v.project && mine && v.project.root === mine.root ? v.project.head : '';
-      if (
-        !handover ||
-        locked() ||
-        !theirs ||
-        !short ||
-        (brought.get(id) && brought.get(id).state === 'going')
-      )
+      if (!handover || !theirs || !short || (brought.get(id) && brought.get(id).state === 'going'))
         return { ...state(), sent: 'not_sent' };
 
       // A branch that was made or moved is one line in this computer's activity log, so the user
@@ -2439,7 +2409,7 @@ function createRemoteService({
             short,
             guard: () => {
               const p = myProject();
-              return !locked() && !!p && p.root === root0;
+              return !!p && p.root === root0;
             },
           })
         )

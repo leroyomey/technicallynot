@@ -161,8 +161,6 @@ function createCopies(prefix) {
       'TNAI_CHECK_LIMIT_MS',
       'ELECTRON_RUN_AS_NODE',
       'TNAI_CHECK_PROJECT',
-      'TNAI_ENFORCE_PLAN',
-      'TNAI_DEV_UNLOCK',
       'TNAI_CHECK_BY_HAND',
     ];
     for (const name of notPassedOn) delete env[name];

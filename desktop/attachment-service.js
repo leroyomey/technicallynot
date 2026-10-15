@@ -183,6 +183,11 @@ const inside = file => {
 };
 let held = null;
 const going = new Set(); // clips being deleted right now
+
+// Clips the Snapshots box holds (snapshot-shelf.js): a sweep while the app runs leaves them alone,
+// even when the clipboard no longer names them. At quit they go like any unused clip, since the box
+// is kept in memory only.
+const kept = new Set();
 let deleting = Promise.resolve();
 
 function load() {
@@ -308,6 +313,7 @@ function drop(text, sync, asked) {
   const gone = [];
   for (const [video, files] of [...load()]) {
     if (!asked.has(video) || text.includes(video) || going.has(video)) continue;
+    if (!sync && kept.has(video)) continue;
     if (sync) {
       let all = true;
       for (const file of files)
@@ -340,6 +346,23 @@ function discard(video) {
   if (!files) return Promise.resolve(false);
   held.delete(video);
   write();
+  return remove(files);
+}
+
+// The Snapshots box holds a clip (on) or let it go (off). Let go, it is judged by the usual rule
+// again: kept if it was pasted in the app, deleted at the next sweep if nothing names it.
+function keep(video, on) {
+  if (!inside(video)) return;
+  if (on) kept.add(video);
+  else kept.delete(video);
+}
+
+// The user deleted a clip in the Snapshots box: its video and frames go now, pasted or not. Only
+// clip files inside dir() are touched.
+function removeClip(files) {
+  if (!Array.isArray(files) || !files.length || !files.every(inside)) return Promise.resolve(false);
+  kept.delete(files[0]);
+  if (load().delete(files[0])) write();
   return remove(files);
 }
 
@@ -427,5 +450,7 @@ module.exports = {
   used,
   sweep,
   discard,
+  keep,
+  removeClip,
   settled: () => deleting.then(() => writing),
 };
