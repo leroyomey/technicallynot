@@ -53,16 +53,6 @@
       "group": "Opus"
     },
     {
-      "id": "claude-opus-4-1-20250805",
-      "label": "Opus 4.1",
-      "group": "Opus"
-    },
-    {
-      "id": "claude-opus-4-20250514",
-      "label": "Opus 4",
-      "group": "Opus"
-    },
-    {
       "id": "claude-sonnet-5-5",
       "label": "Sonnet 5.5",
       "group": "Sonnet"
@@ -75,16 +65,6 @@
     {
       "id": "claude-sonnet-4-6",
       "label": "Sonnet 4.6",
-      "group": "Sonnet"
-    },
-    {
-      "id": "claude-sonnet-4-5-20250929",
-      "label": "Sonnet 4.5",
-      "group": "Sonnet"
-    },
-    {
-      "id": "claude-sonnet-4-20250514",
-      "label": "Sonnet 4",
       "group": "Sonnet"
     },
     {
