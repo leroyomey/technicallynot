@@ -113,6 +113,14 @@
           go: route('terminal'),
         },
         {
+          // The Board (157): the project's threads in columns by their live status, ideas and
+          // scheduled prompts in Up next, and a Week view of runs (user decision 2026-10-16).
+          label: 'Board',
+          icon: 'columns-3',
+          words: 'kanban columns status week schedule ideas plan calendar review',
+          go: route('board'),
+        },
+        {
           // The one plain terminal for the user's own commands (136): the Threads page with its
           // side column on the Terminal tab. From another page that is a change of page; on the
           // Threads page only the column opens.
@@ -197,6 +205,14 @@
           go: () => window.TnaiSnapshotShelf?.open(document.querySelector('.top .tnt-menu-btn')),
         },
         {
+          // Listed, not only found by search: the user asked for it under This app.
+          label: 'Keyboard shortcuts',
+          icon: 'command',
+          key: '?',
+          words: 'keys keybinds keybindings hotkeys',
+          go: settings('keyboard'),
+        },
+        {
           label: 'Settings',
           icon: 'settings',
           words: 'general appearance look dark light accent color terminal layout',
@@ -205,19 +221,12 @@
       ],
     },
     {
-      // Found by the search only. The three tabs of Settings are not listed: Settings has its
-      // own row, and a list of shortcuts into one page made the menu read as unsorted. Typing
-      // what one is about still opens it at once.
+      // Found by the search only. These tabs of Settings are not listed: Settings has its own
+      // row, and a list of shortcuts into one page made the menu read as unsorted. Typing what
+      // one is about still opens it at once.
       name: 'More',
       searchOnly: true,
       rows: [
-        {
-          label: 'Keyboard shortcuts',
-          icon: 'command',
-          key: '?',
-          words: 'keys',
-          go: settings('keyboard'),
-        },
         {
           label: 'Voice and snapshot',
           icon: 'zap',

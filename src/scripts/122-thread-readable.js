@@ -113,7 +113,10 @@
       jump: jumpBar(),
     };
     state.live.hidden = true;
-    state.live.innerHTML = '<i></i><span></span><em hidden>· inferred</em>';
+
+    // the bar moves while the CLI runs a built-in command such as a compact (158)
+    state.live.innerHTML =
+      '<i></i><span></span><em hidden>· inferred</em><b class="tnt-live-bar" hidden></b>';
     states.set(key, state);
     for (const [id, old] of states) {
       if (states.size <= KEEP_THREADS) break;
@@ -214,53 +217,39 @@
   };
 
   // ---------- getting around a long conversation ----------
-  // Two buttons float at the conversation's bottom right, each only while the reader is away from
-  // where it leads: "Last report" while the newest report card is out of view, "Latest" while the
-  // newest line is. A reader at the end sees neither.
+  // "Latest" floats at the conversation's bottom left while the reader is away from the newest
+  // line. A reader at the end does not see it. (A "Last report" button beside it was removed: the
+  // user found it useless.)
   function jumpBar() {
     const bar = make('div', 'tnt-jump');
-    for (const [kind, label] of [
-      ['report', 'Last report'],
-      ['latest', 'Latest'],
-    ]) {
-      const button = make('button', 'tnt-jump-btn', label);
-      button.type = 'button';
-      button.dataset.jump = kind;
-      button.hidden = true;
-      bar.append(button);
-    }
+    const button = make('button', 'tnt-jump-btn', 'Latest');
+    button.type = 'button';
+    button.dataset.jump = 'latest';
+    button.hidden = true;
+    bar.append(button);
     bar.addEventListener('click', event => {
       const kind = event.target.closest('[data-jump]')?.dataset.jump;
       const state = [...shown].find(each => each.jump === bar);
-      if (!kind || !state?.host) return;
-      if (kind === 'latest') {
-        state.holdReport = null;
-        atEnd.set(state.host, true);
-        toBottom(state);
-      } else lastReport(state)?.scrollIntoView({ block: 'start' });
+      if (kind !== 'latest' || !state?.host) return;
+      state.holdReport = null;
+      atEnd.set(state.host, true);
+      toBottom(state);
       paintJump(state);
     });
     return bar;
   }
 
+  // The newest report card of a conversation, or null (the view holds on it while the next turn
+  // follows; holdReport below).
   const lastReport = state => {
     const cards = state.list.querySelectorAll('.tnt-report');
     return cards[cards.length - 1] || null;
   };
 
-  // Which of the two buttons the reader needs now. Read on scroll, at most once a frame.
+  // Whether the reader needs "Latest" now. Read on scroll, at most once a frame.
   function paintJump(state) {
-    const host = state.host;
-    if (!host) return;
-    const card = lastReport(state);
-    let reportAway = false;
-    if (card) {
-      const box = card.getBoundingClientRect();
-      const view = host.getBoundingClientRect();
-      reportAway = box.bottom < view.top || box.top > view.bottom;
-    }
-    const [toReport, toLatest] = state.jump.children;
-    toReport.hidden = !reportAway;
+    if (!state.host) return;
+    const [toLatest] = state.jump.children;
     toLatest.hidden = nearBottom(state);
   }
 
@@ -398,8 +387,17 @@
     return node;
   }
 
+  // A page or picture the last actions made comes as a card before what follows them (159).
+  const placeDesigns = state =>
+    safe(() => window.TnaiThreadDesigns?.place?.(state, node => addBlock(state, node)), null);
+
   function addYou(state, entry) {
+    placeDesigns(state);
     state.files = new Map();
+
+    // 170: a new prompt starts a new task, so nothing of one that ended without its "Worked for"
+    // line goes into the next task's block
+    safe(() => window.TnaiWhatItMade?.prompt?.(state), null);
 
     // a question still open when the user writes again is an earlier one: it can no longer be
     // answered from here
@@ -445,6 +443,76 @@
   // Status sections in a reply ("Done:", "Where we stopped:", "Still open:", "Your turn:",
   // "Heads up:") and the outcome word of an "Outcome: Fixed" line get the colors they have in
   // the terminal. 75 says what a line is; this only marks the nodes.
+  // ---------- copying a code block ----------
+  // Every code block in a reply gets a copy icon in its top right corner, faint until the pointer
+  // is over the block (user, 2026-10-19: "ways for the user to select all or copy the text
+  // inside"; place 1 of docs/plans/design-concepts/code-copy.html). A press copies the whole block,
+  // also the part of a long line out of view; the icon turns to a check and "Copied" fades in.
+  // Ctrl+A after a press inside a block selects only that block.
+  const COPIED_MS = 1400;
+
+  function selectAllIn(code) {
+    const range = document.createRange();
+    range.selectNodeContents(code);
+    const picked = window.getSelection();
+    picked.removeAllRanges();
+    picked.addRange(range);
+  }
+
+  async function copyBlock(button, code) {
+    let done = false;
+    try {
+      await navigator.clipboard.writeText(code.textContent);
+      done = true;
+    } catch {
+      // The clipboard can refuse a page that does not have the keyboard: the block's text is
+      // selected and copied the older way instead.
+      selectAllIn(code);
+      done = safe(() => document.execCommand('copy'), false);
+    }
+    if (!done) return;
+    const said = button.nextElementSibling;
+
+    // a class, not a :has() rule: the fade under "Copied" costs no style check on other changes
+    const box = button.parentElement;
+    button.dataset.done = '';
+    button.innerHTML = icon('check', 15);
+    said.dataset.on = '';
+    box?.classList.add('tnt-code-copied');
+    clearTimeout(button.copiedTimer);
+    button.copiedTimer = setTimeout(() => {
+      delete button.dataset.done;
+      delete said.dataset.on;
+      box?.classList.remove('tnt-code-copied');
+      button.innerHTML = icon('copy', 15);
+    }, COPIED_MS);
+  }
+
+  function addCopyButtons(block) {
+    block.querySelectorAll(':scope pre').forEach(pre => {
+      if (pre.parentElement?.classList.contains('tnt-code')) return;
+      const code = pre.querySelector('code') || pre;
+      const box = make('div', 'tnt-code');
+      pre.replaceWith(box);
+      pre.tabIndex = 0;
+      const button = make('button', 'tnt-code-copy');
+      button.type = 'button';
+      button.setAttribute('aria-label', 'Copy');
+      button.title = 'Copy';
+      button.innerHTML = icon('copy', 15);
+      const said = make('span', 'tnt-code-said', 'Copied');
+      said.setAttribute('aria-live', 'polite');
+      box.append(pre, button, said);
+      button.addEventListener('click', () => copyBlock(button, code));
+      pre.addEventListener('keydown', event => {
+        if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'a') {
+          event.preventDefault();
+          selectAllIn(code);
+        }
+      });
+    });
+  }
+
   function colorReply(block) {
     const read = window.TnaiReportHighlight?.readLine;
     if (!read) return;
@@ -482,8 +550,11 @@
 
   // The report agents end a task with: its lines as a card. A "- Decide:" line is a question with
   // its options; the buttons are wired by paintDecisions.
-  function reportCard(text) {
+  // `at`: when the report was written, in the tool's record (49 `findDecision` tells this report's
+  // saved result from an older one that asked the same question).
+  function reportCard(text, at) {
     const card = make('section', 'tnt-report');
+    if (at) card.dataset.at = String(at);
     card.append(make('h3', '', 'Technically Not report'));
     let decision = 0;
     for (const raw of text.split(/\r?\n/)) {
@@ -539,9 +610,10 @@
         known.words = words;
         known.block.innerHTML = markdown(words);
         colorReply(known.block);
+        addCopyButtons(known.block);
       }
       if (report && known.report !== report) {
-        const card = reportCard(report);
+        const card = reportCard(report, entry.at);
         if (known.card?.isConnected) known.card.replaceWith(card);
         else known.block.after(card);
         known.card = card;
@@ -550,14 +622,16 @@
       }
       return;
     }
+    if (words) placeDesigns(state);
     const block = make('div', 'tnt-say');
     block.innerHTML = words ? markdown(words) : '';
     colorReply(block);
+    addCopyButtons(block);
     block.hidden = !words;
     addBlock(state, block);
     let card = null;
     if (report) {
-      card = addBlock(state, reportCard(report));
+      card = addBlock(state, reportCard(report, entry.at));
       paintDecisions(state);
     }
     if (entry.id) state.says.set(entry.id, { block, card, words, report });
@@ -719,6 +793,10 @@
     group.lastElementChild.append(line, more);
     const known = { line, entry, more, open };
     state.acts.set(entry.id, known);
+    safe(() => window.TnaiThreadDesigns?.note?.(state, entry, node => addBlock(state, node)), null);
+
+    // 170: what the task made, shown in its "Worked for" block
+    safe(() => window.TnaiWhatItMade?.note?.(state, entry), null);
     paintMore(known, null);
     paintGroup(group);
   }
@@ -877,6 +955,9 @@
         : '';
     line.querySelector('.tnt-act-result').textContent = word;
     paintMore(known, entry);
+
+    // 170: a command's output can name the site it started
+    if (!again) safe(() => window.TnaiWhatItMade?.result?.(state, known.entry, entry), null);
     const group = line.closest('.tnt-grp');
     if (group) paintGroup(group);
   }
@@ -940,6 +1021,7 @@
 
   // The end of a task: how long it took, and the files it changed with their line counts.
   function addWorked(state, entry) {
+    placeDesigns(state);
     const block = make('div', 'tnt-worked');
 
     // a tool that does not record how long a task took only says that it ended
@@ -971,6 +1053,10 @@
       files.prepend(head);
       block.append(files);
     }
+
+    // 170: what the task made, under the same line (the block stays as it was when it made
+    // nothing)
+    safe(() => window.TnaiWhatItMade?.block?.(state, entry, block), false);
     addBlock(state, block);
     state.files = new Map();
   }
@@ -992,12 +1078,21 @@
       else if (entry.kind === 'result') addResult(state, entry);
       else if (entry.kind === 'ask') addAsk(state, entry);
       else if (entry.kind === 'worked') addWorked(state, entry);
-      else if (entry.kind === 'note') addNote(state, entry.text);
-      else if (entry.kind === 'title') state.topic = entry.text;
+      else if (entry.kind === 'note') {
+        addNote(state, entry.text);
+
+        // a compact line ends the thread's "Compacting" line (158)
+        safe(() => window.TnaiCliBusy?.noted?.(state.paneId, entry), null);
+      } else if (entry.kind === 'title') state.topic = entry.text;
     }
 
     // a prompt of the user's may answer a report's decision in its own words: marked once a batch
     if (entries.some(entry => entry.kind === 'you' && entry.text)) paintDecisions(state);
+
+    // a task that has ended (or a past conversation, which has no task) shows what its last
+    // actions made, even with no words after them
+    const turn = safe(() => window.TnaiTurns?.get?.(state.paneId), null);
+    if (!turn || turn.endedAt) placeDesigns(state);
   }
 
   // ---------- a decision answered in the user's own words ----------
@@ -1088,16 +1183,19 @@
   // True only while a decision button's press is being handled (see the button below).
   let pressingDecision = false;
 
+  const reportTime = node => Number(node.closest('.tnt-report')?.dataset.at) || 0;
+
   function paintDecisions(state) {
     // a helper's report is its lead's to read: its options are never buttons here
     if (state.sub) return;
     const context = window.TnaiContext;
     state.list.querySelectorAll('.tnt-report .tnt-decide').forEach(ask => {
       const question = ask.firstChild?.textContent || '';
-      const found = safe(() => context?.findDecision?.(state.paneId, question), null);
+      const since = reportTime(ask);
+      const found = safe(() => context?.findDecision?.(state.paneId, question, since), null);
       const labels = [...ask.querySelectorAll('button')].map(button => button.textContent);
       const chosen =
-        safe(() => context?.choiceFor?.(state.paneId, question), '') ||
+        safe(() => context?.choiceFor?.(state.paneId, question, since), '') ||
         safe(() => typedChoice(ask, labels), '');
       const live = !!context?.decideInThread && !(found && found.done) && !chosen;
       ask.dataset.open = String(live);
@@ -1119,7 +1217,8 @@
                   state.paneId,
                   question,
                   Number(button.dataset.option),
-                  label
+                  label,
+                  since
                 );
               } finally {
                 pressingDecision = false;
@@ -1128,6 +1227,48 @@
             }
           : null;
       });
+    });
+    paintSendKept(state, context);
+  }
+
+  // A report with several decisions sends its answers together once the last is answered (49
+  // `decide`). While some are answered and others are still open, the card shows "Send N answers":
+  // it sends the ones picked now and leaves the rest open (49 `sendKeptNow`). It reuses the
+  // decision buttons' own row and style.
+  function paintSendKept(state, context) {
+    state.list.querySelectorAll('.tnt-report').forEach(card => {
+      const asks = [...card.querySelectorAll('.tnt-decide')];
+      const question = asks[0]?.firstChild?.textContent || '';
+      const since = reportTime(card);
+      const kept =
+        asks.length > 1 ? safe(() => context?.keptCount?.(state.paneId, question, since), 0) : 0;
+      const stillOpen = asks.some(ask => ask.dataset.open === 'true');
+      let row = card.querySelector(':scope .tnt-decide-send');
+      if (!kept || !stillOpen) {
+        row?.remove();
+        return;
+      }
+      if (!row) {
+        row = make('div', 'tnt-decide-options tnt-decide-send');
+        const button = make('button', '', '');
+        button.type = 'button';
+        row.append(button);
+        asks[asks.length - 1].after(row);
+      }
+      const button = row.querySelector('button');
+      button.textContent =
+        'Send ' + kept + (kept === 1 ? ' answer' : ' answers') + ', leave the rest open';
+      button.title =
+        'The agent gets the answers picked so far; the decisions not answered stay open';
+      button.onclick = () => {
+        pressingDecision = true;
+        try {
+          context.sendKeptNow(state.paneId, question, since);
+        } finally {
+          pressingDecision = false;
+        }
+        paintDecisions(state);
+      };
     });
   }
 
@@ -1184,6 +1325,7 @@
           thread.label,
           thread.now,
           thread.inferred ? 1 : 0,
+          thread.busy ? thread.busy.words + thread.busy.clock : '',
         ].join('|')
       : '';
     return { thread, turn, running, key };
@@ -1204,13 +1346,18 @@
       !!thread &&
       (thread.tone === 'needs' ||
         thread.tone === 'agents' ||
-        (thread.tone === 'work' && (running || between)));
+        (thread.tone === 'work' && (running || between)) ||
+        !!thread.busy);
     state.live.hidden = !show;
     if (!show) return;
     state.live.dataset.tone = thread.tone;
-    const words = [thread.label, thread.now].filter(Boolean);
+
+    // A built-in command such as a compact (158): its own words, how long it runs, and the bar.
+    const busy = thread.busy;
+    const words = busy ? [busy.words, busy.clock] : [thread.label, thread.now].filter(Boolean);
     state.live.querySelector('span').textContent = [...new Set(words)].join(' · ');
     state.live.querySelector('em').hidden = !thread.inferred;
+    state.live.querySelector('.tnt-live-bar').hidden = !busy;
   }
 
   // ---------- reading ----------
@@ -1267,10 +1414,14 @@
   // A repaint of the last lines (the live line, a decision that opens) can make the conversation a
   // little taller. A reader who was at the newest line stays there.
   function repaint(paint) {
-    if (!open) return;
-    const stick = nearBottom(open);
-    paint(open);
-    if (stick) toBottom(open);
+    if (open) repaintOne(open, paint);
+  }
+
+  function repaintOne(state, paint) {
+    if (!state.host) return;
+    const stick = nearBottom(state);
+    paint(state);
+    if (stick) toBottom(state);
   }
 
   // ---------- the last lines of a task ----------
@@ -1311,7 +1462,9 @@
       mine.forEach(paintQueued);
       const ended = safe(() => window.TnaiTurns?.get?.(paneId)?.endedAt, 0);
       if (ended) mine.forEach(followEnd);
-      if (open?.paneId === paneId) repaint(paintDecisions);
+
+      // every conversation of this thread on screen, the open one and an All threads card alike
+      mine.forEach(state => repaintOne(state, paintDecisions));
     };
 
     // a conversation on screen has grown in its record: read what is new
@@ -1338,11 +1491,14 @@
     });
     if (typeof offEvents === 'function') stops.push(offEvents);
 
-    // a report was filed or a decision marked: the newest report's buttons follow
-    const offContext = native.context?.onChange?.(() =>
-      setTimeout(() => repaint(paintDecisions), 300)
-    );
-    if (typeof offContext === 'function') stops.push(offContext);
+    // A report was filed or a decision marked: the reports' buttons follow, in every conversation
+    // on screen, once 49 has read the new results (its own event; a fixed wait after the change
+    // could come before the read and leave the buttons as they were until some later event).
+    const onContextData = () => {
+      for (const state of shown) repaintOne(state, paintDecisions);
+    };
+    window.addEventListener('tnai:context-data', onContextData);
+    stops.push(() => window.removeEventListener('tnai:context-data', onContextData));
   }
 
   function unlisten() {
@@ -1390,8 +1546,30 @@
   });
 
   // Puts one conversation into a pane and starts reading it.
+  // Places that asked for a thread living in its own window (162): host → paneId, mounted again
+  // when it comes back (retry).
+  const refused = new Map();
+
   function mount(host, paneId, sub = '') {
+    // A conversation is in one place at a time (mounting moves it). A thread in its own window
+    // keeps it there; another place (the open thread, an All threads card) says where it is.
+    const away = !sub && safe(() => !!window.TnaiThreadPopout?.elsewhere?.(paneId, host), false);
+    if (away) {
+      for (const other of [...shown]) if (other.host === host) unmount(host);
+      refused.set(host, paneId);
+      safe(() => window.TnaiThreadPopout.placeholder(host, paneId), null);
+      return null;
+    }
+    refused.delete(host);
     const state = stateFor(paneId, sub);
+
+    // Moving into a thread's own window: the place it leaves says where it went.
+    const left = state.host;
+    if (left && left !== host && safe(() => !!window.TnaiThreadPopout?.isHost?.(host), false)) {
+      shown.delete(state);
+      refused.set(left, paneId);
+      safe(() => window.TnaiThreadPopout.placeholder(left, paneId), null);
+    }
     for (const other of shown) if (other.host === host && other !== state) unmount(host);
     state.host = host;
     watchEnd(host);
@@ -1407,6 +1585,9 @@
     paintLive(state);
     paintQueued(state);
 
+    // the cards were painted when they were drawn, maybe in another pane: what was decided since
+    paintDecisions(state);
+
     // the pane is shared by every thread: where the reader was in the last one says nothing here
     state.holdReport = null;
     atEnd.set(host, true);
@@ -1420,6 +1601,7 @@
   }
 
   function unmount(host) {
+    refused.delete(host);
     for (const state of [...shown])
       if (state.host === host) {
         shown.delete(state);
@@ -1470,6 +1652,29 @@
 
     // one more conversation on screen (123: a helper's, beside the lead's)
     mount: (host, paneId, sub) => describe(mount(host, paneId, sub)),
+
+    // the copy icon on every code block of a drawn reply (152: another computer's conversation)
+    copyButtons: block => addCopyButtons(block),
     unmount,
+
+    // A thread back from its own window (162): every place that asked for it shows it again.
+    retry(paneId) {
+      for (const [host, wanted] of [...refused])
+        if (wanted === paneId && host.isConnected) {
+          const state = mount(host, paneId);
+          if (host === mainHost) open = state;
+        } else if (!host.isConnected) refused.delete(host);
+    },
+
+    // Runs `send` (a press that sends a prompt for the user, such as a thread action of 154)
+    // without moving the conversation to its newest line: the view stays where the user reads.
+    quietly(send) {
+      pressingDecision = true;
+      try {
+        return send();
+      } finally {
+        pressingDecision = false;
+      }
+    },
   };
 })();

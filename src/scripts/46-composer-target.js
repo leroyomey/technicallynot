@@ -233,6 +233,9 @@ body.tnai-composer-popout>.composer>.activityline,body.tnai-composer-popout>.com
 
   // paneId -> the level its session started with ('default' after a resume: no flag was passed)
   const paneAccess = {};
+
+  // panels main holds at "Ask first" because another computer started them (`held` below)
+  const heldPanes = new Set();
   window.TnaiLaunchPrefs = {
     for: agent => ({ model: prefs[agent]?.model || '', effort: prefs[agent]?.effort || '' }),
     pane: (paneId, agent) => ({
@@ -284,7 +287,23 @@ body.tnai-composer-popout>.composer>.activityline,body.tnai-composer-popout>.com
     },
     // The project's level now, and the level a pane's session started with.
     access: () => levelNow(),
+    // The normal level of another project folder, for that CLI (a scheduled prompt's run, 47):
+    // the one chosen for that project, else the default, and 'default' when the CLI lacks it.
+    accessIn(folder, agent) {
+      const chosen = accessByProject[String(folder || '')];
+      const level = ACCESS.includes(chosen) ? chosen : accessDefault;
+      return hasLevel(agent, level) ? level : 'default';
+    },
     paneAccess: paneId => paneAccess[paneId] || '',
+    // 10, after each start: main's word that the panel is held at "Ask first" (another computer
+    // started it), whatever level this window asked for.
+    held(paneId, on) {
+      if (on) {
+        heldPanes.add(paneId);
+        paneAccess[paneId] = 'ask';
+      } else heldPanes.delete(paneId);
+      paint();
+    },
     // Checks only: what the main process said about a panel's effort (effortTruth), put in place of
     // asking it.
     effortSeen(paneId, v) {
@@ -889,6 +908,13 @@ body.tnai-composer-popout>.composer>.activityline,body.tnai-composer-popout>.com
       return;
     } // the action row: nothing is picked or saved
     const sub = menuSub;
+
+    // another computer's agent, its own CLI: switched there (164, plan item 44)
+    if (sub?.kind === 'remote' && sub.agent === agent) {
+      close(true);
+      if (!sub.far.why.model) window.TnaiRemoteThreadMore?.pick?.(sub.far, 'model', model);
+      return;
+    }
     if (sub?.kind === 'live' && sub.agent === agent) {
       if (busy(sub.session.paneId)) return;
 
@@ -1144,6 +1170,11 @@ body.tnai-composer-popout>.composer>.activityline,body.tnai-composer-popout>.com
     const next = live.newAgent(),
       opts = live.startOptions?.() || [];
     if (next) return { kind: 'new', agent: next };
+
+    // An agent on another computer is the composer's target (164, plan item 44): its model and
+    // effort are switched there; `far` holds its name, computer and the reasons for what cannot be.
+    const far = window.TnaiRemoteThreadMore?.subject?.() || null;
+    if (far && far.agent) return { kind: 'remote', agent: far.agent, far };
     const s = running().find(x => x.paneId === live.target());
     if (s) return { kind: 'live', agent: s.agent, session: s };
     const pick = live.startChoice?.() || null;
@@ -1331,10 +1362,38 @@ body.tnai-composer-popout>.composer>.activityline,body.tnai-composer-popout>.com
       .join('');
   }
 
+  // Model and Effort for an agent on another computer (164, plan item 44): the CLI's list as this
+  // computer knows it, nothing shown as picked (that computer's own choice is not sent here), and
+  // what that CLI cannot switch from here greyed with the reason.
+  function paintRemote(sub, cat) {
+    const far = sub.far;
+    const models = cat?.models || [];
+    const efforts = cat?.efforts || [];
+    modelSel._busyOnly = false;
+    if (far.why.model || !models.length) {
+      fill(modelSel, opt('', 'Model…', true));
+      modelSel.disabled = true;
+    } else {
+      fill(modelSel, opt('', 'Model…', true) + modelOptions(sub.agent, models, ''));
+      modelSel.disabled = false;
+    }
+    modelSel.title = far.why.model || 'Switch ' + far.name + '’s model on ' + far.pc + ' (/model)';
+    if (far.why.effort || !efforts.length) {
+      fill(effortSel, opt('', 'Effort…', true));
+      effortSel.disabled = true;
+    } else {
+      fill(effortSel, opt('', 'Effort…', true) + efforts.map(e => opt(e, EFFORT[e] || e)).join(''));
+      effortSel.disabled = false;
+    }
+    effortSel.title =
+      far.why.effort || 'Switch ' + far.name + '’s effort on ' + far.pc + ' (/effort)';
+  }
+
   function paintModel() {
     const sub = subject(),
       cat = modelsOf(sub.agent),
       prefsNow = window.TnaiLaunchPrefs.for(sub.agent);
+    if (sub.kind === 'remote') return paintRemote(sub, cat);
     const models = cat?.models || [];
     const current = sub.kind === 'live' ? '' : prefsNow.model;
     const livePick =
@@ -1468,10 +1527,20 @@ body.tnai-composer-popout>.composer>.activityline,body.tnai-composer-popout>.com
   // for are greyed out with the reason. On a running agent a pick is still the project's level:
   // that agent keeps what it started with until it next starts a new conversation.
   function paintAccess() {
+    // another computer's agent: access is that computer's own (164, plan item 44)
+    if (subject().kind === 'remote') {
+      const far = subject().far;
+      fill(accessSel, opt('', 'Access', true));
+      accessSel.disabled = true;
+      accessSel.title = far.why.access;
+      return;
+    }
     const sub = subject(),
       info = accessInfo[sub.agent],
       now = levelNow(),
-      shown = hasLevel(sub.agent, now) ? now : 'default';
+      // a running agent held at "Ask first" shows its own level, not the project's
+      held = sub.kind === 'live' && heldPanes.has(sub.session.paneId),
+      shown = held ? 'ask' : hasLevel(sub.agent, now) ? now : 'default';
     fill(
       accessSel,
       ACCESS.map(l => {
@@ -1481,6 +1550,12 @@ body.tnai-composer-popout>.composer>.activityline,body.tnai-composer-popout>.com
     );
     accessSel.disabled = !info; // the levels are not read yet
     const started = sub.kind === 'live' ? paneAccess[sub.session.paneId] : '';
+    if (held) {
+      accessSel.title =
+        sub.session.name +
+        ' was started from another computer, so it always runs at Ask first. A pick here changes the project’s level for new agents.';
+      return;
+    }
     accessSel.title =
       (now !== shown
         ? ACCESS_LABEL[now] +
@@ -1657,6 +1732,12 @@ body.tnai-composer-popout>.composer>.activityline,body.tnai-composer-popout>.com
       v = sel.value;
     sel.blur();
     if (sub.kind === 'live') return switchLive(sub.session, key, v);
+
+    // another computer's agent: switched there (164, plan item 44)
+    if (sub.kind === 'remote') {
+      window.TnaiRemoteThreadMore?.pick?.(sub.far, key, v);
+      return paint();
+    }
     setPref(sub.agent, key, v);
 
     // A model with its own effort levels (Codex) drops an effort it does not offer.

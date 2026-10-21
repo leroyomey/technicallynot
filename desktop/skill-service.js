@@ -613,7 +613,16 @@ function init({ root, agentSaved: told } = {}) {
 
 // personal agents only: the library's bookkeeping (skill users, rebuilds after an import)
 const loadAgents = () => store.readPersonal().list;
-const supportsSkills = base => !!registry.capabilities().find(c => c.id === base)?.skills;
+
+// CLIs that load a plugin folder per session (`--plugin-dir`: Claude Code's customArgs).
+const takesPlugins = base => !!registry.capabilities().find(c => c.id === base)?.skills;
+
+// CLIs a custom agent's attached skills reach: those, plus OpenCode (the folder's skills/ in its
+// session config `skills.paths`) and Cursor Agent (the same folder as a local plugin through its
+// repeatable `--plugin-dir`, cursor-agent 2026.10.01 `--help`; a plugin's skills/<name>/SKILL.md,
+// cursor.com/docs/plugins). Codex and Copilot have no per-session skills route.
+const ATTACH_SKILLS = new Set(['OpenCode', 'Cursor Agent']);
+const supportsSkills = base => takesPlugins(base) || ATTACH_SKILLS.has(base);
 const withMeta = (agent, scope) => ({
   ...agent,
   scope,
@@ -699,6 +708,10 @@ function buildPlugin(agent, root = projectRoot()) {
   fs.rmSync(staging, { recursive: true, force: true });
   fs.mkdirSync(path.join(staging, '.claude-plugin'), { recursive: true });
   fs.writeFileSync(path.join(staging, '.claude-plugin', 'plugin.json'), pluginManifest(agent));
+
+  // The same folder is a Cursor Agent plugin: its manifest needs only a name.
+  fs.mkdirSync(path.join(staging, '.cursor-plugin'), { recursive: true });
+  fs.writeFileSync(path.join(staging, '.cursor-plugin', 'plugin.json'), pluginManifest(agent));
   for (const id of agent.skillIds) {
     const src = skillSource(agent, id, root);
     if (hasSkill(src)) copyTree(src, path.join(staging, 'skills', path.basename(src)));
@@ -796,6 +809,8 @@ async function buildPluginLater(agent, root = projectRoot()) {
   await fsp.rm(staging, { recursive: true, force: true });
   await fsp.mkdir(path.join(staging, '.claude-plugin'), { recursive: true });
   await fsp.writeFile(path.join(staging, '.claude-plugin', 'plugin.json'), pluginManifest(agent));
+  await fsp.mkdir(path.join(staging, '.cursor-plugin'), { recursive: true });
+  await fsp.writeFile(path.join(staging, '.cursor-plugin', 'plugin.json'), pluginManifest(agent));
   for (const id of agent.skillIds) {
     const src = skillSource(agent, id, root);
     if (hasSkill(src)) await copyTreeLater(src, path.join(staging, 'skills', path.basename(src)));
@@ -1175,13 +1190,15 @@ function seedStarterAgents(every) {
 }
 
 // Codex and GitHub Copilot have no per-session skills setting; both load the personal folder
-// ~/.agents/skills (tools/agent-cli-check.js, 2026-10-01). The
+// ~/.agents/skills (tools/agent-cli-check.js, 2026-10-01). Cursor Agent loads it too
+// (cursor.com/docs/context/skills, read 2026-10-15; no model-free listing to prove it). The
 // every-session library skills are copied there, each copy marked as Technically Not's (HOME_MARK).
 // A folder without the mark is the user's own skill and is never touched; a marked copy follows the
-// library (updated when its SKILL.md changes, removed when the skill is turned off or leaves the
-// library). `add`: only a Codex or Copilot launch adds new copies; other calls just keep existing
-// copies in step.
-const HOME_SKILL_CLIS = new Set(['Codex', 'GitHub Copilot']);
+// library (updated when any file of its skill folder changes, removed when the skill is turned off
+// or leaves the library; the uninstaller removes the marked copies, build/installer.nsh). `add`:
+// only a launch of one of these CLIs adds new copies; other calls just keep existing copies in
+// step.
+const HOME_SKILL_CLIS = new Set(['Codex', 'GitHub Copilot', 'Cursor Agent']);
 const HOME_MARK = '.tnai-managed.json';
 const homeSkillsDir = () =>
   process.env.TNAI_HOME_SKILLS_DIR || path.join(os.homedir(), '.agents', 'skills');
@@ -1216,6 +1233,35 @@ function homeSkillsGone(root, on) {
     .map(e => path.join(root, e.name));
 }
 
+// One hash of a whole skill folder (every file's relative path and content, in a fixed order), so a
+// change to a side file refreshes the copy as a SKILL.md change does.
+function folderHash(dir) {
+  const hash = crypto.createHash('sha1');
+  const walk = (folder, rel) => {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(folder, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const e of entries) {
+      // copyTree leaves the import record out, so it is no part of the copy either
+      if (e.name === '.tnai-import.json') continue;
+      const from = path.join(folder, e.name),
+        name = rel + '/' + e.name;
+      if (e.isDirectory()) walk(from, name);
+      else if (e.isFile()) {
+        hash.update(name + '\0');
+        hash.update(fs.readFileSync(from));
+        hash.update('\0');
+      }
+    }
+  };
+  walk(dir, '');
+  return hash.digest('hex');
+}
+
 // What syncHomeSkills copies: [{ id, dest, hash }], and the set that is on.
 function homeSkillsPlan(root, add) {
   const mark = homeMark,
@@ -1230,7 +1276,7 @@ function homeSkillsPlan(root, add) {
       had = mark(dest),
       exists = fs.existsSync(dest);
     if (exists ? had?.from !== 'Technically Not' : !add) continue;
-    const hash = sha(readText(path.join(libraryDir(), id, 'SKILL.md')) || '');
+    const hash = folderHash(path.join(libraryDir(), id));
     if (had?.hash === hash) continue;
     copies.push({ id, dest, hash });
   }
@@ -1616,16 +1662,18 @@ async function everywherePluginDir(configDir) {
 // that loads skills (accountDir = its config folder), plus a custom agent's own skills and
 // identity. OpenCode has no customArgs, but loads extra skill folders named in its session config
 // (`skills.paths`, agent-registry.js `rules`; checked with `opencode debug skill`, opencode
-// 1.18.33): it gets the every-session skills the same way. Custom agents' attached skills stay
-// Claude Code only.
+// 1.18.33): it gets the every-session skills the same way. A custom agent's attached skills reach
+// the CLIs of supportsSkills (Cursor Agent: its plugin folder through `--plugin-dir`); its identity
+// text reaches every CLI as appendPrompt (the other CLIs take it as an instructions file,
+// agent-registry.js `rules`).
 const SKILL_PATHS = new Set(['OpenCode']);
 
 async function launchOptions(customAgentId, agentId, accountDir) {
   let every = '';
-  if (supportsSkills(agentId) || SKILL_PATHS.has(agentId))
+  if (takesPlugins(agentId) || SKILL_PATHS.has(agentId))
     try {
       seedStarters();
-      every = await everywherePluginDir(supportsSkills(agentId) ? accountDir : '');
+      every = await everywherePluginDir(takesPlugins(agentId) ? accountDir : '');
     } catch (error) {
       console.warn('Technically Not skills for every session not loaded:', error.message);
     }
@@ -1639,20 +1687,25 @@ async function launchOptions(customAgentId, agentId, accountDir) {
   const base = every ? { pluginDirs: [every] } : {};
   if (!customAgentId) return base;
   const agent = allAgents().find(a => a.id === customAgentId);
-  if (!agent || agent.base !== agentId || !supportsSkills(agent.base)) return base;
-  const skills = agent.skillIds
-    .map(id => skillSource(agent, id))
-    .filter(Boolean)
-    .map(dir => readSkillDir(dir, 'imported'))
-    .filter(Boolean);
+  if (!agent || agent.base !== agentId) return base;
+
+  // A CLI without a per-session skills route gets the identity only.
+  const skills = supportsSkills(agent.base)
+    ? agent.skillIds
+        .map(id => skillSource(agent, id))
+        .filter(Boolean)
+        .map(dir => readSkillDir(dir, 'imported'))
+        .filter(Boolean)
+    : [];
   let dir = pluginDir(agent.id);
 
   // A project agent's plugin is rebuilt at every start: its skills are files in the project that a
-  // pull or an edit may have changed.
-  if (
-    skills.length &&
-    (agent.scope === 'project' || !fs.existsSync(path.join(dir, '.claude-plugin', 'plugin.json')))
-  )
+  // pull or an edit may have changed. A plugin built before it carried Cursor's manifest is built
+  // again once.
+  const built = ['.claude-plugin', '.cursor-plugin'].every(folder =>
+    fs.existsSync(path.join(dir, folder, 'plugin.json'))
+  );
+  if (skills.length && (agent.scope === 'project' || !built))
     dir = await inTurn(() => buildPluginLater(agent));
   const prompt =
     'You are "' +

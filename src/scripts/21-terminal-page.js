@@ -899,9 +899,25 @@
     });
   }
 
+  // A closed workspace's grid is let go: the observer lives as long as the page and would keep
+  // the removed grid in memory (07 `remove`).
+  function forgetGrids(records) {
+    for (const record of records)
+      for (const node of record.removedNodes) {
+        if (!node.querySelectorAll) continue;
+        node.querySelectorAll('.terminal-workspace-grid').forEach(grid => {
+          resize.unobserve(grid);
+          watched.delete(grid);
+        });
+      }
+  }
+
   // New workspaces add grids; switching workspace toggles `hidden` on their sections (no subtree
   // childList: xterm rows change constantly).
-  new MutationObserver(watchGrids).observe(content, { childList: true });
+  new MutationObserver(records => {
+    forgetGrids(records);
+    watchGrids();
+  }).observe(content, { childList: true });
   content.querySelectorAll('.terminal-pane').forEach(decoratePane);
   watchGrids();
   nameSessions();

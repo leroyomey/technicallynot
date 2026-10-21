@@ -508,6 +508,26 @@ const S = () => context._test.project(),
     "a claim ends as soon as the claimant's agent is no longer live, not only after 2 h"
   );
   context.setMark(ck, '');
+
+  // Two live agents with one name are two claimants (app-3 #11): compared by instance id.
+  start('TW1', 'Twin');
+  start('TW2', 'Twin');
+  check(context.query('TW1', root, ['mark', 'claimed', ck]).ok, 'one Twin claims it');
+  check(
+    !context.query('TW2', root, ['mark', 'claimed', ck]).ok &&
+      !context.query('TW2', root, ['mark', 'done', ck]).ok &&
+      !context.query('TW2', root, ['mark', 'undo', ck]).ok &&
+      S().claims[ck] &&
+      !S().marks[ck],
+    '…and the other agent named Twin can neither take it, mark it done nor release it'
+  );
+  check(
+    context.query('TW1', root, ['mark', 'done', ck]).ok && S().marks[ck]?.state === 'done',
+    '…while the Twin that claimed it can mark it done'
+  );
+  context.setMark(ck, '');
+  lifecycle.exited('TW1');
+  lifecycle.exited('TW2');
   check(
     context.addNote('Keep the UI design as it is') && S().notes.length === 1,
     'a project note can be added'

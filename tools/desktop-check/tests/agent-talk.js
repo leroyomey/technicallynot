@@ -1,9 +1,10 @@
 /*
- * Technically Not tools · desktop-check/tests/agent-talk.js — Agents messaging each other on
- * Overview (11 onMesh/talkLine): two real PowerShell panes dressed as agents, mesh-out / mesh-in
- * pushed on the agent:event channel. The Now line gets "· ↔ NAME" on both cards, the tooltip holds
- * the last message each way, a failed send adds nothing, a third peer turns it into "↔ 2 agents",
- * no new row or chip appears, and an old message (past the 3 min fade) shows nothing.
+ * Technically Not tools · desktop-check/tests/agent-talk.js — Agents messaging each other, shown
+ * on their thread rows (11 onMesh/talkLine, 119): two real PowerShell panels dressed as agents,
+ * mesh-out / mesh-in pushed on the agent:event channel. Both rows get "· ↔ NAME", the row's
+ * tooltip holds the last message each way, a failed send adds nothing, a third peer turns it into
+ * "↔ 2 agents", an old message (past the 3 min fade) shows nothing, and the hidden old grid of 11
+ * builds no cards.
  */
 const log = [],
   wait = ms => new Promise(r => setTimeout(r, ms));
@@ -35,9 +36,14 @@ const go = async view => {
   view === 'overview' ? window.TnaiThreads.open() : window.TnaiRoute(view);
   await wait(350);
 };
-const card = id =>
-  document.querySelector('.tnai-live-sessions>.tnai-card[data-pane="' + CSS.escape(id) + '"]');
-const now = id => card(id)?.querySelector('.c-now');
+
+// The agent's row in the thread list (119): "· ↔ NAME" ends its tool part, the messages are in the
+// row's tooltip. (The old Overview cards of 11 that showed it are no longer built.)
+const row = id => document.querySelector('.tnt-th[data-pane="' + CSS.escape(id) + '"]');
+const now = id => ({
+  textContent: row(id)?.querySelector('.tnt-th-tool')?.textContent || '',
+  title: row(id)?.title || '',
+});
 
 let callId = 0;
 const main = (cmd, ...args) =>
@@ -68,13 +74,10 @@ try {
       dress[s.paneId] ? { ...s, ...dress[s.paneId], lastOutputAt: Date.now() - 3000 } : s
     );
   await go('overview');
-  await until(() => card(a) && card(b));
-  await wait(1500); // let the hidden cards settle (11) before counting their rows
-  const rowsBefore = card(a).querySelectorAll('*').length,
-    chipsBefore = card(a).querySelector('.c-chips').children.length;
+  await until(() => row(a) && row(b));
   check(
     !/↔/.test(now(a).textContent) && !/↔/.test(now(b).textContent),
-    'no messages yet: no ↔ on either card'
+    'no messages yet: no ↔ on either row'
   );
 
   // A stale message from long ago (past the fade) shows nothing.
@@ -133,29 +136,23 @@ try {
       () => /↔ Otter/.test(now(a).textContent) && /↔ Juniper/.test(now(b).textContent),
       3000
     )),
-    'both cards show the peer: "' + now(a).textContent + '" / "' + now(b).textContent + '"'
+    'both rows show the peer: "' + now(a).textContent + '" / "' + now(b).textContent + '"'
   );
   const tipA =
     (await until(() => {
       const t = now(a).title;
       return /→ Take the calendar/.test(t) && /← OK, calendar is mine/.test(t) && t;
-    }, 3000)) || now(a).title; // 11 repaints its hidden card on the next frame
+    }, 3000)) || now(a).title;
   check(
     /→ Take the calendar/.test(tipA) && /← OK, calendar is mine/.test(tipA),
     'tooltip holds the last message each way'
   );
-  check(
-    card(a).querySelector('.c-chips').children.length === chipsBefore &&
-      card(a).querySelectorAll('*').length - rowsBefore <= 1,
-    'no new chip or row: the tail sits on the Now line'
-  );
-  check(
-    now(b).children.length === 2,
-    'while talking the status is one piece before the tail (one ellipsis, not one per piece)'
-  );
 
-  // (The narrow grid card geometry check was removed with the Overview grid in the purple redesign;
-  // 11 still builds the cards, hidden.)
+  // 11 no longer builds the old Overview's hidden cards (speed lead 8): none is in the page.
+  check(
+    !document.querySelector('.tnai-live-sessions .tnai-card'),
+    'the hidden old grid has no cards while agents talk'
+  );
   await shot('talk-two');
 
   // A third peer: one short count, not a list.

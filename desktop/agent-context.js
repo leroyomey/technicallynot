@@ -60,6 +60,7 @@ const crypto = require('crypto');
 const { app } = require('electron');
 const sessionStore = require('./session-store'); // writeAtomic only
 const lifecycle = require('./agent-lifecycle');
+const errors = require('./agent-errors');
 const watch = require('./watch-service');
 const digestOf = require('./context-digest');
 const stalls = require('./stall-log');
@@ -1503,7 +1504,12 @@ function find(p, key) {
 
 function query(paneId, project, args) {
   const p = store(project);
-  if (!p) return { ok: false, error: 'No project.' };
+  if (!p)
+    return errors.fail(
+      'refused',
+      'No project.',
+      'run it in a terminal of an open Technically Not project'
+    );
   const inst = lifecycle.info(paneId);
   if (args[0] === 'brief') return { ok: true, text: renderBrief(takeBrief(p)) };
   if (args[0] === 'note' || args[0] === 'mark')
@@ -1511,11 +1517,11 @@ function query(paneId, project, args) {
   if (args[0] === 'show') {
     const e = find(p, args[1]);
     if (!e)
-      return {
-        ok: false,
-        error:
-          'No result "' + (args[1] || '') + '" in this project. Run `tnai context` for the list.',
-      };
+      return errors.fail(
+        'not_found',
+        'No result "' + (args[1] || '') + '" in this project. Run `tnai context` for the list.',
+        'tnai context, then tnai context show ID'
+      );
     if (inst) mark(p, e, inst, 'pull');
     const log = rawFile(p, e.id, '.log');
     return {
@@ -1719,6 +1725,10 @@ function claimOf(p, key) {
   return (c.id ? live.some(n => n.id === c.id) : live.some(n => n.name === c.agent)) ? c : null;
 }
 
+// The same claimant: by its agent instance id when the claim has one, since two agents may carry
+// one name (app-3 #11); by name only for an old claim stored without an id.
+const sameClaimant = (c, by, instId) => (c.id ? c.id === instId : c.agent === by);
+
 function claim(p, keys, by, instId) {
   const taken = [],
     mine = [];
@@ -1732,7 +1742,7 @@ function claim(p, keys, by, instId) {
       !p.entries.find(e => e.id === id)?.summary?.[k]?.[+i]
     )
       continue;
-    if (c && c.agent !== by) {
+    if (c && !sameClaimant(c, by, instId)) {
       taken.push(key + ' (claimed by ' + c.agent + ' ' + ago(c.at) + ')');
       continue;
     }
@@ -1797,6 +1807,10 @@ function removeNote(id, p = store(deps.root())) {
 // `tnai context note ...` / `tnai context mark ...`: agents keep the project notes current.
 // A decision stays the user's: agents cannot mark one (it goes stale on its own,
 // context-digest.js).
+// The fix for a full notes list: an existing note is changed in place instead of a new one added.
+const NOTES_FULL =
+  'tnai context note list, then tnai context note set KEY TEXT with an existing KEY, or tnai context note remove ID';
+
 function edit(p, who, args, inst) {
   const [what, verb, ...rest] = args;
   if (what === 'note') {
@@ -1811,38 +1825,49 @@ function edit(p, who, args, inst) {
       const id = addNote(rest.join(' '), p, who);
       return id
         ? { ok: true, text: 'Added note ' + id + '.\n' }
-        : {
-            ok: false,
-            error:
-              p.notes.length >= NOTES_MAX
-                ? 'The project has ' + NOTES_MAX + ' notes; remove one first.'
-                : 'Nothing to add.',
-          };
+        : p.notes.length >= NOTES_MAX
+          ? errors.fail(
+              'full',
+              'The project has ' + NOTES_MAX + ' notes; remove one first.',
+              NOTES_FULL
+            )
+          : errors.fail('invalid', 'Nothing to add.', 'tnai context note add TEXT');
     }
     if (verb === 'set') {
       const id = setNote(rest[0], rest.slice(1).join(' '), p, who);
       return id
         ? { ok: true, text: 'Set note ' + rest[0] + ' (' + id + ').\n' }
-        : {
-            ok: false,
-            error: 'Use: tnai context note set KEY TEXT (' + NOTES_MAX + ' notes max).',
-          };
+        : !p.notes.some(n => n.key === rest[0]) && rest[0] && p.notes.length >= NOTES_MAX
+          ? errors.fail(
+              'full',
+              'Use: tnai context note set KEY TEXT (' + NOTES_MAX + ' notes max).',
+              NOTES_FULL
+            )
+          : errors.fail(
+              'invalid',
+              'Use: tnai context note set KEY TEXT (' + NOTES_MAX + ' notes max).',
+              'tnai context note set KEY TEXT'
+            );
     }
     if (verb === 'remove') {
       const n = rest.filter(id => removeNote(id, p)).length;
       return n
         ? { ok: true, text: 'Removed ' + n + ' note(s).\n' }
-        : { ok: false, error: 'No such note. `tnai context note list` shows them.' };
+        : errors.fail(
+            'not_found',
+            'No such note. `tnai context note list` shows them.',
+            'tnai context note list'
+          );
     }
   }
   if (what === 'mark') {
     const st = verb === 'undo' ? '' : verb;
     if (st !== '' && st !== 'done' && st !== 'dismissed' && st !== 'claimed')
-      return {
-        ok: false,
-        error:
-          'Use: tnai context mark claimed|done|dismissed|undo KEY... (KEY = RESULTID:kind:index, or a RESULTID for all its open items).',
-      };
+      return errors.fail(
+        'invalid',
+        'Use: tnai context mark claimed|done|dismissed|undo KEY... (KEY = RESULTID:kind:index, or a RESULTID for all its open items).',
+        'tnai context (it lists the KEYs)'
+      );
     const all = e =>
       ['blockers', 'remains', 'next', 'ideas']
         .flatMap(k => (e.summary?.[k] || []).map((_, i) => markKey(e.id, k, i)))
@@ -1853,17 +1878,24 @@ function edit(p, who, args, inst) {
     if (st === 'claimed') {
       const { mine, taken } = claim(p, keys, who, inst?.id);
       if (!mine.length && !taken.length)
-        return {
-          ok: false,
-          error: "Nothing matched (only open items can be claimed; decisions are the user's).",
-        };
+        return errors.fail(
+          'not_found',
+          "Nothing matched (only open items can be claimed; decisions are the user's).",
+          'tnai context (it lists the open items and their KEYs)'
+        );
       return {
         ok: !!mine.length,
         text:
           (mine.length
             ? 'Claimed ' + mine.length + ' item(s); `tnai context mark done` them once fixed.\n'
             : '') + (taken.length ? 'Already claimed, skip: ' + taken.join(', ') + '\n' : ''),
-        ...(mine.length ? {} : { error: 'Already claimed, skip: ' + taken.join(', ') }),
+        ...(mine.length
+          ? {}
+          : {
+              error: 'Already claimed, skip: ' + taken.join(', '),
+              code: 'busy',
+              hint: 'skip these and take another open item from tnai context',
+            }),
       };
     }
 
@@ -1871,7 +1903,7 @@ function edit(p, who, args, inst) {
     // undo never releases it either — only setMark(free) below ever touches it.
     const blocked = keys.filter(key => {
       const c = claimOf(p, key);
-      return c && c.agent !== who;
+      return c && !sameClaimant(c, who, inst?.id);
     });
     const free = keys.filter(key => !blocked.includes(key));
     if (!st) {
@@ -1906,20 +1938,24 @@ function edit(p, who, args, inst) {
               msg +
               '\n',
           }
-        : { ok: false, error: msg };
+        : errors.fail('busy', msg, 'skip it, or tnai send the agent named above');
     }
     return n
       ? {
           ok: true,
           text: (st ? 'Marked ' + n + ' item(s) ' + st : 'Put ' + n + ' item(s) back') + '.\n',
         }
-      : { ok: false, error: "Nothing matched (decisions are the user's to answer)." };
+      : errors.fail(
+          'not_found',
+          "Nothing matched (decisions are the user's to answer).",
+          'tnai context (it lists the open items and their KEYs)'
+        );
   }
-  return {
-    ok: false,
-    error:
-      'Use: tnai context note list|add TEXT|set KEY TEXT|remove ID, or tnai context mark done|dismissed|undo KEY...',
-  };
+  return errors.fail(
+    'invalid',
+    'Use: tnai context note list|add TEXT|set KEY TEXT|remove ID, or tnai context mark done|dismissed|undo KEY...',
+    'tnai context note list'
+  );
 }
 
 function setAuto(on) {

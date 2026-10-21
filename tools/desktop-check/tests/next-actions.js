@@ -58,6 +58,35 @@ try {
     !!bell0 && card().hidden,
     'default: a finished agent with next steps goes to the bell, unread, and no card pops up'
   );
+
+  // Mute in the bell's panel: the notification stays listed, the bell shows no count and does
+  // not pulse; Unmute brings the count back.
+  bell0?.click();
+  await wait(250);
+  const muteButton = () => document.querySelector('.tnai-bell-pop [data-act="mute"]');
+  muteButton()?.click();
+  await wait(250);
+  const countOf = () => bell0?.querySelector('.n-count');
+  check(
+    !!muteButton() &&
+      muteButton().textContent === 'Unmute' &&
+      countOf()?.hidden === true &&
+      !bell0.classList.contains('n-attn') &&
+      !bell0.classList.contains('n-attn-loop') &&
+      /muted/.test(bell0.title) &&
+      !!document.querySelector('.tnai-bell-pop .tnai-nitem'),
+    'Mute: the bell shows no count and no pulse, the notification stays in the panel (' +
+      bell0?.title +
+      ')'
+  );
+  muteButton()?.click();
+  await wait(250);
+  check(
+    muteButton()?.textContent === 'Mute' && countOf()?.hidden === false,
+    'Unmute: the count is back on the bell'
+  );
+  bell0?.click();
+  await wait(250);
   N.dismiss(N.pending()[0]);
   N.setMode('suggest'); // Pop up next steps on for the card checks below
 

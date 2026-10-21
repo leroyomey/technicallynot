@@ -48,6 +48,19 @@ check(
   'its thread row names the file ("' + nowText(paneId) + '")'
 );
 console.log('TNAI_SHOT:file-activity-thread-row');
+
+// A project switch keeps the files of agents still running: their panels go on working in
+// their own folder (here the same folder is opened again, so nothing else changes).
+window.dispatchEvent(
+  new CustomEvent('tnai:project-changed', { detail: { root: await window.tnaiNative.fs.root() } })
+);
+await wait(300);
+check(
+  act.forPane(paneId).includes('src/app.js') && act.now(paneId)?.path === 'src/app.js',
+  "a project switch keeps the running thread's file and Now line (" +
+    act.forPane(paneId).join(', ') +
+    ')'
+);
 await wait(400);
 t0 = Date.now();
 window.TnaiAgents.send(paneId, "Set-Content -Path src/added.js -Value 'new'");
@@ -76,13 +89,27 @@ agents.send(
   paneId,
   'git init -q; git config user.email tnai-test@example.com; git config user.name Tnai-Test; git config commit.gpgsign false; git add -A; git commit -qm initial'
 );
+
+// The last status seen is printed when the step fails, so a failure names which part is off.
+let lastStatus = null;
 check(
   !!(await until(async () => {
     const s = (await native.git.status()).value;
+    lastStatus = s;
     return s?.repo && !s.initial && !s.files.length;
   }, 15000)),
   'lane: repo with a first commit'
 );
+if (!(lastStatus?.repo && !lastStatus.initial && !lastStatus.files.length))
+  log.push(
+    'info git status: ' +
+      JSON.stringify({
+        repo: lastStatus?.repo,
+        initial: lastStatus?.initial,
+        branch: lastStatus?.branch,
+        files: (lastStatus?.files || []).slice(0, 8),
+      })
+  );
 await window.TnaiGit?.refresh?.();
 
 // A second thread started in its own worktree: the start's own option, the one the prompt box's

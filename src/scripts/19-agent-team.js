@@ -563,7 +563,7 @@
 
   // Codex / Cursor Agent as the composer's new agent (46 menu): no hooks, so it is ready once it
   // has drawn its prompt and gone quiet.
-  async function startOther(agent, accountId, own = true) {
+  async function startOther(agent, accountId, own = true, onOpened = null) {
     const info = agents.info().find(a => a.id === agent);
     if (!info?.installed) return { error: agent + ' is not installed.' };
     if (info.loggedIn === false && !accountId)
@@ -572,6 +572,9 @@
       };
     const opened = await openHere(agent, accountId, own);
     if (!opened?.ok) return { error: opened?.error || agent + ' could not start.' };
+
+    // the caller may show the new thread now, while the tool is still starting (startLead)
+    safeCall(onOpened, opened.paneId);
     const end = Date.now() + 30000,
       tail = outputTail(opened.paneId);
     try {
@@ -596,13 +599,25 @@
     return { error: agent + ' started but is not ready yet. Check its thread, then send again.' };
   }
 
+  // Calls fn(paneId) when there is one; a fault in it never stops the start.
+  function safeCall(fn, paneId) {
+    if (typeof fn !== 'function') return;
+    try {
+      fn(paneId);
+    } catch (error) {
+      console.warn('[TN.ai] onOpened failed', error);
+    }
+  }
+
   // Starts a Claude Code lead in a new pane (opts.accountId, else the active account; opts.agent:
   // another CLI, the composer's pick in 11/46) and waits until it can take a prompt. opts.here: the
   // composer's New agent (openHere above); otherwise the Terminal page's own new-pane path.
+  // opts.onOpened(paneId) is called as soon as the new pane exists, before the tool is ready, so
+  // the caller can show its thread at once instead of after the 2 to 3 s the start takes.
   async function startLead(opts = {}) {
     await agents.detect();
     if (opts.agent && opts.agent !== 'Claude Code')
-      return startOther(opts.agent, opts.accountId, !!opts.here);
+      return startOther(opts.agent, opts.accountId, !!opts.here, opts.onOpened);
     const claude = agents.info().find(a => a.id === 'Claude Code');
     const why = opts.here
       ? 'A new agent needs Claude Code'
@@ -625,6 +640,7 @@
     // from.
     const opened = await openHere('Claude Code', opts.accountId, !!opts.here);
     if (!opened?.ok) return { error: opened?.error || 'Claude Code could not start.' };
+    safeCall(opts.onOpened, opened.paneId);
 
     // Claude Code asks once per folder whether to trust it, and runs no hooks until answered: that
     // question is the user's to answer.

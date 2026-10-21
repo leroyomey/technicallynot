@@ -259,9 +259,51 @@
   });
   schedule();
 
+  // ---------- Escape right after a send: take the prompt back ----------
+  // Within UNDO_MS of a send from the prompt box, Escape in the empty prompt box cancels that
+  // prompt and puts it back in the box. A prompt still held for a busy agent (71) is only taken
+  // back, so the agent's current work goes on; one already delivered is cancelled the way "Cancel
+  // prompt and edit it" does (the interrupt above). With text in the box, or later than UNDO_MS,
+  // Escape does what it did before.
+  const UNDO_MS = 10000;
+  let lastSend = null;
+  window.addEventListener('tnai:prompt-sent', event => {
+    const paneId = event.detail?.paneId;
+    if (paneId) lastSend = { paneId, at: Date.now(), text: lastPrompt(paneId) };
+  });
+
+  // The held prompt that is this send, or null.
+  function heldSend(send) {
+    const held = window.TnaiNeedsYou?.heldFor?.(send.paneId) || [];
+    return held.find(item => !item.from && item.text === send.text) || null;
+  }
+
+  function takeBack(send) {
+    const held = heldSend(send);
+    if (held) {
+      window.TnaiNeedsYou.takeHeld(held.id, true);
+      return;
+    }
+    stopAgent(send.paneId, true);
+  }
+
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const input = event.target;
+    if (!input || input.id !== 'prompt' || input.value.trim()) return;
+    const send = lastSend;
+    if (!send || Date.now() - send.at > UNDO_MS || !sessionOf(send.paneId)) return;
+    event.preventDefault();
+    lastSend = null;
+    takeBack(send);
+  });
+
   window.TnaiComposerStop = {
     target: () => shownFor,
     stop: paneId => stopAgent(paneId, false),
     cancel: paneId => stopAgent(paneId, true),
+    // tests: the send Escape would take back now, or null
+    undoable: () => (lastSend && Date.now() - lastSend.at <= UNDO_MS ? { ...lastSend } : null),
   };
 })();

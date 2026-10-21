@@ -1,0 +1,237 @@
+/* Technically Not · 48-thread-popout.css — a thread in a window of its own
+   (src/scripts/162-thread-popout.js), as approved in docs/plans/design-concepts/thread-popout.html:
+   the thread's name and status, keep-on-top and "Back into the app" in its top row (the window's
+   own buttons come after them, 66), the conversation, its questions, and a prompt box that sends
+   to this thread only. Also the note in the app where a popped-out thread was, and its mark in the
+   thread list. One continuous background, the thread look's tokens only. */
+
+/* the window's page: the whole height, one background */
+body.tnai-popout-win.tpo-page {
+  background: var(--pg-bg);
+  color: var(--pg-text);
+}
+.tpo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  height: 100vh;
+  background: var(--pg-bg);
+  color: var(--pg-text);
+  font: 14px/1.55 var(--pg-sans);
+}
+
+/* ---------------------------------------------------------------- the top row */
+.tpo-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 8px 8px 16px;
+  -webkit-app-region: drag;
+}
+.tpo-head button {
+  -webkit-app-region: no-drag;
+}
+.tpo-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pg-text-4);
+}
+.tpo-dot[data-tone='work'] {
+  background: var(--pg-work);
+}
+.tpo-dot[data-tone='needs'] {
+  background: var(--pg-wait);
+}
+.tpo-dot[data-tone='agents'] {
+  background: var(--pg-agents);
+}
+.tpo-name {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 15px/1.3 var(--pg-sans);
+}
+.tpo-state {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pg-text-2);
+  font-size: 12.5px;
+}
+.tpo-grow {
+  flex: 1;
+}
+/* keep-on-top: a quiet icon button like the thread's top row ones */
+.tpo-top {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  color: var(--pg-text-2);
+  cursor: pointer;
+}
+.tpo-top:hover {
+  border-color: var(--pg-line-2);
+  color: var(--pg-text);
+}
+.tpo-top[aria-pressed='true'] {
+  color: var(--pg-accent-2);
+}
+.tpo-top:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+
+/* "Back into the app" and "Show its window": the thread look's quiet word button */
+.tpo-back {
+  flex: none;
+  height: 28px;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text);
+  font: 500 12.5px/1 var(--pg-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tpo-back:hover {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+}
+.tpo-back:focus-visible,
+.tpo-send:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+
+/* ---------------------------------------------------------------- the conversation */
+.tpo-talk {
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 18px 12px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+.tpo-asks {
+  padding: 0 14px;
+}
+.tpo-asks[hidden] {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- the prompt box */
+.tpo-compose {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin: 6px 12px 12px;
+  padding: 6px 6px 6px 12px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 14px;
+  background: var(--pg-panel);
+}
+.tpo-compose:focus-within {
+  border-color: var(--pg-accent);
+}
+.tpo-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  max-height: 160px;
+  margin: 0;
+  padding: 6px 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: transparent;
+  color: var(--pg-text);
+  font: 14px/1.45 var(--pg-sans);
+}
+.tpo-input::placeholder {
+  color: var(--pg-text-3);
+}
+.tpo-to {
+  flex: none;
+  align-self: center;
+  color: var(--pg-text-3);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.tpo-send {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: var(--pg-accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------- in the app */
+/* where a popped-out thread's conversation was (the open thread, an All threads card) */
+.tpo-away {
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  height: 100%;
+  min-height: 160px;
+  padding: 20px;
+  color: var(--pg-text-2);
+  font-size: 13px;
+  text-align: center;
+}
+.tpo-away b {
+  color: var(--pg-text);
+  font: 600 15px/1.3 var(--pg-sans);
+}
+.tpo-away-acts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* a thread in its own window, in the thread list */
+/* the row is a grid of its own: the mark sits at the end of its first line, the time moves left
+   to make room, so nothing lies over the row's words */
+.tnt-th.tnt-th-is-out {
+  position: relative;
+}
+.tnt-th.tnt-th-is-out > time {
+  margin-right: 18px;
+}
+.tnt-th-out {
+  position: absolute;
+  top: 9px;
+  right: 10px;
+  display: grid;
+  color: var(--pg-text-3);
+}
+
+@media (pointer: coarse) {
+  .tpo-back {
+    height: 44px;
+  }
+  .tpo-send {
+    width: 44px;
+    height: 44px;
+  }
+}

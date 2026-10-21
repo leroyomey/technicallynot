@@ -322,9 +322,11 @@
     refreshLanes();
     return null;
   };
+
+  // Agents of the old project keep running, so their files and Now line stay (paths are relative
+  // to their own folder); prune drops them when the agent finishes, and the rail paints only the
+  // active project's panes (paintTags).
   window.addEventListener('tnai:project-changed', () => {
-    activity.clear();
-    lastAction.clear();
     statCache.clear();
     lanes.clear();
     lanesAt = 0;
@@ -594,6 +596,9 @@
     for (const [key, paths] of activity) {
       const a = actor(key, sessions);
       if (!a) continue;
+
+      // A pane working in another project keeps its files, but they are not this project's rows.
+      if (!placeOf(key.split(SUB)[0])) continue;
 
       // The path -> row map is kept until the tree itself changes (observer below): this runs twice
       // a second while agents work.

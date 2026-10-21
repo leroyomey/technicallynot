@@ -108,7 +108,7 @@ check(
 // 2. Play a two-sub-agent task in Claude Code's hook payload shapes.
 const url = await N.agentEvents.endpoint(paneId);
 const post = (to, body) =>
-  fetch(to, { method: 'POST', mode: 'no-cors', body: JSON.stringify(body) });
+  window.TnaiTest.request(to, { method: 'POST', body: JSON.stringify(body) });
 const base = { session_id: 's', transcript_path: 't', cwd: 'c' };
 const hook = body => post(url.hook, { ...base, ...body });
 await hook({

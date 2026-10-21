@@ -12,12 +12,14 @@
 // unview, prompt, act.
 //
 // Where the detail stands: in the thread's main area, in the box 138 hands over with `mount`
-// (look: 40-thread-history.css). The old Agents and history page is not needed for it; while that
-// page is still in the app and no box was handed over, 25 draws the same detail there through
-// `list` and `paint` (look: 09-agents-purple.css).
+// (look: 40-thread-history.css). The old Agents and history page (and its script 25) was deleted
+// on 2026-10-13: the thread's main area is the only place the detail stands. `page`, `detail` and
+// `list` below are what is left of that page; they find nothing now and are removed as their own
+// step (CLAUDE.md, "There is no old view").
 //
 // window.TnaiRemoteAgents (list, shown, select, pick, selected, lost, mount, paint, target, send,
-// leave). Hooks: 138 (mount), 119 (shown), 11 (deliver, paintRoute), 25 (list, paint).
+// leave). Hooks: 138 (mount), 119 (shown, notShown), 11 (target, send, start, progress), 46
+// (starts, chooseStart).
 // Tests: thread-remote, remote-agents.
 (() => {
   const native = window.tnaiNative?.remote,
@@ -423,8 +425,29 @@
         status: Object.hasOwn(WORD, ag.status) ? ag.status : 'idle',
         task: typeof ag.task === 'string' ? ag.task : '',
         since: ag.since > 0 ? ag.since : 0,
+
+        // when its last task finished, 0 when not known (the Board's Done today, 165)
+        done:
+          ag.last && typeof ag.last === 'object' && Number.isFinite(ag.last.at) && ag.last.at > 0
+            ? ag.last.at
+            : 0,
       })),
     }));
+  }
+
+  // The computers whose agents are NOT all in the list, and why: `elsewhere` work in another
+  // project, `unsure` cannot be told to work in this one (no git project with a first commit open
+  // on both, or that computer does not send which project). Counts only, for 119's one line.
+  function notShownForList() {
+    return (st?.on ? st.computers || [] : [])
+      .filter(pc => pc && pc.state === 'live' && pc.session === true)
+      .map(pc => ({
+        id: pc.id,
+        name: pcName(pc),
+        elsewhere: Number.isInteger(pc.elsewhere) && pc.elsewhere > 0 ? pc.elsewhere : 0,
+        unsure: (pc.agents || []).filter(a => a && a.sure !== true).length,
+      }))
+      .filter(x => x.elsewhere || x.unsure);
   }
 
   // A click on a row. Not while that computer's rows just moved: the row under the pointer may be
@@ -530,6 +553,9 @@
     }
     const t = find(key);
     if (!t || t.ag.can !== true || !t.ag.mark) return;
+
+    // typing (166): another computer's plain terminal takes keys only, never a prompt
+    if (t.ag.cli === 'Terminal') return;
 
     // one target at a time: an agent here, or one on another computer
     window.TnaiLiveTasks?.setTarget?.(null);
@@ -1064,6 +1090,7 @@
     ui.term.dataset.view = 'no';
     ui.nowSec.hidden = true;
     ui.lastSec.hidden = true;
+    window.TnaiRemoteTalk?.show(null);
     return true;
   }
 
@@ -1072,6 +1099,7 @@
     const t = cur();
     if (!t || !box) {
       if (box) box.hidden = true;
+      window.TnaiRemoteTalk?.show(null);
       return false;
     }
     const { pc, ag } = t,
@@ -1082,6 +1110,14 @@
     box.hidden = false;
     box.dataset.remote = t.key;
     ui.nowSec.hidden = false;
+
+    // Its conversation as that computer reported it, read only, above the live picture (152), in
+    // the thread's main area only.
+    window.TnaiRemoteTalk?.show(threadHost ? box.querySelector('.ap-main') : null, {
+      pc,
+      ag,
+      pcName: n,
+    });
 
     // The buttons are off for a moment after that computer's rows moved (111's quiet time) and come
     // back by themselves.
@@ -1096,8 +1132,10 @@
     setText(ui.sub, (ag.cli ? ag.cli + ' · ' : '') + 'on ' + n);
 
     // Only what has a path: nothing is offered for an agent that takes no operation from here.
+    // Another computer's plain terminal (Your terminal, a PowerShell thread; listed only for a
+    // computer that may type there) takes keys only: no prompt, interrupt or stop buttons.
     for (const b of [ui.target, ui.follow, ui.interrupt, ui.stop]) {
-      b.hidden = !can;
+      b.hidden = !can || ag.cli === 'Terminal';
       b.disabled = off;
     }
     if (can) {
@@ -1154,6 +1192,17 @@
             : 'ended';
     ui.keep.hidden = !(m && m.state === 'on');
     ui.again.hidden = !(watch && !viewing && !askTimer && (!m || m.state === 'ended'));
+
+    // Typing into that panel (166, desktop/remote-type.js): its button in the bar and the keys on
+    // the picture, drawn from the same view; nothing when 166 is not loaded.
+    window.TnaiRemoteTyping?.paint?.({
+      bar: ui.keep.parentElement,
+      screen: pic ? ui.screen : null,
+      pc,
+      ag,
+      pcName: n,
+      model: m,
+    });
 
     // NOW: status, task, where it runs, where the view and the last thing sent from here stand.
     const dl = el('dl', 'ap-kv');
@@ -1262,6 +1311,10 @@
         ui.last.replaceChildren(...parts);
       }
     }
+
+    // This week's thread features for this agent's thread (165): the work button, its Changes
+    // and its computer's CLIs. Drawn in this box only.
+    window.TnaiRemoteFeatures?.paint?.(box, { key: t.key, pc, ag, pcName: n, off });
     return true;
   }
 
@@ -1289,8 +1342,11 @@
         (x.pc.items || []).filter(i => i && i.kof).map(i => [i.id, i.kof]),
       ])
     );
-    if (k === key) return;
-    key = k;
+
+    // the thread list's line of why agents are not listed follows the counts too
+    const k2 = k + JSON.stringify(notShownForList());
+    if (k2 === key) return;
+    key = k2;
     reconcile();
     tellList();
 
@@ -1313,9 +1369,25 @@
   window.TnaiRemoteAgents = {
     list,
 
+    // 165: a ready prompt (a thread action) for the agent shown now, the way Follow up sends one:
+    // the quiet time, the very agent that is shown, its mark. → the operation's answer or null.
+    // expected: the thread ({ key, pc, ag }) the menu was opened for. Review 23, L3: when the shown
+    // thread changed while the menu was open, nothing is sent (the prompt names that agent's work).
+    promptShown(text, expected) {
+      const t = cur();
+      if (!t || t.ag.can !== true) return Promise.resolve(null);
+      if (!expected || !expected.ag || expected.key !== t.key || !same(t.ag, expected.ag)) {
+        if (expected && expected.pc && expected.ag) say(gone(expected));
+        return Promise.resolve(null);
+      }
+      return operate(t, x => call('prompt', x.pc.id, x.ag.id, String(text || ''), x.ag.mark || ''));
+    },
+
     // 119, the thread list: the same computers and rows, read-only. A press there goes through
     // `pick`, as a press on a row of this page does.
     shown: shownForList,
+    // 119: why some of a computer's agents are not in the list
+    notShown: notShownForList,
     select,
     pick,
     selected: () => sel,
@@ -1337,6 +1409,9 @@
         drawInThread();
         return;
       }
+
+      // the conversation is shown in the thread's main area only
+      window.TnaiRemoteTalk?.show(null);
       if (!box) return;
       if (detail) place();
       else box.remove();

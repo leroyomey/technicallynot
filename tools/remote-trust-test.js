@@ -811,6 +811,38 @@ for (const order of [
   );
 }
 {
+  // the session stays up but this computer's link is muted (the relay's rate_limited): its
+  // confirmation of the other one's stop does not leave, so that stop is not counted as one; once
+  // the link sends again, the retry ends both
+  const w = world(['a', 'b']),
+    { a, b } = w.comps;
+  const send = a.link.send;
+  let muted = true;
+  a.link.send = (to, obj) => (muted ? false : send(to, obj));
+  a.trust.stopEverywhere();
+  b.trust.stopEverywhere();
+  w.run();
+  check(
+    'both stopping, this link muted: its confirmation did not leave, so the other stop is not taken as one; it still waits and keeps the pairing',
+    a.stopped === 0 &&
+      a.trust.status().stopping &&
+      !!a.store.pairing('b') &&
+      !a.sent.some(m => m.obj.t === 'ack'),
+    [a.stopped, a.sent.map(m => m.obj.t)]
+  );
+  muted = false;
+  a.trust.sessionStarted('b');
+  w.run();
+  check(
+    '…and when the link sends again both stops are settled and both end',
+    a.stopped === 1 &&
+      b.stopped === 1 &&
+      a.store.pairings().length === 0 &&
+      b.store.pairings().length === 0,
+    [a.stopped, b.stopped]
+  );
+}
+{
   // a third computer: the two that stop end their pairing with each other only; the third is asked
   // like any other and chooses itself
   const w = world(['a', 'b', 'c'], ['c']),

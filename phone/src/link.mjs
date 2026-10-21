@@ -413,6 +413,11 @@ export function createLink({
     if (stopped) return set('off');
     if (code === 4003 || code === 4001)
       return set('stopped', code === 4003 ? 'signed_out' : 'replaced');
+
+    // The own relay threw this phone out (4009) or ended the shared phone key (4010,
+    // relay/src/hub.js): the next ticket would only be refused for the same reason.
+    if (code === 4009) return set('stopped', 'device_revoked');
+    if (code === 4010) return set('stopped', 'phone_key_retired');
     if (!wanted()) return set('off');
     if (code === 4002) return retry(SLOW_RETRY * (0.5 + random() / 2), 'remote_disabled');
     if (code === 4008) attempt = Math.max(attempt, 6);

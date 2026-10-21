@@ -7,13 +7,16 @@
 // paragraph), which the relay accepts beside the secret's own.
 //
 // Where the secret is kept: nowhere. The moment it is saved, a key is made from it for this one
-// relay's host and for proofs only, as a Web Crypto key that CANNOT be exported, and only that key
-// is stored (IndexedDB can hold such a key). No script on the page can read the secret or that key
-// back, only ask for a proof to be signed, and a proof is all that key can make: not a ticket, not
-// the meeting point's name, nothing for a relay at another address. What this does not protect
-// against: someone who can use this phone's browser profile or run code on this page can still
-// have proofs for this relay signed, for any device id, while the page is open; and a key in
-// browser storage is not hidden from the phone's owner the way an operating system's key store is.
+// relay's host and this phone's id, for proofs only, as a Web Crypto key that CANNOT be exported,
+// and only that key is stored (IndexedDB can hold such a key). No script on the page can read the
+// secret or that key back, only ask for a proof to be signed, and a proof is all that key can
+// make: of this one phone, not a ticket, not the meeting point's name, nothing for a relay at
+// another address. What this does not protect against: someone who can use this phone's browser
+// profile or run code on this page can still have proofs of this phone signed while the page is
+// open (the relay's owner can then throw this phone out alone: relay/README.md, revoke); and a key
+// in browser storage is not hidden from the phone's owner the way an operating system's key store
+// is. A page saved before phones had their own key kept one shared phone key for every phone id;
+// it is used until the relay refuses it, and then the page asks for the secret again.
 //
 // Why the page may connect to any https or wss address (phone/app/index.html, connect-src): the
 // relay's address is typed in by the user after the page was built, and a page's content policy is
@@ -46,10 +49,30 @@ const SECRET_MIN = 32,
 const WAITS = new Set(['proof_used', 'rate_limited']);
 
 // Refusals that need the user: the link stops and the page says which.
-const STOPS = new Set(['clock_off', 'too_many_ids']);
+//   device_revoked: the relay's owner threw this phone out (relay/README.md, revoke)
+//   phone_key_retired: this phone still keeps the shared phone key of older pages, which the relay
+//     no longer takes (a phone moved to its own key, or a phone was thrown out): type the secret
+//     again, and this page then keeps a key of this phone's own
+//   relay_too_old: this phone's own key was refused by a relay deployed before phones had one
+//   other_id: the saved key was made for another device id than this phone's (never sent)
+//   page_not_allowed: the relay answers, but its PHONE_ORIGINS does not name this page's address
+const STOPS = new Set([
+  'clock_off',
+  'too_many_ids',
+  'device_revoked',
+  'phone_key_retired',
+  'relay_too_old',
+  'other_id',
+  'page_not_allowed',
+]);
 
 // What the relay accepts as a device id (relay/src/index.js DEVICE).
 const DEVICE = /^[A-Za-z0-9_-]{8,64}$/;
+
+// How every phone's id begins (relay/src/index.js PHONE_ID_START): the relay makes a phone's own
+// key with the host in it, and only for such an id.
+const PHONE_ID_START = 'ph-';
+const phoneId = id => typeof id === 'string' && DEVICE.test(id) && id.startsWith(PHONE_ID_START);
 
 // Is this host a literal address that is not on the internet? (Names are not judged: a name is
 // looked up by the phone.)
@@ -213,7 +236,10 @@ export function createOwnRelay({
   now = Date.now,
   subtle = globalThis.crypto.subtle,
 }) {
-  let saved; // undefined = not read yet; null = none; else { url, key }
+  // undefined = not read yet; null = none; else { url, key, id }. `id` is the phone id the key was
+  // made for; empty for a key saved by an older page (the shared phone key, kept and used until
+  // the relay refuses it: it cannot be moved without the secret, which is not kept).
+  let saved;
   let lastTime = 0;
 
   // The store is asked once; a failed read is asked again at the next call, not remembered as
@@ -227,7 +253,12 @@ export function createOwnRelay({
       return null;
     }
     const url = cleanUrl(value?.url);
-    saved = url && isSigningKey(value?.key) ? { url, key: value.key } : null;
+    const hasId = value && typeof value === 'object' && 'id' in value;
+    const idOk = !hasId || phoneId(value.id);
+    saved =
+      url && idOk && isSigningKey(value?.key)
+        ? { url, key: value.key, id: hasId ? value.id : '' }
+        : null;
     return saved;
   }
 
@@ -281,6 +312,10 @@ export function createOwnRelay({
     const r = await load();
     if (!r) throw { status: 0, code: 'no_relay' };
     if (!DEVICE.test(String(deviceId || ''))) throw { status: 0, code: 'device_required' };
+
+    // A key of this phone's own speaks for the id it was made for only; the relay would refuse
+    // any other, so nothing is sent and the page asks for the secret again.
+    if (r.id && deviceId !== r.id) throw { status: 403, code: 'other_id' };
     let res, body, headers;
 
     // A key that will not sign is no relay set, not a relay that cannot be reached: the page then
@@ -297,7 +332,8 @@ export function createOwnRelay({
         redirect: 'error',
         signal: timeoutSignal(),
       });
-    } catch {
+    } catch (e) {
+      if (await pageNotAllowed(r.url, e)) throw { status: 403, code: 'page_not_allowed' };
       throw { status: 0, code: 'network' };
     }
     try {
@@ -312,8 +348,13 @@ export function createOwnRelay({
     if (res.ok) return body;
 
     // A relay's word is not trusted with text: a short code of letters, or "refused".
-    const code =
+    let code =
       typeof body?.error === 'string' && /^[a-z_]{1,40}$/.test(body.error) ? body.error : 'refused';
+
+    // The relay refuses the shared phone key with "invalid_proof" (what an older page shows) and
+    // says why beside it (relay/src/hub.js ask).
+    if (code === 'invalid_proof' && body?.why === 'phone_key_retired') code = 'phone_key_retired';
+    else if (code === 'invalid_proof' && r.id && (await relayTooOld(r.url))) code = 'relay_too_old';
 
     // The relay has seen a newer time from this device (a clock that was ahead and was corrected,
     // or a second window): continue from it, when it is near this clock.
@@ -331,6 +372,51 @@ export function createOwnRelay({
     // Some pass by themselves, so the link waits and tries again (429); some need the user, so it
     // stops and the page says why (403); a 401 is the relay refusing the secret.
     throw { status: WAITS.has(code) ? 429 : STOPS.has(code) ? 403 : res.status, code };
+  }
+
+  // A call the browser would not hand over: is the relay there, only not letting this page read
+  // it (its PHONE_ORIGINS does not name this page)? A browser throws the same way for both, so
+  // the front door is asked once more in "no-cors" mode, whose answer the page cannot read but
+  // which arrives only when the host answered. A call that ran out of time is the connection.
+  // Learned 2026-10-21 (g26 Low 1: an unlisted page was told "check the connection").
+  async function pageNotAllowed(url, failure) {
+    if (failure?.name === 'AbortError' || failure?.name === 'TimeoutError') return false;
+    try {
+      await fetch(url + '/', {
+        method: 'GET',
+        mode: 'no-cors',
+        redirect: 'error',
+        signal: timeoutSignal(),
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Does the relay at this address say it was deployed before phones had a key of their own? Its
+  // front answer (GET /, no proof) names `phone_keys: 1` since then. Asked only after this phone's
+  // own key was refused (desktop/own-relay.js relayTooOld is the computer's same question).
+  async function relayTooOld(url) {
+    let res;
+    try {
+      res = await fetch(url + '/', {
+        method: 'GET',
+        redirect: 'error',
+        signal: timeoutSignal(),
+      });
+    } catch {
+      // The same relay just answered the refusal readably, so a front answer the browser will not
+      // let the page read is one without the page rules: a relay deployed before phone keys (a
+      // relay of this build answers its front door to pages). Learned 2026-10-21 (g18b Low 1).
+      return true;
+    }
+    try {
+      const front = JSON.parse(await limited(res));
+      return res.ok && front?.relay === 'technically-not' && front.phone_keys !== 1;
+    } catch {
+      return false;
+    }
   }
 
   async function presence(deviceId) {
@@ -352,33 +438,37 @@ export function createOwnRelay({
       return !!(await load());
     },
 
-    // → { ok: true } or { ok: false, error: 'bad_url' | 'bad_secret' | 'not_saved' }
-    async set(urlText, secretText) {
+    // deviceId: this phone's id ("ph-…"), which the stored key will speak for.
+    // → { ok: true } or { ok: false, error: 'bad_url' | 'bad_secret' | 'device_required' |
+    //   'not_saved' }
+    async set(urlText, secretText, deviceId) {
       const url = cleanUrl(urlText),
         secret = cleanSecret(secretText);
       if (!url) return { ok: false, error: 'bad_url' };
       if (!secret) return { ok: false, error: 'bad_secret' };
+      if (!phoneId(deviceId)) return { ok: false, error: 'device_required' };
       try {
         // What is stored is not a key of the secret itself but one made from it for this relay's
-        // host and for proofs only (the relay works out the same one: relay/src/index.js, proven).
-        // A script that got onto this page can have that key sign, but all it signs is a proof to
-        // this one relay: no ticket, not the meeting point's name, nothing for another relay.
-        // Neither key can be exported, and the secret's text is gone
-        // once this function ends.
+        // host and this phone's id, for proofs only (the relay works out the same one:
+        // relay/src/index.js, deviceKeyOf). A script that got onto this page can have that key
+        // sign, but all it signs is a proof of this one phone to this one relay: no other device,
+        // no ticket, not the meeting point's name, nothing for another relay. So a lost phone is
+        // one device the relay's owner can throw out alone. Neither key can be exported, and the
+        // secret's text is gone once this function ends.
         const encoder = new TextEncoder();
         const hmac = { name: 'HMAC', hash: 'SHA-256' };
         const ofSecret = await subtle.importKey('raw', encoder.encode(secret), hmac, false, [
           'sign',
         ]);
         const host = new URL(url).host.toLowerCase();
-        const phoneKeyText = hex(
-          await subtle.sign('HMAC', ofSecret, encoder.encode('phone-key:' + host))
+        const ownKeyText = hex(
+          await subtle.sign('HMAC', ofSecret, encoder.encode('phone-key:' + host + ':' + deviceId))
         );
-        const key = await subtle.importKey('raw', encoder.encode(phoneKeyText), hmac, false, [
+        const key = await subtle.importKey('raw', encoder.encode(ownKeyText), hmac, false, [
           'sign',
         ]);
-        await backend.update('ownRelay', () => [{ url, key }, undefined]);
-        saved = { url, key };
+        await backend.update('ownRelay', () => [{ url, key, id: deviceId }, undefined]);
+        saved = { url, key, id: deviceId };
 
         // Proof times start again with this clock: the last relay may have moved them ahead, and
         // another relay would then say this phone's clock is wrong.

@@ -858,7 +858,8 @@ for (let i = 0; i < 6; i++) {
   check(
     !!first &&
       first.querySelector('span').textContent ===
-        pc.name + ' sees what my agents ask, work on and answer, not only their names',
+        pc.name +
+          ' sees what my agents ask, work on and answer, and reads their conversations, not only their names',
     'the first switch names answers too (' +
       (first ? first.querySelector('span').textContent : 'none') +
       ')'
@@ -866,8 +867,13 @@ for (let i = 0; i < 6; i++) {
   check(
     !!note &&
       note.classList.contains('dv-muted') &&
-      note.textContent === 'The first part of each finished answer is sent. It can quote files.',
-    'a small line under it says the first part of each answer is sent'
+      note.textContent.startsWith(
+        'Your prompts and the agents’ words and commands are sent when ' +
+          pc.name +
+          ' opens an agent.'
+      ) &&
+      note.textContent.includes('They can quote files and anything you pasted.'),
+    'a small line under it says what is sent when that computer opens an agent'
   );
 }
 const o2 = opts()[1],

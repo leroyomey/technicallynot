@@ -127,11 +127,17 @@ try {
   await V.open('data.bin');
   await wait(300);
   o = await main('opened');
+
+  // Since 0.3.72 only known-safe kinds open with the default app (file-viewer.js OPENABLE, audit
+  // app-1 #5); an unknown kind is shown in File Explorer instead, never run.
   check(
-    o.opened.length === 1 &&
-      /data\.bin$/.test(o.opened[0]) &&
+    !o.opened.length &&
+      o.shown.length === 2 &&
+      /data\.bin$/.test(o.shown[1]) &&
       !(await main('windows')).some(x => /data.bin/.test(x.title)),
-    'unknown binary: no window, handed to the default app with the confined path'
+    'unknown binary: no window, only shown in Explorer with the confined path (' +
+      JSON.stringify(o) +
+      ')'
   );
   const r = await F.popout('data.bin', false);
   check(r && !r.ok, 'main refuses to pop out an unknown binary');

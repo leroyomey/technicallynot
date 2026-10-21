@@ -80,7 +80,11 @@ function loadAgentContext() {
 
 function withElectronStub(load) {
   const original = Module._load;
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'tnai-main-leftovers-'));
+
+  // The long form of the temp folder, so worktree paths match what git prints (see the repo below).
+  const scratch = fs.mkdtempSync(
+    path.join(fs.realpathSync.native(os.tmpdir()), 'tnai-main-leftovers-')
+  );
   scratchDirs.push(scratch);
   Module._load = function (request, ...rest) {
     if (request === 'electron')
@@ -147,7 +151,10 @@ async function main() {
     assert.ok(ms < 50, 'took ' + ms.toFixed(1) + ' ms');
   });
 
-  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'tnai-wt-repo-'));
+  // The long form of the temp folder: on some Windows machines os.tmpdir() is the short form
+  // (RUNNER~1) while git answers with the long one, and the repo is then not found.
+  const longTemp = fs.realpathSync.native(os.tmpdir());
+  const repo = fs.mkdtempSync(path.join(longTemp, 'tnai-wt-repo-'));
   gitIn(repo, ['init', '-q', '-b', 'master']);
   fs.writeFileSync(path.join(repo, 'a.txt'), 'a\n');
   gitIn(repo, ['add', '-A']);

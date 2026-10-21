@@ -337,24 +337,48 @@ try {
       );
       await shot('thread-list-close');
 
-      // A stopped thread closes at once.
+      // A stopped thread asks too: a thread is never closed without a question. Cancel keeps it,
+      // Close removes it.
       const stoppedRow = rowOf(second);
       if (stoppedRow) {
         await realInput([{ type: 'mouseMove', ...middle(stoppedRow) }]);
         const stoppedMark = stoppedRow.querySelector('.tnt-th-x');
         await until(() => getComputedStyle(stoppedMark).opacity === '1', 2000);
         const at = middle(stoppedMark);
-        await realInput([
-          { type: 'mouseMove', ...at },
-          { type: 'mouseDown', ...at },
-          { type: 'mouseUp', ...at },
-        ]);
+        const pressMark = () =>
+          realInput([
+            { type: 'mouseMove', ...at },
+            { type: 'mouseDown', ...at },
+            { type: 'mouseUp', ...at },
+          ]);
+        await pressMark();
+        const stoppedAsk = await until(
+          () => document.querySelector('.tnt-view .tnai-panel-confirm'),
+          3000
+        );
+        check(
+          !!stoppedAsk && /Close/.test(stoppedAsk.textContent),
+          'a press on the ✕ of a stopped thread asks first: "' +
+            (stoppedAsk?.textContent.replace(/\s+/g, ' ').trim() || 'no question') +
+            '"'
+        );
+        stoppedAsk?.querySelector('.tnai-ws-close-cancel')?.click();
+        await wait(300);
+        check(!!rowOf(second), 'Cancel keeps the stopped thread in the list');
+        await realInput([{ type: 'mouseMove', ...middle(rowOf(second)) }]);
+        await until(() => getComputedStyle(stoppedMark).opacity === '1', 2000);
+        await pressMark();
+        const again = await until(
+          () => document.querySelector('.tnt-view .tnai-panel-confirm'),
+          3000
+        );
+        again?.querySelector('.tnai-ws-close-confirm')?.click();
         check(
           !!(await until(
             () => !rowOf(second) && !agents.sessions().some(s => s.paneId === second),
             5000
           )),
-          'a press on the ✕ of a stopped thread closes it, with no question'
+          'Close in the question closes the stopped thread'
         );
       }
 

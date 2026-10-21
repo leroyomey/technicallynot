@@ -210,6 +210,19 @@ function resultOf(block, line) {
 function userEntries(text, at) {
   const raw = String(text || '');
   if (!raw.trim()) return [];
+
+  // What a command such as /model answered ("Set model to `Haiku 5.5` …", "Settings dialog
+  // dismissed"): one short line becomes a note, so a menu used on the CLI screen leaves a trace in
+  // the conversation (161). A compact has its own note; long or empty answers stay out.
+  const answer = /^\s*<local-command-stdout>([\s\S]*?)<\/local-command-stdout>\s*$/.exec(raw);
+  if (answer) {
+    const said = answer[1]
+      .replace(/\x1b\[[0-9;]*m/g, '')
+      .replace(/`/g, '')
+      .trim();
+    const short = said && !/[\r\n]/.test(said) && said.length <= 160;
+    return short && !/^Compact(ed|ion)\b/i.test(said) ? [{ kind: 'note', text: said, at }] : [];
+  }
   if (/^\s*<local-command-(caveat|stdout|stderr)>/.test(raw)) return [];
   const command = /<command-name>\s*(\/?[^<\s]+)\s*<\/command-name>/.exec(raw);
   if (command) {

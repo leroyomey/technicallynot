@@ -51,7 +51,9 @@
   border-color: rgba(var(--pg-accent-rgb), 0.5);
   background: rgba(var(--pg-accent-rgb), 0.22);
 }
-.tnt-lst .tnt-new:focus-visible {
+/* The focus ring sits inside the button. The weight `:root:not(#pg)` matches 07's general focus
+   ring (2px outside), which would win otherwise. */
+:root:not(#pg) .tnt-lst .tnt-new:focus-visible {
   outline: var(--pg-ring) solid var(--pg-accent);
   outline-offset: -2px;
 }
@@ -163,7 +165,10 @@
   border-radius: 3px;
   background: var(--pg-accent);
 }
-.tnt-th:focus-visible {
+/* Inside the row, never outside it: the list scrolls in a box that cuts off anything past its
+   sides, so 07's general ring (2px outside, which outweighed a plain `.tnt-th` rule) lost its left
+   and right edges. Same weight as 07's rule; this file loads later, so it wins. */
+:root:not(#pg) .tnt-th:focus-visible {
   outline: var(--pg-ring) solid var(--pg-accent);
   outline-offset: -2px;
 }

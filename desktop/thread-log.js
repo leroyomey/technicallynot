@@ -2,9 +2,9 @@
 // for the thread layout's Readable view (src/scripts/122-thread-readable.js).
 //
 // One reader per tool, each in a file of its own: thread-log-claude.js, thread-log-codex.js,
-// thread-log-opencode.js, thread-log-cursor.js. A reader knows where that tool keeps a session's
-// conversation and how it becomes entries. A tool with no reader has no readable thread: its
-// thread is its terminal, and the window says so.
+// thread-log-opencode.js, thread-log-cursor.js, thread-log-copilot.js. A reader knows where that
+// tool keeps a session's conversation and how it becomes entries. A tool with no reader has no
+// readable thread: its thread is its terminal, and the window says so.
 //
 // This file is the part the readers share: reading a file of lines. This computer only: it reads
 // what is already here, sends nothing anywhere and writes nothing. It runs only when the window
@@ -43,6 +43,7 @@ const READERS = new Map(
     require('./thread-log-codex'),
     require('./thread-log-opencode'),
     require('./thread-log-cursor'),
+    require('./thread-log-copilot'),
   ].map(reader => [reader.agent, reader])
 );
 
@@ -111,6 +112,100 @@ async function read(record, from = -1, options) {
   follow(record, file, options);
   const part = await readFile(file, from, lines => reader.entries(lines, record, options), options);
   return { readable: true, found: !!file, ...part };
+}
+
+// ---------- a read for another computer (desktop/remote-log.js) ----------
+// Never through read() above: no file is watched and no window is told, so another computer that
+// opens agents cannot take this computer's own watches away. At most TAIL bytes are read. A
+// helper's own record (`sub`) is never read here.
+//
+// Whole lines between two byte positions, each with where it starts. `before`: lines that end at
+// or before it (a position that is not a line start only loses the part line). `after`: lines
+// that start at or after it. Neither: the last TAIL bytes.
+async function readLines(file, { before, after } = {}) {
+  const none = { lines: [], next: 0, fresh: true };
+  let handle = null;
+  try {
+    handle = await fs.promises.open(file, 'r');
+    const { size } = await handle.stat();
+    let start;
+    let end;
+    let fresh = false;
+    if (Number.isFinite(after) && after >= 0 && after <= size && size - after <= TAIL) {
+      start = Math.floor(after);
+      end = size;
+    } else if (Number.isFinite(before) && before >= 0) {
+      end = Math.min(Math.floor(before), size);
+      start = Math.max(0, end - TAIL);
+    } else {
+      end = size;
+      start = Math.max(0, size - TAIL);
+      fresh = true;
+    }
+    const length = end - start;
+    if (length <= 0) return { lines: [], next: end, fresh };
+    const buffer = Buffer.alloc(length);
+    await handle.read(buffer, 0, length, start);
+
+    // A read that starts inside the file, other than at a position handed out as a line start,
+    // skips to the next whole line; the last line is taken only when it is complete.
+    let from = 0;
+    if (start > 0 && !(Number.isFinite(after) && after === start)) {
+      const previous = Buffer.alloc(1);
+      await handle.read(previous, 0, 1, start - 1);
+      if (previous[0] !== 10) from = buffer.indexOf(10) + 1;
+      if (from <= 0 && previous[0] !== 10) return { lines: [], next: end, fresh };
+    }
+    const lastBreak = buffer.lastIndexOf(10);
+    if (lastBreak < from) return { lines: [], next: start + from, fresh };
+    const lines = [];
+    let at = from;
+    while (at <= lastBreak) {
+      const stop = buffer.indexOf(10, at);
+      const text = buffer.subarray(at, stop).toString('utf8').replace(/\r$/, '');
+      lines.push({ pos: start + at, text });
+      at = stop + 1;
+    }
+    return { lines, next: start + lastBreak + 1, fresh };
+  } catch {
+    return none;
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+}
+
+// One conversation for another computer: { readable, found, entries (each with `pos`, where its
+// line starts, or OpenCode's part time), more (older entries exist), next (where a later read
+// goes on), fresh (this is the newest part, not a continuation) }.
+// `where` (a test's home folder or database file) never carries a helper: `sub` is dropped.
+async function readForPeer(record, { before, after } = {}, where = {}) {
+  const reader = READERS.get(record?.agent);
+  const none = { readable: false, found: false, entries: [], more: false, next: 0, fresh: true };
+  if (!reader) return none;
+  const { sub, ...options } = where || {};
+  void sub;
+
+  // OpenCode: its own bounded read before a time (300 parts at most)
+  if (reader.readBefore)
+    return { readable: true, ...(await reader.readBefore(record, before, options)) };
+
+  // record.file: a past conversation's file as thread-list.js found it (plan item 44); otherwise
+  // the reader finds it from the saved session
+  const file =
+    typeof record.file === 'string' && record.file ? record.file : reader.fileFor(record, options);
+  if (!file) return { ...none, readable: true };
+  const part = await readLines(file, { before, after });
+  const entries = [];
+  for (const { pos, text } of part.lines)
+    for (const entry of reader.entries([text], record)) entries.push({ ...entry, pos });
+  return {
+    readable: true,
+    found: true,
+    entries,
+    more: part.lines.length ? part.lines[0].pos > 0 : false,
+    next: part.next,
+    fresh: part.fresh,
+  };
 }
 
 // ---------- telling the window that a conversation it shows has grown ----------
@@ -213,6 +308,7 @@ module.exports = {
   fileFor,
   read,
   readFile,
+  readForPeer,
   TAIL,
 
   // for tools/thread-log-test.js: who is told of a change, how many files are watched, and an
@@ -221,6 +317,7 @@ module.exports = {
     notify = tell;
   },
   watched: () => watches.size,
+  watchedPanels: () => [...watches.values()].map(watch => watch.paneId),
   endWatches: () => [...watches.keys()].forEach(endWatch),
   UNREAD_MS,
 };

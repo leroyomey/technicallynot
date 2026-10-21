@@ -468,3 +468,202 @@ h2 {
   text-decoration: none;
   text-align: center;
 }
+
+/* The control screens (screens.mjs): Agents, one agent, Start an agent, Activity. Rules taken from
+   the approved look (docs/plans/design-concepts/phone-app.html), same tokens. */
+.trow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--tap);
+}
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+.ib {
+  width: var(--tap);
+  height: var(--tap);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--pg-panel);
+  font-size: 20px;
+  color: var(--pg-text-2);
+  flex: none;
+}
+.ib.on {
+  background: rgba(255, 125, 142, 0.18);
+}
+.c-work {
+  color: var(--pg-work);
+}
+.c-idle {
+  color: var(--pg-text-3);
+}
+.c-err {
+  color: var(--pg-err);
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.chip {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--pg-line-2);
+  background: none;
+  color: var(--pg-text-2);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chip.on {
+  background: var(--pg-accent-soft);
+  border-color: transparent;
+  color: var(--pg-text);
+}
+.chip b {
+  font: 500 12px var(--pg-mono);
+}
+.ghead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ghead b {
+  font-weight: 600;
+}
+.ghead .meta {
+  flex: 1;
+  text-align: right;
+}
+.proj {
+  color: var(--pg-text-4);
+  font: 11px var(--pg-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.rows {
+  display: grid;
+  gap: 4px;
+  margin: 0 -8px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: none;
+  color: inherit;
+  text-align: left;
+  width: 100%;
+}
+.row .grow b,
+.row .grow .meta {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row .st {
+  font-size: 12px;
+  flex: none;
+  text-align: right;
+  display: grid;
+  justify-items: end;
+}
+.row .st i {
+  font: normal 12px var(--pg-mono);
+  color: var(--pg-text-3);
+}
+.row.on {
+  background: var(--pg-accent-soft);
+  box-shadow: inset 3px 0 var(--pg-accent);
+}
+.row:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+.acts.opts {
+  grid-auto-flow: row;
+}
+.out {
+  font-family: var(--pg-mono);
+  font-size: 13px;
+  color: var(--pg-text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+}
+.log {
+  display: grid;
+  gap: 8px;
+}
+.log p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.log .you {
+  padding: 8px 12px;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-accent-soft);
+}
+.log .act {
+  font: 12px var(--pg-mono);
+  color: var(--pg-text-3);
+}
+.send {
+  flex: none;
+  padding: 10px var(--pad);
+}
+.sendnote {
+  margin: 0;
+  padding: 0 var(--pad);
+}
+.sendnote:empty {
+  display: none;
+}
+.area {
+  display: block;
+  width: 100%;
+  min-height: 88px;
+  padding: 12px 14px;
+  border-radius: var(--pg-r-sm);
+  border: 1px solid var(--pg-line-2);
+  background: var(--pg-panel);
+  font: inherit;
+  color: inherit;
+  resize: none;
+}
+.area::placeholder {
+  color: var(--pg-text-4);
+}
+.screenview {
+  margin: 0;
+  padding: 10px;
+  max-height: 50vh;
+  overflow: auto;
+  border-radius: var(--pg-r-sm);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--pg-text-2);
+  font: 11px/1.35 var(--pg-mono);
+  white-space: pre;
+}

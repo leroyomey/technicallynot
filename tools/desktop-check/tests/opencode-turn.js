@@ -416,8 +416,8 @@ try {
     return note && !note.hidden && note.textContent;
   }, 5000);
 
-  // A control counts only when it is on screen: the view's own jump buttons ("Last report",
-  // "Latest") exist in every conversation and stay hidden while there is nothing to jump to.
+  // A control counts only when it is on screen: the view's own jump button ("Latest")
+  // exists in every conversation and stays hidden while there is nothing to jump to.
   const shownControls = [...sideTalk().querySelectorAll('button:not([disabled])')].filter(
     button => !button.closest('[hidden]') && button.getClientRects().length > 0
   );

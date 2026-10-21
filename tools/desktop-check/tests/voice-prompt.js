@@ -1003,11 +1003,11 @@ try {
   }
   check(localStorage.getItem('tnai.voice-lang.v1') === 'de', 'voice language German saved');
   const deRes = await window.tnaiNative.voice.transcribe(
-    await (
-      await fetch(
-        'data:audio/wav;base64,UklGRiwAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQgAAAAAAAAAAAAAAA=='
-      )
-    ).arrayBuffer(),
+    // A tiny silent WAV, decoded in the page: the app's policy lets the page fetch nothing.
+    Uint8Array.from(
+      atob('UklGRiwAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQgAAAAAAAAAAAAAAA=='),
+      character => character.charCodeAt(0)
+    ).buffer,
     'de'
   );
   check(

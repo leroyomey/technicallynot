@@ -46,7 +46,11 @@ let send = () => {},
   deps = {};
 
 const now = () => (deps.now ? deps.now() : Date.now());
-const fold = s => (process.platform === 'win32' ? s.toLowerCase() : s);
+
+// Windows and macOS disks ignore case by default, so `Src/App.js` and `src/app.js` are one file and
+// one lock there (app-3 #13). Linux disks tell them apart.
+const CASE_BLIND = process.platform === 'win32' || process.platform === 'darwin';
+const fold = s => (CASE_BLIND ? s.toLowerCase() : s);
 const projectKey = project => fold(path.resolve(String(project || '')));
 
 // The file relative to the project with forward slashes, or '' when it is outside the project.
@@ -119,6 +123,8 @@ function acquire(project, file, owner) {
     return {
       ok: false,
       team: true,
+      code: 'locked',
+      hint: 'tnai locks, then tnai send ' + h.name + ' MESSAGE to split the files',
       holder: { paneId: h.paneId, name: h.name, provider: h.provider, at: h.at },
       text:
         r +
@@ -207,6 +213,8 @@ function acquire(project, file, owner) {
     }
     return {
       ok: false,
+      code: 'locked',
+      hint: 'tnai locks, then tnai send ' + h.name + ' MESSAGE to split the files',
       holder: { paneId: h.paneId, name: h.name, provider: h.provider, at: h.at },
       text,
     };
@@ -239,7 +247,10 @@ function acquire(project, file, owner) {
   // another.
   const left = stopWaiting(owner.paneId, k);
   if (fresh || left) changed(project);
-  return { ok: true };
+
+  // taken: the file was free and this call took it, so an edit that then fails or is denied can
+  // give it back (agent-hooks.js editEnded). Not when it refreshed a lock of its own lead tree.
+  return { ok: true, taken: !h };
 }
 
 // The agent of this panel no longer waits for a file: its name leaves every lock that showed it as

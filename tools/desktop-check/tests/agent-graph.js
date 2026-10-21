@@ -390,6 +390,26 @@ try {
         sideKeep().matches(':focus-visible') +
         ')'
     );
+
+    // A thread-list row with keyboard focus keeps its ring inside the row: the list scrolls in a
+    // box that cuts off anything past its sides, and a ring outside the row lost its left and
+    // right edges there.
+    const listRow = document.querySelector('.tnt-lst .tnt-th');
+    listRow?.focus({ preventScroll: true });
+    await wait(200);
+    const rowLook = listRow ? getComputedStyle(listRow) : null;
+    check(
+      !!listRow &&
+        listRow.matches(':focus-visible') &&
+        rowLook.outlineStyle === 'solid' &&
+        parseFloat(rowLook.outlineOffset) < 0,
+      'a thread-list row with keyboard focus draws its ring inside the row (offset ' +
+        (rowLook?.outlineOffset || 'none') +
+        ', focus-visible: ' +
+        !!listRow?.matches(':focus-visible') +
+        ')'
+    );
+    sideKeep().focus({ preventScroll: true });
   }
   await shot('agent-graph-keep-focus');
   await wait(500);

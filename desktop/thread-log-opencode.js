@@ -218,4 +218,49 @@ async function read(
   return { entries: out, next, cut, reset: false, found: true };
 }
 
-module.exports = { agent: OPENCODE, read, partEntries };
+// ---------- a read for another computer (desktop/thread-log.js readForPeer) ----------
+// The newest PEER_PARTS parts created before `before` (a part's creation time, ms), or the newest
+// of all. Each entry carries `pos`, the creation time of its part, which a later "Show earlier"
+// hands back. Always a fresh read: a part that grows is read again whole, never added twice.
+const PEER_PARTS = 300;
+
+async function readBefore(
+  record,
+  before,
+  { file = opencodeStore.dbFile(), maxParts = PEER_PARTS } = {}
+) {
+  const none = { entries: [], more: false, next: 0, fresh: true, found: false };
+  const sessionId = record?.agent === OPENCODE ? String(record.sessionId || '') : '';
+  const db = sessionId ? open(file) : null;
+  if (!db) return none;
+  const session = rows(db, 'SELECT directory FROM session WHERE id = ?', sessionId)[0];
+  if (!session) return none;
+  const limit =
+    Number.isFinite(before) && before >= 0 ? Math.floor(before) : Number.MAX_SAFE_INTEGER;
+  const found = rows(
+    db,
+    'SELECT id, message_id, time_created, time_updated, data FROM part WHERE session_id = ? AND time_created < ? ORDER BY time_created DESC, id DESC LIMIT ?',
+    sessionId,
+    limit,
+    maxParts + 1
+  );
+  const parts = found.slice(0, maxParts).reverse();
+  const messages = new Map(
+    rows(db, 'SELECT id, data FROM message WHERE session_id = ?', sessionId).map(row => [
+      row.id,
+      { ...json(row.data), id: row.id },
+    ])
+  );
+  const cwd = session.directory || record.cwd || '';
+  const entries = [];
+  for (const row of parts) {
+    const message = messages.get(row.message_id);
+    if (!message) continue;
+    const pos = Number(row.time_created) || 0;
+    for (const entry of partEntries({ ...row, data: json(row.data) }, message, cwd))
+      entries.push({ ...entry, pos });
+  }
+  return { entries, more: found.length > maxParts, next: 0, fresh: true, found: true };
+}
+
+module.exports = { agent: OPENCODE, read, readBefore, partEntries };

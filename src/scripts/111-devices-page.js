@@ -46,6 +46,33 @@
       .catch(() => null);
   const shortId = id => String(id).slice(0, 8);
 
+  // The muted line under the text switch. A switch that was on before its sentence said that
+  // conversations are read shares none until the user presses "Keep on" here (or turns it off and
+  // on); the button is in the line itself, so nothing new stands on the card.
+  function detailNote(pc) {
+    const note = el(
+      'p',
+      'dv-muted',
+      'Your prompts and the agents’ words and commands are sent when ' +
+        pc.name +
+        ' opens an agent. They can quote files and anything you pasted.' +
+        // Review 23, L1: the thread features (remote-features.js) cross under this switch too.
+        ' It also sees each agent’s branch and pull request, the skills its CLI reads, and which' +
+        ' CLIs are signed in here with their usage.'
+    );
+    if (pc.detail && pc.reads === false) {
+      const keep = btn('Keep on', '', () => {
+        if (!quiet2()) act('keepLogs', pc.id);
+      });
+      keep.title =
+        'Conversations go to ' +
+        pc.name +
+        ' only after you press this, or turn the switch off and on.';
+      note.append(' ', keep);
+    }
+    return note;
+  }
+
   // A fixed time, not "2 min ago": nothing on this page runs a timer to keep a relative time true.
   function clock(t) {
     if (!t) return '';
@@ -110,11 +137,19 @@
 
     // an own relay's refusals that do not pass by themselves
     invalid_proof: 'Your relay refused the secret. Check the address and the secret under Change.',
+
+    // the relay was deployed before per-device keys (desktop/own-relay.js relayTooOld)
+    relay_too_old:
+      'Your relay is older than this app. Deploy it again (npm run deploy in its folder), then connect again.',
     relay_not_set_up: 'Your relay has no secret yet. Finish its setup, then connect again.',
     clock_off:
       "This computer's clock is more than two minutes off. Set the time, then connect again.",
     too_many_ids:
       'Your relay knows too many devices. Set a new secret on the relay and here; your pairings stay.',
+
+    // thrown out with the relay's secret (relay/README.md, "Throwing one device out")
+    device_revoked:
+      'Your relay no longer lets this computer in. Whoever runs the relay can let it in again.',
     refused: 'No relay answers at that address. Check the address under Change.',
   };
 
@@ -303,7 +338,9 @@
         btn('Pair a computer', '', e => {
           opener = e.currentTarget;
           act('pairAny');
-        })
+        }),
+        // "Add a phone": its own dialog (167-add-phone.js)
+        btn('Add a phone', '', e => window.TnaiAddPhone?.open(e.currentTarget))
       )
     );
     return card;
@@ -595,6 +632,13 @@
   // computer ask this one to fetch a commit; one turned on before it does not.
   const SYNC_SAYS =
     "It can have this computer fetch from this project's git remote, with the sign-in saved on this computer, and keep the commit it names in a branch of its own. Your files and your current branch are not touched; what this copy knows of the remote's branches is brought up to date, as a fetch would.";
+
+  // Typing (remote-type.js, plan item 41): part of full control (rule 13, one switch), shown under
+  // the full-control switch and in its question. Typing is command execution, so it says so.
+  // a phone is known by its device id (ph-): it gets only what was reviewed for phones
+  const isPhone = pc => typeof pc?.id === 'string' && pc.id.startsWith('ph-');
+  const TYPE_SAYS =
+    "It can type into the terminal it watches here as if it sat at this computer: your agents' CLI screens, Your terminal and PowerShell threads. What it types runs: commands, a CLI's own commands, and answers to any question on the screen, permission questions included. Each time it types, the panel says so and the list below gets a line.";
   const CLI_NAME = {
     claude: 'Claude Code',
     codex: 'Codex',
@@ -769,7 +813,15 @@
     // text
     file: e => e.name + ' sent a file for ' + who(e) + '. It waits here for its prompt',
     watch: e => e.name + ' watched ' + who(e) + "'s terminal panel",
+    // typing (remote-type.js): the counts follow as the line's small text, never the letters
+    type: e => e.name + ' typed into ' + who(e),
     start: e => e.name + ' started ' + who(e),
+    // thread controls (item 44, remote-control.js doThread / doResume); the value is the small text
+    rename: e => e.name + ' renamed ' + who(e),
+    close: e => e.name + ' closed ' + who(e) + "'s thread",
+    model: e => e.name + ' switched the model of ' + who(e),
+    effort: e => e.name + ' switched the effort of ' + who(e),
+    resume: e => e.name + ' resumed a past ' + (e.agent ? e.agent + ' ' : '') + 'conversation',
     dropped: e =>
       'A prompt from ' + e.name + ' for ' + who(e) + ' was removed before it was written',
   };
@@ -1154,13 +1206,14 @@
           el(
             'span',
             '',
-            pc.name + ' sees what my agents ask, work on and answer, not only their names'
+            pc.name +
+              ' sees what my agents ask, work on and answer, and reads their conversations, not only their names'
           ),
           toggle(pc.detail, 'Show ' + pc.name + ' what my agents ask, work on and answer', v => {
             if (!v || !quiet2()) act('setDetail', pc.id, v);
           })
         ),
-        el('p', 'dv-muted', 'The first part of each finished answer is sent. It can quote files.')
+        detailNote(pc)
       ); // these words are fixed
     if (pc.state !== 'paused') {
       // Off by default, and only while the switch above is on: nobody approves what they cannot
@@ -1215,8 +1268,22 @@
         el('p', 'dv-muted', WATCH_SAYS),
         el('p', 'dv-muted', PICK_SAYS),
         el('p', 'dv-muted', SAY_SAYS(pc.name)),
-        el('p', 'dv-muted', SYNC_SAYS)
+        el('p', 'dv-muted', SYNC_SAYS),
+        // typing (remote-type.js): part of full control (rule 13, one switch)
+        el('p', 'dv-muted', TYPE_SAYS)
       );
+
+      // Typing: a switch from before its sentence does not include it.
+      if (pc.control && pc.typeable === false) {
+        const p = el(
+          'p',
+          'dv-muted',
+          pc.name +
+            ' cannot type into terminals yet: turn full control off and on again to allow it.'
+        );
+        p.dataset.notype = '1';
+        add(now, p);
+      }
 
       // The git hand-over: a switch from before its sentence does not include it.
       if (pc.control && pc.syncable === false) {
@@ -1416,10 +1483,16 @@
     failed: 'It could not be removed. Try again.',
   };
   const LOG = {
+    // another computer's look at this one's files and Live preview (163, plan items 42 and 43)
+    files_read: e => [e.name + ' opened this project’s files'],
+    file_saved: e => [e.name + ' saved ' + (e.path || 'a file') + ' here'],
+    preview_seen: e => [e.name + ' took a picture of my Live preview'],
     paired: e => ['Paired with ' + e.name, 'Six digits typed on each'],
     forgot: e => ['Forgot ' + e.name],
     kept: e => ['Kept ' + e.name],
     saw: e => [e.name + ' saw that ' + (e.agent || 'an agent') + ' needs you'],
+    // once per agent and session: another computer read an agent's conversation
+    read: e => [e.name + ' read ' + (e.agent ? e.agent + '’s' : 'an agent’s') + ' conversation'],
     asked: e => [(e.by || 'A computer') + ' asked to end the pairing with ' + e.name],
     they_kept: e => [e.name + ' kept its pairing'],
     they_forgot: e => [e.name + ' forgot it too'],
@@ -1633,11 +1706,7 @@
         page,
         head,
         add(el('div', 'dv-cols'), pcs, aside()),
-        el(
-          'p',
-          'dv-later',
-          "Later, not here yet: phones, typing into another computer's terminal panels, projects across devices."
-        )
+        el('p', 'dv-later', 'Later, not here yet: projects across devices.')
       );
     } else add(page, head, offState());
     root.replaceChildren(page);
@@ -2170,25 +2239,26 @@
         el('p', '', WATCH_SAYS),
         el('p', '', PICK_SAYS),
         el('p', '', SAY_SAYS(pc.name)),
-        el('p', '', SYNC_SAYS),
+        // a phone gets neither the git hand-over nor typing (rule 5: not reviewed for phones)
+        ...(isPhone(pc) ? [] : [el('p', '', SYNC_SAYS), el('p', '', TYPE_SAYS)]),
         el(
           'p',
           'dv-hint',
-          `This is ${pc.name}, id ${shortId(pc.id)}. Turn it on only for a computer that is yours and in your hands. You can turn it off here at any time.`
+          `This is ${pc.name}, id ${shortId(pc.id)}. Turn it on only for ${isPhone(pc) ? 'a phone' : 'a computer'} that is yours and in your hands. You can turn it off here at any time.`
         ),
         add(
           acts,
           btn('Cancel', 'dv-pri', close),
           btn('Give full control', 'dv-danger', () => {
             local = null;
-            act('setControl', pc.id, true, 'choose say sync');
+            act('setControl', pc.id, true, isPhone(pc) ? 'choose say' : 'choose say sync type');
             dialog();
           })
         )
 
-        // 'choose say sync': this question showed the sentences about picking an option, about
-        // agents messaging agents and about the git hand-over, so the grant names all three (agents
-        // messaging agents is switched off in the main process)
+        // 'choose say sync type': this question showed the sentences about picking an option, about
+        // agents messaging agents, the git hand-over and typing, so the grant names all four
+        // (agents messaging agents is switched off in the main process)
       );
     } else if (local?.kind === 'stop-agent') {
       const { pc, ag } = local,

@@ -32,13 +32,52 @@ const capability = agentId =>
   registry.capabilities().find(c => c.id === agentId && c.accounts && DEFAULT_HOMES[c.id]);
 
 // State: { [agentId]: { active: accountId, accounts: [{ id, label, dir, createdAt }] } }. Read from
-// disk on use so it always reflects what is saved.
+// disk on use so it always reflects what is saved. Only well-formed entries are kept, in an object
+// with no prototype, so a hand-edited file or an id such as `__proto__` never throws on a panel
+// start (audit 2026-10-07, app-2 #12).
 function load() {
+  const state = Object.create(null);
+  let data = null;
   try {
-    const data = JSON.parse(fsSync.readFileSync(statePath(), 'utf8'));
-    return data && typeof data === 'object' ? data : {};
+    data = JSON.parse(fsSync.readFileSync(statePath(), 'utf8'));
   } catch {
-    return {};
+    return state;
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return state;
+  for (const agentId of Object.keys(data)) {
+    const value = data[agentId];
+    if (!value || typeof value !== 'object' || !Array.isArray(value.accounts)) continue;
+    state[agentId] = {
+      ...value,
+      active: typeof value.active === 'string' ? value.active : '',
+      accounts: value.accounts.filter(
+        account => account && typeof account === 'object' && typeof account.id === 'string'
+      ),
+    };
+  }
+  return state;
+}
+
+// Every change to accounts.json runs one at a time (app-2 #7): each reads the file, waits on
+// folders and the CLI's config, then writes its whole copy back, so two at once lost one change and
+// could leave an API key with no account.
+let queue = Promise.resolve();
+
+function serial(work) {
+  const run = queue.then(work, work);
+  queue = run.catch(() => {});
+  return run;
+}
+
+// True while an agent panel runs on this account (pty-service.js knows each panel's account). Read
+// when asked, as pty-service.js itself loads this file.
+function accountInUse(agentId, accountId) {
+  try {
+    return require('./pty-service')
+      .list()
+      .some(s => s.running && s.agent === agentId && s.accountId === accountId);
+  } catch {
+    return false;
   }
 }
 
@@ -259,7 +298,7 @@ async function status(agentId, dir, force, keyAccountId) {
   return value;
 }
 
-module.exports = {
+const accountService = {
   // accountId '' (or unknown) = the CLI's default home, i.e. the account it is signed in with
   // normally.
   isKey(agentId, accountId) {
@@ -347,11 +386,19 @@ module.exports = {
   },
   // Removes Technically Not's folder for an added account. Junctions are unlinked first so the
   // shared default-home folders are never touched.
-  async remove(agentId, accountId) {
+  // inUse(agentId, accountId) → true while an agent panel runs on the account (tests pass their
+  // own).
+  async remove(agentId, accountId, { inUse = accountInUse } = {}) {
     const state = load(),
       e = entry(state, agentId),
       account = e.accounts.find(a => a.id === accountId);
     if (!account) throw new Error('Account not found.');
+
+    // The CLI holds files of a running panel open, so a delete would stop half way (app-2 #6).
+    if (inUse(agentId, accountId))
+      throw new Error(
+        'An agent is running on this account. Stop or close its threads, then remove the account.'
+      );
     const root = accountsRoot(),
       dir = path.resolve(account.dir);
     if (!dir.toLowerCase().startsWith(path.resolve(root).toLowerCase() + path.sep))
@@ -374,7 +421,18 @@ module.exports = {
         if (error.code !== 'ENOENT') throw error;
       }
     }
-    await fs.rm(dir, { recursive: true, force: true });
+    try {
+      await fs.rm(dir, { recursive: true, force: true });
+    } catch (error) {
+      // Part of the folder may be gone: share the conversations again and say what is left, so the
+      // account stays listed and can be removed again.
+      await linkShared(agentId, dir).catch(() => '');
+      throw new Error(
+        'Could not delete all of this account’s folder (' +
+          (error.code || error.message) +
+          '). The account is still listed and its sign-in may be partly removed; close every program using it and remove it again.'
+      );
+    }
     if (account.kind === 'api-key') apiKeys.remove(accountId);
     e.accounts = e.accounts.filter(a => a.id !== accountId);
     if (e.active === accountId) e.active = '';
@@ -427,3 +485,11 @@ module.exports = {
     return account.label;
   },
 };
+
+// The calls that change accounts.json or a key run one at a time (see serial above).
+for (const name of ['add', 'remove', 'setKey', 'setActive', 'rename']) {
+  const change = accountService[name];
+  accountService[name] = (...args) => serial(() => change.apply(accountService, args));
+}
+
+module.exports = accountService;

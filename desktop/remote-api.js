@@ -57,6 +57,9 @@ const ROSTER_MS = 3 * 1000; // at most one agent list per computer in this time
 const MAX_AGENTS = 100;
 const PROJECT_MS = 3 * 1000; // at most one "which project" message per computer in this time
 
+// An agent list that differs from the last only by the turn counters goes at most this often
+const REV_MS = 15 * 1000;
+
 // a git commit id (SHA-1 or SHA-256) in lower-case hex, and nothing else
 const COMMIT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
@@ -134,6 +137,14 @@ OP_WORDS.say = OP_WORDS.prompt;
 // type
 OP_REPLY.say = 'said';
 OP_WORDS.file = ['go', 'refused', 'failed'];
+
+// ---- Thread controls and Resume (plan item 44; values and checks: remote-thread.js and
+// remote-control.js doThread / doResume) ----
+const { shapeThread, shapeResume, THREAD_WORDS } = require('./remote-thread.js');
+OP_WORDS.thread = THREAD_WORDS;
+OP_WORDS.resume = ['started', 'refused', 'failed'];
+OP_REPLY.thread = 'threaded';
+OP_REPLY.resume = 'resumed';
 
 // a file's offer and the prompt that names files (remote-files.js)
 OP_WORDS.promptf = OP_WORDS.prompt;
@@ -230,6 +241,14 @@ function shapeAgent(a, withDetail) {
   // on a row that carries a ticket. A hint for the other computer's `tnai agents`, never a right:
   // the message itself is checked again where it lands.
   if (out.to && a.m === true) out.m = true;
+
+  // A conversation can be read (late join, remote-log.js): `lk`, the agent's log handle, and
+  // `rev`, a counter that grows at each of its turns' start and end. Both only where the text may
+  // go; the sender asks for them as the row is sent, the receiver only echoes `lk`.
+  if (withDetail && hex16(a.lk)) {
+    out.lk = a.lk;
+    if (Number.isInteger(a.rev) && a.rev >= 0 && a.rev <= STAMP_MAX) out.rev = a.rev;
+  }
   return out;
 }
 
@@ -337,6 +356,9 @@ function shapeControl(m) {
     say:
       m.say ===
       true /* it takes a message from this computer's agents (remote-agent-messages.md) */,
+    // Typing (remote-type.js): it takes keys from this computer into the panel this one watches,
+    // under its own right there. Anything but a real true is no.
+    type: m.type === true,
     // sync: it takes a git hand-over from this computer. watch: it takes a
     // `view` from this computer (6h); anything but a real true is no
   };
@@ -440,9 +462,15 @@ function shapeOp(m) {
       ? { t: 'start', n, c, ms: m.ms, cli, project }
       : { t: 'start', n, c, ms: m.ms, cli, project, text: m.text };
   }
+
+  // a resume names no row: the handle of a past conversation and the project (item 44)
+  if (m.t === 'resume') return shapeResume(m, n, c);
   const id = typeof m.id === 'string' && m.id !== '' && line(m.id, 80) === m.id ? m.id : '',
     to = hex16(m.to);
   if (!id || !to) return null;
+
+  // a thread control (item 44): one of four fixed words and its checked value
+  if (m.t === 'thread') return shapeThread(m, n, c, id, to);
   if (m.t === 'prompt')
     return typeof m.text === 'string' && m.text
       ? { t: 'prompt', n, c, ms: m.ms, id, to, text: m.text }
@@ -572,11 +600,18 @@ function createRemoteApi({
   // report) fires once for a report that answers a message this computer sent.
   sayable = () => false,
   sayRow = () => false,
+  // Late join (remote-log.js), both "none" by default: logKey(peerId, panelId) → the row's log
+  // handle for that computer ('' = its conversation may not be read), logRev(peerId, panelId) →
+  // its turn counter.
+  logKey = () => '',
+  logRev = () => 0,
   ticket = () => '',
   stamp = () => 0,
   starts = () => null,
   watchable = () => false,
   syncable = () => false,
+  // typing (remote-type.js): typeable(peerId) → that computer holds the typing right here now
+  typeable = () => false,
   reply = null,
   tellFrom = () => 0,
   nonce = () => crypto.randomBytes(8).toString('hex'),
@@ -629,6 +664,8 @@ function createRemoteApi({
             watch: v.ctl.watch === true,
             sync: v.ctl.sync === true,
             say: v.ctl.say === true,
+            // typing (remote-type.js): this computer may type into the panel it watches there
+            type: v.ctl.type === true,
           }
         : null,
       ops: [...v.ops.values()].reverse().map(e => ({
@@ -817,9 +854,31 @@ function createRemoteApi({
         return false;
       }
     }; // asked for each row as it is sent, like the ticket
+    const logOf = id => {
+      try {
+        if (!withDetail || typeof id !== 'string') return {};
+        const lk = hex16(logKey(peerId, id));
+        return lk ? { lk, rev: logRev(peerId, id) } : {};
+      } catch {
+        return {};
+      }
+    };
+
+    // Typing (remote-type.js): a plain terminal (Your terminal, a PowerShell thread; `term` on the
+    // app's row) is listed only for a computer that may type here, since that is all it can do
+    // with it.
+    let typeOk = false;
+    try {
+      typeOk = may && withDetail && typeable(peerId) === true;
+    } catch {
+      /* no terminals */
+    }
     for (const a of agents() || []) {
+      if (a && typeof a === 'object' && a.term === true && !typeOk) continue;
       const s = shapeAgent(
-        a && typeof a === 'object' ? { ...a, to: ticketOf(a.id), m: sayOf(a.id) } : a,
+        a && typeof a === 'object'
+          ? { ...a, to: ticketOf(a.id), m: sayOf(a.id), ...logOf(a.id) }
+          : a,
         withDetail
       );
       if (s) list.push(s);
@@ -828,6 +887,21 @@ function createRemoteApi({
     const text = JSON.stringify(list);
     o.busy = list.some(a => a.status !== 'idle');
     if (text === o.sentA || (o.sentA === undefined && !list.length)) return beat();
+
+    // A change of `rev` alone goes at most once every REV_MS: an agent at work changes nothing
+    // else that its status does not already say.
+    const plain = JSON.stringify(list.map(({ rev, ...row }) => row));
+    if (o.sentA && plain === o.plainA && now() - (o.revAt || 0) < REV_MS) {
+      if (!o.waitV && !stopped)
+        o.waitV = timers.set(
+          () => {
+            o.waitV = null;
+            if (out.get(peerId) === o) sendAgents(peerId);
+          },
+          Math.max(1000, (o.revAt || 0) + REV_MS - now())
+        );
+      return beat();
+    }
     const g = ++o.genA,
       parts = [[]];
     const fits = p =>
@@ -863,6 +937,12 @@ function createRemoteApi({
       }
     });
     o.sentA = ok ? text : null;
+
+    // what went, without the counters; and when a list that differed only by them went
+    if (ok) {
+      if (plain === o.plainA) o.revAt = now();
+      o.plainA = plain;
+    }
     if (ok && !stopped)
       o.wait = timers.set(() => {
         o.wait = null;
@@ -953,7 +1033,16 @@ function createRemoteApi({
     } catch {
       /* takes no message from its agents */
     }
-    const text = JSON.stringify(k ? [k, watch, sync, say] : null);
+
+    // Typing: said only while the typing right is on here, and only with watching (a key goes only
+    // into a watched panel).
+    let type = false;
+    try {
+      type = !!k && watch && typeable(peerId) === true;
+    } catch {
+      /* takes no keys */
+    }
+    const text = JSON.stringify(k ? [k, watch, sync, say, type] : null);
     if (text === o.sentC || (o.sentC === undefined && !k)) return;
     let c = 0;
     if (k) {
@@ -977,6 +1066,7 @@ function createRemoteApi({
                 ...(watch ? { watch: true } : null),
                 ...(sync ? { sync: true } : null),
                 ...(say ? { say: true } : null),
+                ...(type ? { type: true } : null),
               }
             : { t: 'control' }
         ) === true;
@@ -995,7 +1085,7 @@ function createRemoteApi({
   }
   const drop = peerId => {
     const o = out.get(peerId);
-    for (const k of ['wait', 'waitP', 'waitC', 'waitR']) if (o && o[k]) timers.clear(o[k]);
+    for (const k of ['wait', 'waitP', 'waitC', 'waitR', 'waitV']) if (o && o[k]) timers.clear(o[k]);
     out.delete(peerId);
   };
 
@@ -1123,6 +1213,8 @@ function createRemoteApi({
       fill.pick,
       fill.f,
       fill.files,
+      fill.v,
+      fill.h,
     ]);
     for (const e of v.ops.values())
       if (e.sig === sig && e.state === 'asked') return { state: e.state, n: e.n };
@@ -1255,7 +1347,9 @@ function createRemoteApi({
       obj.t === 'chosen' ||
       obj.t === 'filed' ||
       obj.t === 'synced' ||
-      obj.t === 'said'
+      obj.t === 'said' ||
+      obj.t === 'threaded' ||
+      obj.t === 'resumed'
     ) {
       // Read only for an operation this computer sent (its `n`), of that kind, that has no last
       // word yet, and only as one of that kind's fixed words: nothing the other computer writes
@@ -1296,9 +1390,13 @@ function createRemoteApi({
       // holds is not looked at.
       const k = shapeControl(obj),
         same =
-          JSON.stringify(k ? [k.clis, k.watch, k.sync, k.say] : null) ===
-          JSON.stringify(v.ctl ? [v.ctl.clis, v.ctl.watch, v.ctl.sync, v.ctl.say === true] : null);
-      v.ctl = k ? { clis: k.clis, watch: k.watch, sync: k.sync, say: k.say } : null;
+          JSON.stringify(k ? [k.clis, k.watch, k.sync, k.say, k.type] : null) ===
+          JSON.stringify(
+            v.ctl
+              ? [v.ctl.clis, v.ctl.watch, v.ctl.sync, v.ctl.say === true, v.ctl.type === true]
+              : null
+          );
+      v.ctl = k ? { clis: k.clis, watch: k.watch, sync: k.sync, say: k.say, type: k.type } : null;
       v.fresh = k ? { c: k.c, at: now() } : null;
       v.heard = now();
       if (!same || v.state !== 'live') {
@@ -1757,6 +1855,25 @@ function createRemoteApi({
           )
         : { state: 'not_sent', n: '' };
     },
+    // Thread controls (item 44). Rename, close, model or effort of an agent of that computer: a
+    // row with a ticket, a word of four, its value as remote-thread.js checks it. → { state, n }.
+    thread(peerId, agentId, what, value) {
+      const v = views.get(peerId),
+        a = v && v.ctl ? v.agents.find(x => x.id === agentId) : null;
+      const fill = { t: 'thread', id: a ? a.id : '', to: a ? a.to : '', do: what };
+      if (what !== 'close') fill.v = value;
+      return a && a.to
+        ? operate(peerId, 'thread', fill, { id: a.id, do: what })
+        : { state: 'not_sent', n: '' };
+    },
+    // Resume a past conversation of that computer, named by the handle its list carried, in the
+    // project open here (its first commit's id). → { state, n }.
+    resume(peerId, h, project) {
+      const v = views.get(peerId);
+      return v && v.ctl && typeof h === 'string' && commit(project)
+        ? operate(peerId, 'resume', { t: 'resume', h, project }, {})
+        : { state: 'not_sent', n: '' };
+    },
     act(peerId, agentId, what) {
       const v = views.get(peerId),
         a = v && v.ctl ? v.agents.find(x => x.id === agentId) : null;
@@ -1923,13 +2040,13 @@ function createRemoteApi({
       for (const t of [
         beatTimer,
         staleTimer,
-        ...[...out.values()].flatMap(o => [o.wait, o.waitP, o.waitC, o.waitR]),
+        ...[...out.values()].flatMap(o => [o.wait, o.waitP, o.waitC, o.waitR, o.waitV]),
       ])
         if (t) timers.clear(t);
       beatTimer = staleTimer = null;
       recent.clear();
       for (const o of out.values()) {
-        o.wait = o.waitP = o.waitC = o.waitR = null;
+        o.wait = o.waitP = o.waitC = o.waitR = o.waitV = null;
         o.rq.clear();
       }
       for (const v of views.values()) {

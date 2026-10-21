@@ -114,3 +114,26 @@
     DeleteRegValue HKCU "${INSTALL_REGISTRY_KEY}" TnaiOldInstall
   !macroend
 !endif
+
+; Uninstall: Technically Not copies its library skills into ~/.agents/skills for Codex, Copilot and Cursor Agent
+; (desktop/skill-service.js syncHomeSkills), each copy marked by a .tnai-managed.json file in its folder. A real uninstall
+; removes those marked copies; a folder without the mark is the user's own skill and stays. The uninstall an update runs
+; (isUpdated) keeps them, since the new version uses them at once. The folders above go only when nothing else is left.
+!ifdef BUILD_UNINSTALLER
+  !macro customUnInstall
+    ${ifNot} ${isUpdated}
+      FindFirst $R0 $R1 "$PROFILE\.agents\skills\*"
+      ${DoWhile} $R1 != ""
+        ${if} $R1 != "."
+        ${andIf} $R1 != ".."
+        ${andIf} ${FileExists} "$PROFILE\.agents\skills\$R1\.tnai-managed.json"
+          RMDir /r "$PROFILE\.agents\skills\$R1"
+        ${endif}
+        FindNext $R0 $R1
+      ${Loop}
+      FindClose $R0
+      RMDir "$PROFILE\.agents\skills"
+      RMDir "$PROFILE\.agents"
+    ${endif}
+  !macroend
+!endif

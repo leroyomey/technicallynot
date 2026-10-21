@@ -716,6 +716,7 @@ ${DARK} .set-chip input:not(:checked){background:${off}}
       group: 'Composer',
       items: [
         [['Enter'], 'Send the prompt to the selected agent'],
+        [['Esc'], 'Right after sending, in an empty prompt box: take that prompt back to edit it'],
         [[MOD(), 'Enter'], 'Send the prompt to a new Claude Code lead'],
         [[MOD(), 'V'], 'Paste a screenshot as an attachment'],
         [['↑'], 'In an empty box: bring back prompts you sent (↓ goes forward)'],
@@ -798,7 +799,11 @@ ${DARK} .set-chip input:not(:checked){background:${off}}
 
   function open() {
     if (!overlay) buildOverlay();
-    const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+    const esc = s =>
+      s.replace(
+        /[&<>"']/g,
+        c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
+      );
     overlay.querySelector('.tnai-keys-grid').innerHTML = LIST()
       .map(
         g =>

@@ -151,7 +151,16 @@ function readSkill(file) {
 // `src/styles/**` -> any file under src/styles; `*` stays inside one folder; a bare folder
 // (`tools/`) means everything under it. Case-insensitive (Windows paths).
 function globRegex(glob) {
-  const g = glob.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/$/, '/**');
+  // Runs of wildcards (`***`, `**/**`) mean the same as one `**`. More than three wildcards in one
+  // pattern is refused (it never matches): each `**` becomes `.*`, and many of them backtrack
+  // for seconds on an ordinary path, on every file an agent reads (audit app-5 #6).
+  const g = glob
+    .replace(/\\/g, '/')
+    .replace(/^\.\//, '')
+    .replace(/\/$/, '/**')
+    .replace(/\*{3,}/g, '**')
+    .replace(/\*\*(?:\/\*\*)+/g, '**');
+  if ((g.match(/\*+/g) || []).length > 3) return /(?!)/;
   let re = '';
   for (let i = 0; i < g.length; i++) {
     const c = g[i];

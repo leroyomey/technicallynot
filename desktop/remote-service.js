@@ -78,6 +78,9 @@
 // Nothing here may log a key or a code.
 const keys = require('./remote-keys.js');
 const { createLink } = require('./remote-link.js');
+
+// "Add a phone": the code as squares for the Devices page (phone-qr.js)
+const { qrRows } = require('./phone-qr.js');
 const {
   createRemoteApi,
   projectKey: keyShape,
@@ -97,8 +100,10 @@ const {
   withPick,
   readPick,
   bindingPick,
+  appStarted,
 } = require('./remote-control.js');
 const { createViews, createWatcher } = require('./remote-view.js');
+const { createTyping, createTyper } = require('./remote-type.js');
 const {
   createTaker,
   createSender,
@@ -109,9 +114,27 @@ const {
 } = require('./remote-files.js');
 const { createRelater } = require('./remote-project.js');
 
+// read-only asks for this week's thread features (plan item 45)
+const { createFeatureAnswerer, createFeatureReader } = require('./remote-features.js');
+
+// another computer's project files and its Live preview as a picture (plan items 42 and 43)
+const { createBrowseAnswerer, createBrowseAsker } = require('./remote-browse.js');
+const { createPreviewAnswerer, createPreviewAsker } = require('./remote-preview.js');
+
 // the git hand-over's branch name, made here from the pairing record
 const { shortId: handoffId, branchName: handoffBranch } = require('./remote-git.js');
 const { createTrust } = require('./remote-trust.js');
+
+// another computer reads a running agent's conversation (late join)
+const {
+  createLogKeys,
+  createLogAnswerer,
+  createLogReader,
+  createRevs,
+} = require('./remote-log.js');
+
+// thread controls and another computer's past conversations (plan item 44)
+const { createPastAnswerer, createPastReader } = require('./remote-thread.js');
 const { phoneAnswers, bindingOf } = require('./phone-answer.js');
 const crypto = require('crypto');
 const { fields } = require('./remote-noise.js');
@@ -143,6 +166,10 @@ const NOTICE_MS = 60 * 1000; // operations of one computer inside this time are 
 // file, promptf: a file's offer and the prompt that names files (remote-files.js)
 const OPS = new Set(['prompt', 'act', 'start', 'choose', 'file', 'promptf', 'sync', 'say']);
 
+// thread controls and Resume (plan item 44): operations like the rest, behind full control
+OPS.add('thread');
+OPS.add('resume');
+
 // The relay takes 120 messages a minute from one connection, and past that this computer's whole
 // link is silent for up to two minutes. Everything sent through the
 // trust gate is counted, and the live view's frames go only while the last minute holds fewer than
@@ -154,6 +181,136 @@ const LINK_SAFE = 70;
 // The largest an operation's own fields can be, for "how much room is left" on the sending
 // computer.
 const WORST = { n: 'f'.repeat(16), c: 0x7fffffff, ms: 9999999999 };
+
+// The link's one budget. ONE ACCOUNT OF THE LINK, for the lists, the operations and the live view.
+// The relay takes 120 messages a minute from this computer and mutes its whole link past that. So
+// nothing is counted per feature: `lastMinute()` is everything sent in the last 60 seconds plus
+// one for every operation of another computer that was taken and has not been answered yet (its
+// reply is owed). Four lines, each below the next: STREAM_MAX 70 optional streams go only below
+// it: the live view's frames, a choice, a piece of an attachment (class 'stream'). REPLY_MAX 100
+// an operation of another computer is taken only below it (`admit`); past it the message is
+// dropped unanswered and that computer reads "no reply". Also at most OPS_PEER_MIN taken
+// operations a minute from one computer, of all kinds. FIRST_MAX 112 a stop, an interrupt and a
+// yes or no to a permission request are still taken up to here: served first. HARD_MAX 116
+// nothing leaves at or above it, lists and "needs you" included (they are sent again at their next
+// change). Four are left for the difference between this computer's minute and the relay's.
+const STREAM_MAX = LINK_SAFE,
+  REPLY_MAX = 100,
+  FIRST_MAX = 112,
+  HARD_MAX = 116,
+  OPS_PEER_MIN = 30,
+  ACT_ROOM = 4;
+
+// The replies to an operation that was taken after `admit`: each pays off one owed place. `viewing`
+// answers `view`. A caller may also pass the class 'reply'.
+const REPLIES = new Set([
+  'prompted',
+  'acted',
+  'started',
+  'chosen',
+  'answered',
+  'filed',
+  'synced',
+  'said',
+  'viewing',
+  // typing (remote-type.js): the word on one batch of keys
+  'typed',
+  // thread controls and Resume (plan item 44)
+  'threaded',
+  'resumed',
+]);
+const STREAMS = new Set(['frame']);
+
+// A reply to something that was never admitted: `got` answers the pieces of a file, and a piece is
+// not an operation. It counts as sent and never pays off another operation's owed reply (which
+// would let the count fall below what is really owed).
+const RESERVED_AS_SENT = new Set(['got']);
+
+// now() → milliseconds. pass(obj, cls, send) sends one message if the budget lets it (send() → true
+// when it left). admit(peerId, first) → may that computer's operation be taken now: a place (an
+// object) reserved for its reply, or false. giveBack(place) → that operation ended in silence: its
+// place is free again. lastMinute() → the count above.
+//
+// The owed places are ONE list: an admit adds a place, a reply sent removes the oldest one, a
+// giveBack removes its own. A place still expires after 60 seconds. (Two separate lists of admits
+// and replies let a reply outlive its operation and pay off newer operations: the count fell below
+// the real figure at the minute's edge; bug sweep 2026-10-21, group 4, Medium 1.)
+function createLinkBudget(now) {
+  const sentAt = [],
+    owed = [];
+
+  // computer id → when its operations were taken in the last minute
+  const admits = new Map();
+  const pruned = (list, t) => {
+    while (list.length && t - list[0] >= 60000) list.shift();
+    return list.length;
+  };
+  const prunedOwed = t => {
+    while (owed.length && t - owed[0].at >= 60000) owed.shift();
+    return owed.length;
+  };
+  const lastMinute = () => {
+    const t = now();
+    return pruned(sentAt, t) + prunedOwed(t);
+  };
+  const pass = (obj, cls, send) => {
+    const type = obj && typeof obj.t === 'string' ? obj.t : '',
+      kind =
+        cls === 'stream' || STREAMS.has(type)
+          ? 'stream'
+          : cls === 'reply' || REPLIES.has(type)
+            ? 'reply'
+            : 'other';
+    const load = lastMinute();
+    if (load >= HARD_MAX || (kind === 'stream' && load >= STREAM_MAX)) return false;
+    const ok = send() === true;
+    if (ok) {
+      const t = now();
+      sentAt.push(t);
+
+      // a reply pays off the oldest owed place (none left: nothing to pay)
+      if (kind === 'reply' && !RESERVED_AS_SENT.has(type) && prunedOwed(t)) owed.shift();
+    }
+    return ok;
+  };
+
+  // May an operation of that computer be taken now? Asked before any of its checks; true reserves
+  // the room for its reply. first: a stop, an interrupt, a yes or no to a permission request.
+  // False: drop the message and say nothing.
+  const admit = (peerId, first = false) => {
+    const t = now(),
+      load = lastMinute(),
+      mine = (admits.get(peerId) || []).filter(x => t - x < 60000);
+
+    // Served first means "up to FIRST_MAX", not "outside one computer's count"
+    // (a yes or no, a stop and an interrupt were taken beside the 30, so one computer
+    // could take 54 places a minute). They count toward the 30 now. A stop or an interrupt (first
+    // === 'act') has ACT_ROOM places past it, the four a minute remote-control.js takes of them, so
+    // that computer's own prompts and answers can never crowd out its Stop: 34 at most from one
+    // computer.
+    const urgent = first === true || first === 'act',
+      room = OPS_PEER_MIN + (first === 'act' ? ACT_ROOM : 0);
+    const ok = mine.length < room && (urgent ? load < FIRST_MAX : load < REPLY_MAX);
+    let place = false;
+    if (ok) {
+      mine.push(t);
+      place = { at: t };
+      owed.push(place);
+    }
+    if (mine.length) admits.set(peerId, mine);
+    else admits.delete(peerId);
+    return place;
+  };
+
+  // Called after an admit whose operation sent nothing back, with the place that admit returned.
+  // The operation stays counted toward that computer's operations a minute (OPS_PEER_MIN): only its
+  // own owed reply is given back, never another operation's.
+  const giveBack = place => {
+    const at = owed.indexOf(place);
+    if (at >= 0) owed.splice(at, 1);
+  };
+  return { pass, admit, giveBack, lastMinute };
+}
 
 // The key store's backend in the app: Electron safeStorage and one file in the settings folder. Not
 // available when safeStorage would only be plain text (Linux without a keyring, where user-auth.js
@@ -254,6 +411,10 @@ function createRemoteService({
   remoteStartTaken = null,
   cancelHeld = () => 0,
   watchScreen = () => {},
+  // Typing (remote-type.js): typeKeys({ panelId, data, guard }) → 'done' | 'refused' | 'failed',
+  // one batch written into that panel's terminal (remote-actions.js `type`). Without it every
+  // batch is refused.
+  typeKeys = () => 'failed',
   mono,
   on = {},
   WebSocket,
@@ -266,12 +427,40 @@ function createRemoteService({
   // agent on this computer is in a turn (from what the app already knows; optional). By default
   // nothing is held.
   power = { hold: () => {}, battery: () => false },
+  // Review 23, L8: shield(true) while the "Add a phone" code is on screen (the window is then left
+  // out of screen capture and recordings), shield(false) when it is gone. Optional.
+  shield = () => {},
   // Agents message agents (the rules are remote-say.js, the write is
   // remote-actions.js `say`). sayTarget(panelId) → true while that panel may take a message from
   // another computer's agent. sayHere(o) → Promise of a prompt's word: o = { key, peerId, panelId,
   // text, kind, by, n, guard, from, computer, done }. By default nothing is taken.
   sayTarget = () => false,
   sayHere = async () => 'refused',
+  // Late join (remote-log.js): logRecord(panelId) → the panel's saved session record ({ agent,
+  // sessionId, cwd, … }, session-store.js) or null; readLog(record, { before, after }) → Promise of
+  // thread-log.js readForPeer's answer. By default no conversation is read for another computer.
+  logRecord = () => null,
+  readLog = async () => ({ entries: [] }),
+  // Thread controls (plan item 44, remote-thread.js). threadAct(o) → a word: the real rename,
+  // close, model or effort (createThreadActions `run`). resumePast({ cli, id, from, guard }) → a
+  // start's word (remote-actions.js `resume`). pastList() → Promise of thread-list.js `list`.
+  // pastRecord(key) → the session record of a row of that list ({ agent, sessionId, … }) or null.
+  // By default nothing is done and no past conversation is listed.
+  threadAct = () => 'failed',
+  resumePast = () => 'failed',
+  pastList = null,
+  pastRecord = null,
+  // This week's thread features for another computer's threads (remote-features.js, plan item 45):
+  // featureRead = { changes(panelId), skills(panelId, cli), clis() }, each a value or a promise of
+  // one. By default nothing is read for another computer.
+  featureRead = null,
+  // Another computer's project files and Live preview (remote-browse.js, remote-preview.js, plan
+  // items 42 and 43), both only for a computer whose full-control switch is on here.
+  // browseFiles = { list(path), stat(path), read(path, max), write(path, bytes), locks() }: the
+  // open project's own fs-service calls and file locks. previewTake() → Promise of { url, bytes:
+  // a JPEG, w, h } of the Live preview page shown now, or null. By default nothing is read.
+  browseFiles = null,
+  previewTake = null,
 }) {
   const store = keys.keyStore(backend);
   let prefs = null,
@@ -285,7 +474,11 @@ function createRemoteService({
     relater = null,
     control = null,
     views = null,
-    watcher = null;
+    watcher = null,
+    // typing (remote-type.js): the checks for keys from other computers, and this computer's own
+    // typing into the panel it watches on another one
+    typing = null,
+    typer = null;
   let opsLog = [],
     notices = [],
     noticeN = 0,
@@ -298,94 +491,23 @@ function createRemoteService({
     sender = null,
     sending = null;
 
-  // Every message for a paired computer leaves through here: the trust gate, and a count of the
-  // last minute for the live view's budget. ONE ACCOUNT OF THE LINK, for all three. The
-  // relay takes 120 messages a minute from this computer and mutes its whole link past that. So
-  // nothing is counted per feature any more: `lastMinute()` is everything sent in the last 60
-  // seconds plus one for every operation of another computer that was taken and has not been
-  // answered yet (its reply is owed). Four lines, each below the next: STREAM_MAX 70 optional
-  // streams go only below it: the live view's frames, a choice, a piece of an attachment (class
-  // 'stream'). REPLY_MAX 100 an operation of another computer is taken only below it (`admit`);
-  // past it the message is dropped unanswered and that computer reads "no reply". Also at most
-  // OPS_PEER_MIN taken operations a minute from one computer, of all kinds. FIRST_MAX 112 a stop,
-  // an interrupt and a yes or no to a permission request are still taken up to here: served first.
-  // HARD_MAX 116 nothing leaves at or above it, lists and "needs you" included (they are sent again
-  // at their next change). Four are left for the difference between this computer's minute and the
-  // relay's. A caller that sends a stream of its own passes the third argument 'stream'; a reply to
-  // an operation it took after `admit` passes 'reply' (or uses a type named in REPLIES).
-  const STREAM_MAX = LINK_SAFE,
-    REPLY_MAX = 100,
-    FIRST_MAX = 112,
-    HARD_MAX = 116,
-    OPS_PEER_MIN = 30,
-    ACT_ROOM = 4;
-  const REPLIES = new Set([
-      'prompted',
-      'acted',
-      'started',
-      'chosen',
-      'answered',
-      'filed',
-      'synced',
-      'said',
-    ]),
-    STREAMS = new Set(['frame']);
-  const sentAt = [],
-    admitAt = [],
-    replyAt = [],
-    admits = new Map(); // admits: computer id → when its operations were taken in the last minute
-  const pruned = (a, t) => {
-    while (a.length && t - a[0] >= 60000) a.shift();
-    return a.length;
-  };
-  const lastMinute = () => {
-    const t = now();
-    return pruned(sentAt, t) + Math.max(0, pruned(admitAt, t) - pruned(replyAt, t));
-  };
-  const gateSend = (to, obj, cls) => {
-    const type = obj && typeof obj.t === 'string' ? obj.t : '',
-      kind =
-        cls === 'stream' || STREAMS.has(type)
-          ? 'stream'
-          : cls === 'reply' || REPLIES.has(type)
-            ? 'reply'
-            : 'other';
-    const load = lastMinute();
-    if (load >= HARD_MAX || (kind === 'stream' && load >= STREAM_MAX)) return false;
-    const ok = trust ? trust.send(to, obj) === true : false;
-    if (ok) {
-      const t = now();
-      sentAt.push(t);
-      if (kind === 'reply') replyAt.push(t);
-    }
-    return ok;
-  };
+  // Every message for a paired computer leaves through here: the trust gate, and the link's one
+  // budget (createLinkBudget above holds its four lines and how it counts).
+  const budget = createLinkBudget(now),
+    lastMinute = budget.lastMinute,
+    admit = budget.admit,
+    giveBack = budget.giveBack;
+  const gateSend = (to, obj, cls) =>
+    budget.pass(obj, cls, () => (trust ? trust.send(to, obj) === true : false));
 
-  // May an operation of that computer be taken now? Asked before any of its checks; true reserves
-  // the room for its reply. first: a stop, an interrupt, a yes or no to a permission request.
-  // False: drop the message and say nothing.
-  const admit = (peerId, first = false) => {
-    const t = now(),
-      load = lastMinute(),
-      mine = (admits.get(peerId) || []).filter(x => t - x < 60000);
-
-    // Served first means "up to FIRST_MAX", not "outside one computer's count"
-    // (a yes or no, a stop and an interrupt were taken beside the 30, so one computer
-    // could take 54 places a minute). They count toward the 30 now. A stop or an interrupt (first
-    // === 'act') has ACT_ROOM places past it, the four a minute remote-control.js takes of them, so
-    // that computer's own prompts and answers can never crowd out its Stop: 34 at most from one
-    // computer.
-    const urgent = first === true || first === 'act',
-      room = OPS_PEER_MIN + (first === 'act' ? ACT_ROOM : 0);
-    const ok = mine.length < room && (urgent ? load < FIRST_MAX : load < REPLY_MAX);
-    if (ok) {
-      mine.push(t);
-      admitAt.push(t);
-    }
-    if (mine.length) admits.set(peerId, mine);
-    else admits.delete(peerId);
-    return ok;
-  };
+  // An operation that was taken ends in silence when its rules sent nothing back: its reserved
+  // place is given back at once, so it is not counted as owed for a whole minute. r is what the
+  // rules returned; a promise is a delivery whose word comes later, and that word is its reply.
+  const silentEnd = r =>
+    !!r &&
+    typeof r === 'object' &&
+    typeof r.then !== 'function' &&
+    (r.ignored === true || r.kept === true || typeof r.silent === 'string');
 
   // A list that was refused at the hard line would otherwise go again only "at its next change",
   // and "needs you" that never changes again would never arrive.
@@ -449,11 +571,24 @@ function createRemoteService({
   // `last`: the task that agent finished last (6g), only when the report names this row's id, name
   // and CLI: the app reuses panel ids, so an id alone could put an earlier agent's result on the
   // one that sits in that panel now. `reports` is already the open project's.
-  function byProject(rows, lets, reports = []) {
+  // `talk`: that computer lets this one read the agent's conversation (its row carries a log
+  // handle, which itself never reaches the window). `log`: what is held of it here, as its turn
+  // counter, when it came and where it stands: never a word of it (late join, finding 20).
+  function byProject(rows, lets, reports = [], logMark = () => null) {
     const mine = myKey(),
       here = [];
     let elsewhere = 0;
-    for (const { p, to, ...row } of rows) {
+    for (const { p, to, lk, ...rest } of rows) {
+      const held = lk ? logMark(rest.id) : null;
+      const row = {
+        ...rest,
+        talk: !!lk,
+        // a state without words yet (no reply, busy) carries no handle of its own
+        log:
+          held && (held.lk === lk || !held.lk)
+            ? { rev: held.rev, at: held.at, state: held.state }
+            : null,
+      };
       if (p && p !== mine) {
         elsewhere++;
         continue;
@@ -519,6 +654,8 @@ function createRemoteService({
   let conn = { connection: 'off', reason: null },
     run = null,
     ended = null,
+    // where an "Add a phone" run stands ({ state, reason }), null when none
+    phonePair = null,
     asked = null,
     others = [],
     queued = false,
@@ -529,6 +666,19 @@ function createRemoteService({
   const peerState = new Map(),
     needUpdate = new Set(),
     told = new Set();
+
+  // Review 23, L8: the window is kept out of screen capture while the "Add a phone" code shows.
+  // Told only when it changes; a shield that throws never stops the pairing.
+  let shielded = false;
+  const shieldCode = on => {
+    if (on === shielded) return;
+    shielded = on;
+    try {
+      shield(on);
+    } catch {
+      /* the window is gone: nothing to protect */
+    }
+  };
 
   // Keep-awake: OFF unless the user turned it on. Held only while all of these are true: the
   // setting is on, connecting is on and its link exists, at least one computer is paired and not
@@ -664,6 +814,12 @@ function createRemoteService({
           p.choose && typeof p.choose === 'object' && !Array.isArray(p.choose) ? p.choose : {},
         say: p.say && typeof p.say === 'object' && !Array.isArray(p.say) ? p.say : {},
         sync: p.sync && typeof p.sync === 'object' && !Array.isArray(p.sync) ? p.sync : {},
+        // typing (remote-type.js): the computers that may type here, its own switch
+        type: p.type && typeof p.type === 'object' && !Array.isArray(p.type) ? p.type : {},
+        // the text switch's version: 2 = turned on (or kept on) under the sentence that says
+        // conversations are read too
+        detailV:
+          p.detailV && typeof p.detailV === 'object' && !Array.isArray(p.detailV) ? p.detailV : {},
         log: Array.isArray(p.log) ? p.log.slice(0, LOG_MAX) : [],
       };
       const o = store.note('ops');
@@ -699,6 +855,127 @@ function createRemoteService({
     save();
   }
 
+  // ---- late join: another computer reads a running agent's conversation (remote-log.js) ----
+  // Only for a pairing whose text switch was turned on, or kept on, under the sentence that says
+  // conversations are read: a switch that was on before that sentence existed shares nothing new
+  // until the user presses "Keep on" or turns it off and on.
+  const LOG_VERSION = 2;
+  const logsOn = id =>
+    !!prefs &&
+    keys.safeId(id) &&
+    detailOn(id) &&
+    Object.hasOwn(prefs.detailV, id) &&
+    prefs.detailV[id] === LOG_VERSION &&
+    !!trust &&
+    trust.open(id) === true &&
+    !!link &&
+    link.state().sessions.includes(id);
+  const logKeys = createLogKeys();
+  const revs = createRevs();
+
+  // panel id → the last turn phase seen ("start time run|end"), so a counter grows once per phase
+  const turnPhase = new Map();
+  let answerer = null,
+    reader = null;
+
+  // This week's thread features (remote-features.js): this computer's answers, and its own asks.
+  let featureAnswerer = null,
+    featureReader = null;
+
+  // Another computer's files and Live preview (plan items 42 and 43): this computer's answers and
+  // its own asks. filesEnd(id): a session ended, a switch went off, a pairing was paused or
+  // forgotten; what that computer asked here and what this one holds of it both go.
+  let browseAnswerer = null,
+    browseAsker = null,
+    previewAnswerer = null,
+    previewAsker = null;
+  const filesEnd = id => {
+    if (browseAnswerer) browseAnswerer.endFor(id);
+    if (previewAnswerer) previewAnswerer.endFor(id);
+    if (browseAsker) browseAsker.drop(id);
+    if (previewAsker) previewAsker.drop(id);
+  };
+
+  // ---- Thread controls and past conversations (plan item 44, remote-thread.js) ----
+  // pastAnswerer: this computer's past conversations for another computer, with one-time handles.
+  // pastReader: another computer's list as held here, in memory only. pastEnd(id): a session
+  // ended, a switch went off, a pairing was paused or forgotten: both go for that computer.
+  let pastAnswerer = null,
+    pastReader = null;
+  const pastEnd = id => {
+    if (pastAnswerer) pastAnswerer.endFor(id);
+    if (pastReader) pastReader.drop(id);
+  };
+
+  // A past conversation another computer asks to read (remote-log.js `logask` with the id 'past'):
+  // the handle is one of the list this computer sent it, and the record is this computer's own.
+  const pastCheck = (peerId, lk) => {
+    const found = pastAnswerer ? pastAnswerer.find(peerId, lk) : null;
+    if (!found || typeof pastRecord !== 'function') return null;
+    let record = null;
+    try {
+      record = pastRecord(found.key);
+    } catch {
+      record = null;
+    }
+    return record && typeof record.sessionId === 'string' && record.sessionId ? { record } : null;
+  };
+
+  // The row the reader asks with for one of another computer's past conversations: 'past:HANDLE'
+  // while that handle is in the list held here and the same project is open on both.
+  const pastRow = (id, agentId) => {
+    const h = agentId.slice(5);
+    const v = api ? api.view(id) : null;
+    const theirs = v?.project?.root || '';
+    if (!pastReader || !pastReader.has(id, h) || !theirs || theirs !== myKey()) return null;
+    return { id: 'past', lk: h };
+  };
+
+  // What the agent in a panel is now, as one string: a new one starts its turn counter at 0.
+  const agentNowSafe = panelId => {
+    try {
+      const a = agentNow(panelId);
+      return appStarted(a) ? a : null;
+    } catch {
+      return null;
+    }
+  };
+  const identityOf = a =>
+    a ? [a.instance, a.name, a.cli, a.pid, a.startedAt].map(String).join('\n') : '';
+  const recordOf = panelId => {
+    try {
+      const r = logRecord(panelId);
+      return r && typeof r === 'object' && typeof r.sessionId === 'string' && r.sessionId
+        ? r
+        : null;
+    } catch {
+      return null;
+    }
+  };
+
+  // The handle of an agent's conversation for that computer: '' when it may not be read.
+  const logHandle = (peerId, panelId, record) => {
+    if (!logsOn(peerId)) return '';
+    const a = agentNowSafe(panelId);
+    const p = store.pairing(peerId);
+    if (!a || !p || !record) return '';
+    return logKeys.handle(p.pairingId.toString('base64'), peerId, panelId, a, record.sessionId);
+  };
+
+  // An ask is answered only for that very agent and conversation, and only when it works in the
+  // project the asking computer says it has open, by its first commit (not a security bound: a
+  // changed app could name any project, so the text switch is the bound).
+  const logCheck = (peerId, panelId, lk) => {
+    if (panelId === 'past') return pastCheck(peerId, lk);
+    const record = recordOf(panelId);
+    if (!record || logHandle(peerId, panelId, record) !== lk) return null;
+    const row = (agents() || []).find(a => a && a.id === panelId);
+    const theirs = api?.view(peerId)?.project?.root || '';
+    const key = row && typeof row.p === 'string' ? row.p : '';
+    if (!/^[0-9a-f]{40}$/.test(key) || key !== theirs) return null;
+    return { record };
+  };
+
   // ---- a yes or no to a permission prompt from a paired computer ----
   // The "may answer" switch is stored as the id of the pairing it was
   // given to, and is on only while it equals that pairing's id now and the text switch is on: a
@@ -721,6 +998,12 @@ function createRemoteService({
   // The one "full control" switch (6f, change 17), stored and read exactly like "may answer": the
   // id of the pairing it was given to.
   const controlOn = id => !!prefs && rightOn(prefs.control, id);
+
+  // A phone (its device id starts with ph-). Full control gives a phone only what was reviewed
+  // for phones: typing, files, the Live preview picture, the thread features, the git hand-over,
+  // conversations and past conversations are refused to it until the phone has its own review
+  // (rule 5; review of item 47, H2).
+  const isPhoneId = id => typeof id === 'string' && id.startsWith('ph-');
 
   // the "may answer" switch by itself
   const answerAlone = id => !!prefs && rightOn(prefs.answer, id);
@@ -768,7 +1051,14 @@ function createRemoteService({
   // mark only for the word 'choose say sync', which the question passes when it showed that
   // sentence. Without the mark every `sync` from another computer is refused. Bringing another
   // computer's commit here by this computer's own press needs no right and works.
-  const syncOn = id => controlOn(id) && !!prefs.sync && rightOn(prefs.sync, id);
+  const syncOn = id => !isPhoneId(id) && controlOn(id) && !!prefs.sync && rightOn(prefs.sync, id);
+
+  // Typing (remote-type.js, plan item 41): part of the one full-control switch (rule 13, user
+  // decision 2026-10-09), like watching and choosing: full control that was turned on under the
+  // sentence about typing, and with watching (a key goes only into a watched panel). A grant from
+  // before that sentence does not include it. Stored like the other marks, as the pairing id it
+  // was given for; every way full control ends removes it (endControl).
+  const typeOn = id => !isPhoneId(id) && watchOn(id) && !!prefs.type && rightOn(prefs.type, id);
   const handoffShort = id => {
     let all = [];
     try {
@@ -931,6 +1221,14 @@ function createRemoteService({
     if (control) control.dropAll(id);
     if (views) views.endFor(id, 'off');
     if (taker) taker.dropAll(id);
+
+    // typing goes with full control, by every path that ends it
+    if (typing) typing.endFor(id);
+    if (prefs && prefs.type && Object.hasOwn(prefs.type, id)) delete prefs.type[id];
+
+    // its asks for files and the Live preview here end too (items 42 and 43)
+    if (browseAnswerer) browseAnswerer.endFor(id);
+    if (previewAnswerer) previewAnswerer.endFor(id);
   };
   const dropControl = id => {
     endControl(id);
@@ -1080,12 +1378,84 @@ function createRemoteService({
   const controlRight = id =>
     link && trust && trust.open(id) && controlOn(id) ? prefs.control[id] : '';
 
+  // Typing (remote-type.js): what its checks read as the right: the pairing id the typing switch
+  // was given for, only while full control holds too and the pairing is not paused.
+  const typeRight = id => (controlRight(id) && typeOn(id) ? prefs.type[id] : '');
+
+  // A panel's ticket for that computer: an agent's from remote-control.js, a plain terminal's
+  // (Your terminal, a PowerShell thread) from remote-type.js, and that one only for a computer that
+  // may type.
+  const ticketAny = (id, panelId) => {
+    if (!control || !trust || !trust.open(id)) return '';
+    const agent = control.ticketFor(id, panelId);
+    if (agent) return agent;
+    return typing && typeRight(id) ? typing.ticketFor(id, panelId) : '';
+  };
+
+  // The list line of typing: one per computer and panel while keys keep coming, rewritten with
+  // the counts (never a letter of what was typed). If it cannot be written, nothing is typed.
+  function typeLine(e) {
+    const line = {
+      at: now(),
+      peer: e.peerId,
+      name: e.from,
+      agent: keys.clean(e.agent, 60),
+      op: 'type',
+      head: '',
+      length: 0,
+      more: 0,
+    };
+    opsLog.unshift(line);
+    opsLog.length = Math.min(opsLog.length, OPS_MAX);
+    try {
+      store.setNote('ops', opsLog);
+    } catch (err) {
+      opsLog.splice(opsLog.indexOf(line), 1);
+      throw err;
+    }
+    return head => {
+      line.head = String(head || '');
+      line.length = line.head.length;
+      line.until = now();
+      try {
+        store.setNote('ops', opsLog);
+      } catch {
+        /* the line stays as it was written */
+      }
+    };
+  }
+
+  // panel id → { peer, name, at }: who typed into which of this computer's panels last, for the
+  // mark where the keys land ("typed from (name)"). Kept for a minute after the last key.
+  const typedBy = new Map();
+  const TYPED_SHOWN_MS = 60 * 1000;
+  const typedNow = () => {
+    const t = now(),
+      out = [];
+    for (const [panelId, e] of typedBy)
+      if (t - e.at < TYPED_SHOWN_MS) out.push({ panelId, peer: e.peer, name: e.name, at: e.at });
+      else typedBy.delete(panelId);
+    return out;
+  };
+
   // The computer's name as this computer's notices, list and held prompts show it; two paired
   // computers of one name are told apart by the id's last characters (as the answer's notice does).
   // The computer's name as this computer's control list, its notices and a held prompt's source
   // show it: always with the last characters of its id. The name is one that computer chose for
   // itself ("You" would read "You sent Moss a prompt"), the id is not.
   const shownName = id => nameOf(id) + ' (…' + String(id).slice(-4) + ')';
+
+  // Typing (remote-type.js): the open view's model with what the typing box says (never a key).
+  const withTyping = model => (model && typer ? { ...model, typing: typer.status() } : model);
+
+  // The row of another computer's agent this computer may type into now: listed for the project
+  // open here, controllable, on a computer that says this one may type there.
+  const typeRow = (id, agentId) => {
+    if (!typer || !trust || !trust.open(id) || !api) return null;
+    const v = api.view(id);
+    if (!v || !v.control || v.control.type !== true || v.control.watch !== true) return null;
+    return byProject(v.agents, true).here.find(a => a.id === agentId && a.can) || null;
+  };
   const startable = () => {
     let have = [];
     try {
@@ -1235,6 +1605,14 @@ function createRemoteService({
           conn = s;
           push();
         },
+        // "Add a phone" (remote-link.js, "pairing a phone"): where the run stands, for the dialog
+        phonePairing: s => {
+          phonePair = s && s.state !== 'idle' ? { state: s.state, reason: s.reason || null } : null;
+
+          // the code is on screen only while the run waits for a phone to scan it (L8)
+          shieldCode(!!s && s.state === 'wait');
+          push();
+        },
         pairing: p => {
           if (p.state === 'ended')
             ended = {
@@ -1264,6 +1642,14 @@ function createRemoteService({
           // a file lives inside one session, also when the session is only replaced
           if (views) views.endFor(id, 'gone');
           if (watcher) watcher.sessionEnded(id);
+
+          // a conversation read lives inside one session, on both sides
+          if (answerer) answerer.endFor(id);
+          if (reader) reader.drop(id);
+          if (featureReader) featureReader.drop(id);
+          if (featureAnswerer) featureAnswerer.endFor(id);
+          filesEnd(id);
+          pastEnd(id);
           trust.sessionStarted(id);
           if (trust.open(id)) {
             api.sessionStarted(id);
@@ -1285,7 +1671,13 @@ function createRemoteService({
           if (trust.onMessage(from, obj)) return;
           if (obj.t === 'answer') {
             try {
-              if (answerOn(from) && admit(from, true)) answers.receive(from, obj);
+              const place = answerOn(from) && admit(from, true);
+              if (place) {
+                const r = answers.receive(from, obj);
+
+                // past phone-answer.js's own limit it says nothing back either
+                if (silentEnd(r) || (r && r.refused === 'limit')) giveBack(place);
+              }
             } catch {
               /* nothing a message does may throw out of here */
             }
@@ -1298,10 +1690,41 @@ function createRemoteService({
           // own open view, which drops what is not for it before reading it.
           if (obj.t === 'view' || obj.t === 'keep' || obj.t === 'unview') {
             try {
-              if (views && controlOn(from) && (obj.t === 'unview' || admit(from)))
-                views.receive(from, obj);
+              let place = false;
+              if (views && controlOn(from) && obj.t === 'unview') views.receive(from, obj);
+              else if (views && controlOn(from) && (place = admit(from))) {
+                const r = views.receive(from, obj);
+
+                // a kept view and a view past its limit say nothing back
+                if (silentEnd(r)) giveBack(place);
+              }
               if (obj.t === 'unview' && watcher) watcher.receive(from, obj);
             } /* ending a view is always taken; asking for one or keeping one only while the link has room */ catch {
+              /* as below */
+            }
+            return;
+          }
+
+          // Typing (remote-type.js). A batch of keys is looked at only for a computer whose typing
+          // switch is on here, and only while the link has room for its word back: for any other it
+          // is dropped here, unread and unanswered. `typed` is the word on this computer's own
+          // batch, read only by the one round on its way.
+          if (obj.t === 'type') {
+            try {
+              const place = typing && typeRight(from) && admit(from);
+              if (place) {
+                const r = typing.receive(from, obj);
+                if (silentEnd(r)) giveBack(place);
+              }
+            } catch {
+              /* as below */
+            }
+            return;
+          }
+          if (obj.t === 'typed') {
+            try {
+              if (typer) typer.reply(from, obj);
+            } catch {
               /* as below */
             }
             return;
@@ -1337,18 +1760,85 @@ function createRemoteService({
           }
           if (typeof obj.t === 'string' && OPS.has(obj.t)) {
             try {
-              if (
+              const place =
                 controlOn(from) &&
                 (obj.t !== 'say' ||
                   sayOn(from)) /* an agent's message: dropped unread without its own mark */ &&
-                admit(from, obj.t === 'act' ? 'act' : false)
-              ) {
+                admit(from, obj.t === 'act' ? 'act' : false);
+              if (place) {
                 const r = control.receive(from, shapeOp(obj) || { t: obj.t, n: obj.n });
 
                 // a stop or an interrupt is served first; the rest only while the link has room for
                 // its reply
                 if (r && typeof r.then === 'function') r.then(push, () => {});
+                else if (silentEnd(r)) giveBack(place);
               }
+            } catch {
+              /* as above */
+            }
+            return;
+          }
+
+          // Late join. `logask`: counted and checked by the answering rules before anything is
+          // read. `log`: read only for an ask this computer made. Neither is an operation, so
+          // nothing is admitted or owed. A kind of the past-conversations piece is not known.
+          if (obj.t === 'logask' || obj.t === 'log') {
+            try {
+              if (obj.t === 'logask' && answerer) answerer.receive(from, obj);
+              if (obj.t === 'log' && reader) reader.receive(from, obj);
+            } catch {
+              /* as above */
+            }
+            return;
+          }
+
+          // Past conversations (item 44): `pastask` is counted and checked by remote-thread.js
+          // before anything is read; `past` is read only for an ask this computer made. Read-only,
+          // so nothing is admitted or owed.
+          if (obj.t === 'pastask' || obj.t === 'past') {
+            try {
+              if (obj.t === 'pastask' && pastAnswerer) pastAnswerer.receive(from, obj);
+              if (obj.t === 'past' && pastReader) pastReader.receive(from, obj);
+            } catch {
+              /* as above */
+            }
+            return;
+          }
+
+          // This week's thread features (remote-features.js). `fask`: counted and checked by the
+          // answering rules before anything is read. `feat`: read only for an ask this computer
+          // made. Read-only, so nothing is admitted or owed, as with late join.
+          if (obj.t === 'fask' || obj.t === 'feat') {
+            try {
+              if (obj.t === 'fask' && featureAnswerer && !isPhoneId(from))
+                featureAnswerer.receive(from, obj);
+              if (obj.t === 'feat' && featureReader) featureReader.receive(from, obj);
+            } catch {
+              /* as above */
+            }
+            return;
+          }
+
+          // Another computer's files and Live preview (plan items 42 and 43). `fsask`, `fssave`
+          // and `pvask` are looked at only for a computer whose full-control switch is on here:
+          // for any other they are dropped unread and unanswered; the answering rules count them
+          // before anything is read. `fs` and `pv` are read only for an ask this computer made.
+          // Their answers are optional streams on the link's one budget, so nothing is admitted.
+          if (obj.t === 'fsask' || obj.t === 'fssave' || obj.t === 'fs') {
+            try {
+              if (obj.t !== 'fs' && browseAnswerer && controlOn(from) && !isPhoneId(from))
+                browseAnswerer.receive(from, obj);
+              if (obj.t === 'fs' && browseAsker) browseAsker.receive(from, obj);
+            } catch {
+              /* as above */
+            }
+            return;
+          }
+          if (obj.t === 'pvask' || obj.t === 'pv') {
+            try {
+              if (obj.t === 'pvask' && previewAnswerer && controlOn(from) && !isPhoneId(from))
+                previewAnswerer.receive(from, obj);
+              if (obj.t === 'pv' && previewAsker) previewAsker.receive(from, obj);
             } catch {
               /* as above */
             }
@@ -1364,6 +1854,12 @@ function createRemoteService({
             api.sessionEnded(id);
             if (views) views.endFor(id, 'gone');
             if (watcher) watcher.sessionEnded(id);
+            if (answerer) answerer.endFor(id);
+            if (reader) reader.drop(id);
+            if (featureReader) featureReader.drop(id);
+            if (featureAnswerer) featureAnswerer.endFor(id);
+            filesEnd(id);
+            pastEnd(id);
           }
           push();
         }, // a view lives inside one session (6h)
@@ -1391,6 +1887,12 @@ function createRemoteService({
           if (open) return;
           api.sessionEnded(id);
           api.forgetReports(id);
+          if (answerer) answerer.endFor(id);
+          if (reader) reader.drop(id);
+          if (featureReader) featureReader.drop(id);
+          if (featureAnswerer) featureAnswerer.endFor(id);
+          filesEnd(id);
+          pastEnd(id);
           if (watcher) watcher.drop(id);
           dropAnswer(id);
           dropControl(id);
@@ -1431,7 +1933,10 @@ function createRemoteService({
         const sent = gateSend(to, obj);
 
         // it did not leave because the minute was full: tried again when that minute has passed
-        if (!sent && obj && LISTS.has(obj.t) && lastMinute() >= HARD_MAX) listsAgain();
+        // An agent list that did not leave for another reason is tried again the same way, so a
+        // computer that connects late is not left with a stale list until the next change.
+        if (!sent && obj && LISTS.has(obj.t) && (lastMinute() >= HARD_MAX || obj.t === 'agents'))
+          listsAgain();
         if (sent && obj && obj.t === 'needs')
           for (const it of obj.items) {
             const k = to + '|' + it.id;
@@ -1460,7 +1965,8 @@ function createRemoteService({
       // control" leave only for a computer whose switch is on now; replies to this computer's own
       // operations are read through remote-control.js's shaping.
       tellFrom,
-      ticket: (id, panelId) => (control && trust.open(id) ? control.ticketFor(id, panelId) : ''),
+      // an agent's ticket, or a plain terminal's for a computer that may type (ticketAny)
+      ticket: ticketAny,
       stamp: id => (control && controlRight(id) ? control.stamp(id) : 0),
       starts: id => (controlRight(id) ? startable() : null),
       reply: shapeReply,
@@ -1468,10 +1974,18 @@ function createRemoteService({
       syncable: id => !!handover && !!controlRight(id) && syncOn(id),
       // said as one word in `control`: the other computer shows Watch only then
       watchable: id => !!controlRight(id) && watchOn(id),
+      // typing (remote-type.js): said as one word in `control`, only under its own switch
+      typeable: id => !!typeRight(id),
       // Agents message agents: said as one word in `control` and as `m` on each row that may take
       // one now, only under its own mark.
       sayable: id => !!controlRight(id) && sayOn(id),
       sayRow: (id, panelId) => !!controlRight(id) && sayOn(id) && sayTarget(panelId) === true,
+      // Late join: the log handle and the turn counter on each row, asked as the row is sent and
+      // never kept.
+      // no handle for a phone while the answerer refuses phones (isPhone below): its row then says
+      // the conversation is not shared, instead of an ask that is never answered
+      logKey: (id, panelId) => (isPhoneId(id) ? '' : logHandle(id, panelId, recordOf(panelId))),
+      logRev: (id, panelId) => revs.of(panelId, identityOf(agentNowSafe(panelId))),
       // A kept picture of that computer's panel goes when that computer, connected, does not say
       // this one may watch: its switch went off there, or a new
       // session began. While it is offline the picture stays, with its time.
@@ -1479,6 +1993,15 @@ function createRemoteService({
         remote: (id, v) => {
           if (watcher && v && v.state !== 'offline' && !(v.control && v.control.watch === true))
             watcher.rightEnded(id);
+
+          // A held conversation belongs to the agent its handle was read for: when that row is
+          // gone or carries another handle (another agent, another conversation), it goes.
+          if (reader)
+            for (const agentId of reader.held(id)) {
+              const row = v && v.agents ? v.agents.find(a => a.id === agentId) : null;
+              const mark = reader.mark(id, agentId);
+              if (!row || !mark || (mark.lk && row.lk !== mark.lk)) reader.dropAgent(id, agentId);
+            }
           relook(id);
           push();
         },
@@ -1507,6 +2030,200 @@ function createRemoteService({
         },
       },
     });
+
+    // Late join. This computer's side: one read at a time for all computers, the parts as a
+    // stream on the link's one budget. The reading side: answers only to its own asks, held in
+    // memory only, out of the state push (the window asks with `logOf`).
+    answerer = createLogAnswerer({
+      now,
+      may: logsOn,
+      // a phone (its id starts with ph-) is refused until the phone has its own review
+      // (remote-log.js)
+      isPhone: isPhoneId,
+      check: logCheck,
+      read: (record, where) => readLog(record, { before: where.cursor, after: where.after }),
+      cutFrom: id => {
+        const p = store.pairing(id);
+        return p && Number.isFinite(p.since) && p.since > 0 ? p.since : Infinity;
+      },
+      onRead: (id, panelId) => {
+        const a = agentNowSafe(panelId);
+        log('read', { peer: id, name: nameOf(id), agent: a ? a.name : '' });
+        push();
+      },
+      send: (to, obj) => gateSend(to, obj, 'stream'),
+      room: () => STREAM_MAX - lastMinute(),
+      rev: panelId => revs.of(panelId, identityOf(agentNowSafe(panelId))),
+    });
+    reader = createLogReader({
+      now,
+      timers: clock,
+      row: (id, agentId) => {
+        if (!api || !trust || !trust.open(id) || !link?.state().sessions.includes(id)) return null;
+        if (typeof agentId === 'string' && agentId.startsWith('past:')) return pastRow(id, agentId);
+        const v = api.view(id);
+        const a = v && v.state !== 'offline' ? v.agents.find(x => x.id === agentId) : null;
+        return a && a.lk && a.p && a.p === myKey() && /^[0-9a-f]{40}$/.test(a.p)
+          ? { id: a.id, lk: a.lk }
+          : null;
+      },
+      send: (to, obj) => gateSend(to, obj),
+      on: { changed: () => push() },
+    });
+
+    // Past conversations (plan item 44). This computer's list goes only to a computer that may
+    // read conversations here (the same right as late join) and has the same project open; the
+    // other computer's list is held in memory only and read by the window with its own call.
+    pastAnswerer = createPastAnswerer({
+      now,
+      may: logsOn,
+      // the same rule as the conversation: no phone before its own review
+      isPhone: isPhoneId,
+      sameProject: id => {
+        const theirs = api?.view(id)?.project?.root || '';
+        return /^[0-9a-f]{40}$/.test(theirs) && theirs === myKey();
+      },
+      list: async () => (typeof pastList === 'function' ? pastList() : { threads: [] }),
+      send: (to, obj) => gateSend(to, obj, 'stream'),
+    });
+    pastReader = createPastReader({
+      now,
+      timers: clock,
+      send: (to, obj) => gateSend(to, obj),
+      on: { changed: () => push() },
+    });
+
+    // This week's thread features (remote-features.js, plan item 45). Answered only for a computer
+    // that may see details here, with its pairing open and its session live, and only about an
+    // agent of the project open here that this computer lists to it (rule 12). Read-only: nothing
+    // is admitted or owed, as with late join.
+    const featureMay = id =>
+      !isPhoneId(id) &&
+      !!prefs &&
+      keys.safeId(id) &&
+      detailOn(id) &&
+      !!trust &&
+      trust.open(id) === true &&
+      !!link &&
+      link.state().sessions.includes(id);
+    featureAnswerer = featureRead
+      ? createFeatureAnswerer({
+          now,
+          timers: clock,
+          may: featureMay,
+          row: (id, panelId) => {
+            const key = myKey();
+            const a = (agents() || []).find(x => x && x.id === panelId);
+            const current = agentNowSafe(panelId);
+            if (!key || !a || a.p !== key || !current) return null;
+
+            // `who`: the agent as it is now, so a late answer and the kept one stay with it (L2)
+            return { cli: String(a.cli || ''), who: identityOf(current) };
+          },
+          read: featureRead,
+
+          // an answer is optional, like a part of a conversation: it leaves only while the link
+          // has room for the lists and the replies
+          send: (to, obj) => gateSend(to, obj, 'stream'),
+        })
+      : null;
+    featureReader = createFeatureReader({
+      now,
+      timers: clock,
+      may: id => !!trust && trust.open(id) === true && !!link && link.state().sessions.includes(id),
+      send: (to, obj) => gateSend(to, obj),
+      on: { changed: () => push() },
+    });
+
+    // Another computer's files and Live preview (plan items 42 and 43). This computer answers only
+    // a computer whose full-control switch is on here, with its pairing open and its session live,
+    // and only about the project open here; the window is told where a save landed. Its own asks
+    // are held in memory, out of the state push (the window reads them with `filesOf` and
+    // `previewOf`).
+    const filesMay = id => !!controlRight(id) && !!link && link.state().sessions.includes(id);
+    const tellWindow = (name, value) => {
+      try {
+        on[name]?.(value);
+      } catch {
+        /* a listener's error is not ours */
+      }
+    };
+    const filesOpened = new Set();
+    browseAnswerer = browseFiles
+      ? createBrowseAnswerer({
+          now,
+          may: filesMay,
+          openKey: myKey,
+          list: async path => {
+            const r = await browseFiles.list(path);
+            return r && r.ok ? r.value : null;
+          },
+          stat: async path => {
+            const r = await browseFiles.stat(path);
+            if (!r || !r.ok) throw new Error('missing');
+            return r.value;
+          },
+          read: async (path, max) => {
+            const r = await browseFiles.read(path, 0, max);
+            if (!r || !r.ok) throw new Error('missing');
+            return Buffer.from(r.value);
+          },
+          write: async (path, bytes) => {
+            const r = await browseFiles.write(path, bytes);
+            return !!r && r.ok === true;
+          },
+          locks: () => browseFiles.locks(),
+
+          // the real path inside the project, long names, links followed (review of item 47, M1)
+          real: async path =>
+            typeof browseFiles.real === 'function' ? browseFiles.real(path) : null,
+          send: (to, obj) => gateSend(to, obj, 'stream'),
+          room: () => STREAM_MAX - lastMinute(),
+
+          // a save is written in the activity list and said in this computer's window; a read
+          // only once per computer and session
+          onSaved: (id, path) => {
+            log('file_saved', { peer: id, name: shownName(id), path });
+            tellWindow('landed', { kind: 'saved', by: shownName(id), path });
+            push();
+          },
+          onRead: id => {
+            if (filesOpened.has(id)) return;
+            filesOpened.add(id);
+            log('files_read', { peer: id, name: shownName(id) });
+            push();
+          },
+        })
+      : null;
+    previewAnswerer = previewTake
+      ? createPreviewAnswerer({
+          now,
+          may: filesMay,
+          take: previewTake,
+          send: (to, obj) => gateSend(to, obj, 'stream'),
+          room: () => STREAM_MAX - lastMinute(),
+          onShot: id => {
+            if (filesOpened.has('pv ' + id)) return;
+            filesOpened.add('pv ' + id);
+            log('preview_seen', { peer: id, name: shownName(id) });
+            push();
+          },
+        })
+      : null;
+    browseAsker = createBrowseAsker({
+      now,
+      key: myKey,
+      timers: clock,
+      send: (to, obj) => gateSend(to, obj, obj.t === 'fssave' && obj.i > 0 ? 'stream' : undefined),
+      on: { changed: id => tellWindow('files', { peer: id }) },
+    });
+    previewAsker = createPreviewAsker({
+      now,
+      timers: clock,
+      send: (to, obj) => gateSend(to, obj),
+      on: { changed: id => tellWindow('files', { peer: id, preview: true }) },
+    });
+
     relater = createRelater({
       relate: relate || (async () => ({ rel: 'unknown' })),
       on: () => push(),
@@ -1550,8 +2267,8 @@ function createRemoteService({
         live: id => !!link && link.state().sessions.includes(id),
         peerName: shownName,
         fresh: (id, msg) => !!control && control.fresh(id, msg),
-        ticket: (id, panelId) =>
-          control && trust && trust.open(id) ? control.ticketFor(id, panelId) : '',
+        // an agent's ticket, or a plain terminal's for a computer that may type (ticketAny)
+        ticket: ticketAny,
         agentName: panelId => {
           const a = agentNow(panelId);
           return a && typeof a.name === 'string' ? a.name : '';
@@ -1578,13 +2295,75 @@ function createRemoteService({
           api && trust && trust.open(id) ? api.viewFields(id, agentId) : null,
         on: {
           changed: model => {
+            // typing (remote-type.js): a new picture may let a held Enter go; a view that ended
+            // ends the round
+            if (typer) {
+              if (!model || model.state !== 'on') typer.end();
+              else typer.frame();
+            }
             try {
-              on.view?.(model);
+              on.view?.(withTyping(model));
             } catch {
               /* a listener's error is not ours */
             }
           },
         },
+      });
+
+    // Typing (remote-type.js). The typed side: made once and kept like the control rules, so a
+    // one-time number it took stays taken. It reads the right, the open view and the ticket as
+    // they are at this moment; the write is remote-actions.js's, through the same terminal write as
+    // a key typed here.
+    if (!typing)
+      typing = createTyping({
+        rights: typeRight,
+        fresh: (id, msg, ms) => !!control && control.fresh(id, msg, ms),
+        view: id => (views ? views.typingState(id) : null),
+        ticket: ticketAny,
+        agentNow: panelId => {
+          try {
+            return agentNow(panelId);
+          } catch {
+            return null;
+          }
+        },
+        deliver: o => typeKeys(o),
+
+        // review 23, L6: letters land on their own echo only while no question is open there
+        questionOpen: panelId => offered().some(it => it.paneId === panelId),
+        send: (id, obj) => gateSend(id, obj, 'reply'),
+        log: typeLine,
+        peerName: shownName,
+        typed: e => {
+          typedBy.set(e.panelId, { peer: e.peerId, name: e.name, at: now() });
+          push();
+        },
+        ...(typeof mono === 'function' ? { mono } : {}),
+      });
+
+    // The typing side: one round at a time, into the one view this computer has open. It runs on
+    // the watcher's clock, so "a picture newer than the last batch" compares like with like.
+    if (!typer)
+      typer = createTyper({
+        send: (id, obj) => gateSend(id, obj),
+        fields: (id, agentId) =>
+          api && trust && trust.open(id) ? api.viewFields(id, agentId) : null,
+        seen: () => (watcher ? watcher.seen() : null),
+        allowed: id => {
+          const v = api ? api.view(id) : null;
+          return !!(v && v.control && v.control.type === true);
+        },
+        on: {
+          changed: () => {
+            try {
+              on.view?.(withTyping(watcher ? watcher.model() : null));
+            } catch {
+              /* a listener's error is not ours */
+            }
+          },
+        },
+        mono: now,
+        timers,
       });
 
     // Files with a prompt. The target's side holds what arrives in memory; its replies (`got`)
@@ -1662,6 +2441,13 @@ function createRemoteService({
         },
         start: ({ cli, text, guard, from }) =>
           act(() => startAgent({ cli, text, from, guard: key => guard(key) })),
+        // Thread controls (plan item 44): the real action, and a Resume of a past conversation
+        // named by the handle of the list this computer sent (pastAnswerer).
+        thread: ({ panelId, what, value, guard, from }) =>
+          act(() => threadAct({ panelId, what, value, guard, from })),
+        past: { find: (peerId, h) => (pastAnswerer ? pastAnswerer.find(peerId, h) : null) },
+        resume: ({ cli, id, guard, from }) =>
+          act(() => resumePast({ cli, id, from, guard: key => guard(key) })),
       });
     link.start();
     try {
@@ -1682,7 +2468,26 @@ function createRemoteService({
       watcher.close('closed');
       watcher.drop();
     } // this computer's own view of another one ends with the link, and nothing of it stays
+
+    // nothing read of another computer's conversations stays, and nothing more is answered
+    if (answerer) answerer.stop();
+    if (reader) reader.dropAll();
+    answerer = reader = null;
+    if (pastAnswerer) pastAnswerer.stop();
+    if (pastReader) pastReader.dropAll();
+    pastAnswerer = pastReader = null;
+    if (featureAnswerer) featureAnswerer.stop();
+    if (featureReader) featureReader.stop();
+    featureAnswerer = featureReader = null;
+
+    // files and Live preview (items 42 and 43)
+    if (browseAnswerer) browseAnswerer.stop();
+    if (previewAnswerer) previewAnswerer.stop();
+    if (browseAsker) browseAsker.drop();
+    if (previewAsker) previewAsker.drop();
+    browseAnswerer = browseAsker = previewAnswerer = previewAsker = null;
     link.stop();
+    shieldCode(false);
     api.stop();
     trust.stop();
     relater.stop();
@@ -1710,6 +2515,8 @@ function createRemoteService({
       computers: [],
       others: [],
       pairing: null,
+      // "Add a phone": only { state, reason }, never the code or a key
+      phonePair,
       asked: null,
       ended,
       stopping: false,
@@ -1729,6 +2536,9 @@ function createRemoteService({
       sending: sending ? { ...sending } : null,
       // who watches which of this computer's panels now (the mark on the panel, the bell, the card)
       watching: views ? views.watching() : [],
+      // typing (remote-type.js): which computer typed into which of this computer's panels in the
+      // last minute, for the mark where the keys landed (never what was typed)
+      typed: typedNow(),
       controlled: notices.map(e => ({ ...e })),
       controlLog: ok ? opsLog.slice(0, OPS_SHOWN).map(e => ({ ...e })) : [],
       controlTotal: ok ? opsLog.length : 0,
@@ -1752,7 +2562,9 @@ function createRemoteService({
         lets = shown && !!v.control;
       const reps = ask ? [] : reportsHere(v, mine),
         done = reps.at(-1); // newest last, by when each arrived here
-      const its = byProject(shown ? v.agents : [], lets, reps),
+      const its = byProject(shown ? v.agents : [], lets, reps, agentId =>
+          reader ? reader.mark(p.id, agentId) : null
+        ),
         ctl = controlOn(p.id),
         ans = ctl || answerAlone(p.id);
       return {
@@ -1771,6 +2583,9 @@ function createRemoteService({
         // another project, none, or not told.
         project: ask || !session || !v || !relater ? null : relater.get(p.id),
         detail: detailOn(p.id),
+        // the text switch also lets it read conversations: on under the sentence that says so
+        // (false while it waits for "Keep on")
+        reads: detailOn(p.id) && prefs.detailV[p.id] === LOG_VERSION,
         answer: ans,
         update: needUpdate.has(p.id),
         // Full control (6f). control: this computer's switch for it (answer above is then on too:
@@ -1784,6 +2599,10 @@ function createRemoteService({
         // view from this computer.
         watchable: ctl && watchOn(p.id),
         canWatch: lets && v.control.watch === true,
+        // Typing (remote-type.js). typeable: this computer's own typing switch for it is on.
+        // canType: it says this computer may type into the panel this one watches there.
+        typeable: ctl && typeOn(p.id),
+        canType: lets && v.control.type === true,
         // The git hand-over. syncable: this computer takes one from it (never yet: the sentence
         // waits for the user). canSync: it says it takes one from this computer. bringable: its
         // commit is known, so this computer can fetch it by its own press. handed: the branch here
@@ -1985,6 +2804,37 @@ function createRemoteService({
       push();
       return state();
     },
+    // "Add a phone", from this computer's own window only: the code as squares to draw, or why
+    // not.
+    phonePair() {
+      live();
+      ended = null;
+      const r = link.phonePair();
+      push();
+      if (!r || !r.qr)
+        return { ended: (r && r.ended) || 'not_ready', until: (r && r.until) || null };
+      const code = qrRows(r.qr);
+      return code ? { code } : { ended: 'not_ready' };
+    },
+    // The six digits the phone shows, typed at this computer's own keyboard.
+    phoneEnter(code) {
+      live();
+      const r = link.phoneEnter(String(code ?? '').slice(0, 12));
+      push();
+      return {
+        ok: r.ok === true,
+        left: r.left ?? null,
+        ended: r.ended || null,
+        until: r.until || null,
+      };
+    },
+    phoneCancel() {
+      if (link) link.phoneCancel();
+      phonePair = null;
+      shieldCode(false);
+      push();
+      return state();
+    },
     // Turning the text off takes "may answer" and full control with it: nobody approves, or steers,
     // what they cannot read.
     setDetail(id, value) {
@@ -1998,10 +2848,100 @@ function createRemoteService({
         dropAnswer(id);
         dropControl(id);
       }
+
+      // Turned on under the sentence that says conversations are read too; off clears it, and
+      // that computer is told to drop what it holds and gets nothing more.
+      if (value) prefs.detailV[id] = LOG_VERSION;
+      else {
+        delete prefs.detailV[id];
+        if (answerer) answerer.noLonger(id);
+      }
       save();
       api?.detailChanged(id);
       push();
       return state();
+    },
+    // "Keep on": the user read the new sentence of a switch that was already on, and keeps it.
+    keepLogs(id) {
+      need();
+      if (!store.pairing(id) || !detailOn(id)) return state();
+      prefs.detailV[id] = LOG_VERSION;
+      save();
+      api?.detailChanged(id);
+      push();
+      return state();
+    },
+    // The window opened another computer's agent, pressed "Show earlier", or saw its turn counter
+    // grow: one ask, at the rate remote-log.js sets. which: 'first' | 'earlier' | 'new'. → { state,
+    // wait? }
+    askLog(id, agentId, which) {
+      if (!reader || !prefs || !prefs.on) return { state: 'not_sent' };
+      const kind = which === 'earlier' || which === 'new' ? which : 'first';
+      return reader.ask(id, agentId, kind);
+    },
+    // What is held of that agent's conversation, for the window that shows it; null when nothing.
+    // Read by its own call, never part of the state push.
+    logOf(id, agentId) {
+      return reader ? reader.get(id, agentId) : null;
+    },
+    // This week's thread features (remote-features.js): the window asks for another computer's
+    // 'changes' or 'skills' of one of its agents, or its 'clis'. An agent is asked about only while
+    // it is listed here in the project open here (rule 12). → { state }. What came back is read
+    // with `featureOf`, never part of the state push.
+    askFeature(id, kind, agentId) {
+      if (!featureReader || !prefs || !prefs.on || !api) return { state: 'not_sent' };
+      if (kind !== 'clis') {
+        const v = api.view(id);
+        const key = myKey();
+        const a = v && v.state !== 'offline' ? v.agents.find(x => x.id === agentId) : null;
+        if (!a || !key || a.p !== key) return { state: 'not_sent' };
+      }
+      return featureReader.ask(id, kind, agentId);
+    },
+    featureOf(id, kind, agentId) {
+      return featureReader ? featureReader.get(id, kind, agentId) : null;
+    },
+    // Another computer's project files (remote-browse.js, plan item 42): the window lists a
+    // folder, reads a file or saves a new text for the file it read. Asked only while that
+    // computer is live and lists agents of the project open here (rule 12); that computer checks
+    // its own right, project, path, lock and version. op: 'list' | 'read' | 'save'. → { state }.
+    askFiles(id, op, path, text) {
+      if (!browseAsker || !prefs || !prefs.on || !api) return { state: 'not_sent' };
+      const v = api.view(id);
+      const key = myKey();
+      const sure = v && v.state !== 'offline' && v.agents.some(x => x && x.p && x.p === key);
+      if (!key || !sure) return { state: 'no_project' };
+      if (op === 'list') return browseAsker.listFolder(id, path);
+      if (op === 'read') return browseAsker.readFile(id, path);
+      if (op === 'save') return browseAsker.save(id, path, text);
+      return { state: 'not_sent' };
+    },
+    filesOf(id) {
+      return browseAsker ? browseAsker.get(id) : { list: null, file: null, save: null };
+    },
+    // Its Live preview as a picture (remote-preview.js, plan item 43): one ask, refreshed only
+    // when the window asks again; what came back is read with `previewOf`.
+    askPreview(id) {
+      if (!previewAsker || !prefs || !prefs.on || !api) return { state: 'not_sent' };
+      const v = api.view(id);
+      if (!v || v.state === 'offline') return { state: 'not_sent' };
+      return previewAsker.ask(id);
+    },
+    previewOf(id) {
+      return previewAsker ? previewAsker.get(id) : null;
+    },
+    // A turn of one of this computer's agents was pushed (the app pushes many times a turn): only a
+    // start or an end makes its counter grow, and the paired computers' lists carry it (at most
+    // once per 15 seconds when nothing else changed). Nothing while connecting is off.
+    turnChanged(panelId, startedAt, ended) {
+      if (!link || typeof panelId !== 'string') return;
+      const phase = String(startedAt || 0) + (ended === true ? ' end' : ' run');
+      if (turnPhase.get(panelId) === phase) return;
+      turnPhase.set(panelId, phase);
+      const a = agentNowSafe(panelId);
+      if (!a) return;
+      revs.bump(panelId, identityOf(a));
+      if (api) api.agentsChanged();
     },
     // "(that computer) may answer my agents' permission questions". On only for a pairing that
     // exists, is not paused and has the text switch on, and bound to that pairing's id. Off always
@@ -2089,8 +3029,14 @@ function createRemoteService({
         if (more && more.choose === true) prefs.choose[id] = prefs.control[id];
         else delete prefs.choose[id];
         if (!prefs.sync) prefs.sync = {};
-        if (more && more.sync === true) prefs.sync[id] = prefs.control[id];
+        if (more && more.sync === true && !isPhoneId(id)) prefs.sync[id] = prefs.control[id];
         else delete prefs.sync[id];
+
+        // typing (remote-type.js): part of full control (rule 13, one switch), given only when
+        // the question showed the sentence that says what typing can do
+        if (!prefs.type) prefs.type = {};
+        if (more && more.type === true && !isPhoneId(id)) prefs.type[id] = prefs.control[id];
+        else delete prefs.type[id];
         if (!prefs.say) prefs.say = {};
         if (more && more.say === true) prefs.say[id] = prefs.control[id];
         else
@@ -2109,6 +3055,10 @@ function createRemoteService({
       log(value ? 'control_on' : 'control_off', { peer: id, name: nameOf(id) });
       api?.answerChanged(id);
       api?.controlChanged(id);
+
+      // typing (remote-type.js): plain terminals are listed only for a computer that may type,
+      // so its list goes again
+      api?.detailChanged(id);
       push();
       return state();
     },
@@ -2138,7 +3088,32 @@ function createRemoteService({
       return true;
     },
     viewNow() {
-      return watcher ? watcher.model() : null;
+      return watcher ? withTyping(watcher.model()) : null;
+    },
+    // ---- typing (remote-type.js) ----
+    // Keys pressed in the typing box at this computer, for the agent of another computer this one
+    // watches: only for a row listed for the project open here that can be controlled, on a
+    // computer that says this one may type there, and only for the very agent the page drew
+    // (`mark`, as for a prompt). → { state } of remote-type.js `press`, or 'changed'.
+    type(id, agentId, mark, items) {
+      live();
+      const row = typeRow(id, agentId);
+      if (!row) return { state: 'not_typing' };
+      if (typeof mark !== 'string' || mark === '' || mark !== row.mark) return { state: 'changed' };
+      return { state: typer.press(id, agentId, Array.isArray(items) ? items : []) };
+    },
+    // A paste in the typing box: one batch of its own.
+    typePaste(id, agentId, mark, text) {
+      live();
+      const row = typeRow(id, agentId);
+      if (!row) return { state: 'not_typing' };
+      if (typeof mark !== 'string' || mark === '' || mark !== row.mark) return { state: 'changed' };
+      return { state: typer.paste(id, agentId, typeof text === 'string' ? text : '') };
+    },
+    // The typing box was left (focus went, another row, the page or window left).
+    typeEnd() {
+      if (typer) typer.end();
+      return true;
     },
     // This computer's user pressed the mark on a watched panel: that computer's view ends and it
     // gets none for ten minutes.
@@ -2332,6 +3307,46 @@ function createRemoteService({
         return false;
       }
     },
+    // ---- Thread controls (plan item 44) ----
+    // Rename, close, model or effort pressed here for an agent of another computer: only for a row
+    // of the project open here that can be controlled, with the mark the page drew. → state plus
+    // sent and n.
+    threadOn(id, agentId, what, value, mark) {
+      live();
+      const v = api ? api.view(id) : null;
+      const row =
+        trust && trust.open(id) && v
+          ? byProject(v.agents, !!v.control).here.find(a => a.id === agentId && a.can)
+          : null;
+      const r = !row
+        ? { state: 'not_sent', n: '' }
+        : typeof mark !== 'string' || mark === '' || mark !== row.mark
+          ? { state: 'changed', n: '' }
+          : api.thread(id, agentId, what, value);
+      push();
+      return { ...state(), sent: r.state, n: r.n };
+    },
+    // Resume pressed here on a past conversation of another computer: by the handle of its list
+    // held here, in the project open here.
+    resumeOn(id, h) {
+      live();
+      const r =
+        api && trust && trust.open(id) && pastReader && pastReader.has(id, h)
+          ? api.resume(id, h, myKey())
+          : { state: 'not_sent', n: '' };
+      push();
+      return { ...state(), sent: r.state, n: r.n };
+    },
+    // Past conversations opened here: ask that computer for its list (at the rate the reader
+    // sets), and what is held of it, read by the window with its own call.
+    askPast(id) {
+      if (!pastReader || !prefs || !prefs.on || !trust || !trust.open(id))
+        return { state: 'not_sent' };
+      return pastReader.ask(id);
+    },
+    pastOf(id) {
+      return pastReader ? pastReader.get(id) : null;
+    },
     // Interrupt or Stop pressed, at this computer, on an agent of another computer (the page asks
     // "Stop (agent) on (name)?" first).
     act(id, agentId, what, mark) {
@@ -2455,6 +3470,13 @@ function createRemoteService({
       peerState.delete(id);
       needUpdate.delete(id);
       if (Object.hasOwn(prefs.detail, id)) delete prefs.detail[id];
+      if (Object.hasOwn(prefs.detailV, id)) delete prefs.detailV[id];
+      if (answerer) answerer.endFor(id);
+      if (reader) reader.drop(id);
+      if (featureReader) featureReader.drop(id);
+      if (featureAnswerer) featureAnswerer.endFor(id);
+      filesEnd(id);
+      pastEnd(id);
       if (Object.hasOwn(prefs.answer, id)) delete prefs.answer[id];
       endControl(id);
       if (watcher) watcher.drop(id);
@@ -2651,6 +3673,16 @@ function createRemoteService({
             watcher.quit();
             watcher = null;
           }
+
+          // typing (remote-type.js): nothing of a round or a taken number stays
+          if (typing) {
+            typing.quit();
+            typing = null;
+          }
+          if (typer) {
+            typer.quit();
+            typer = null;
+          }
           store.setNote('views', {});
           store.setNote('files', {});
 
@@ -2748,6 +3780,16 @@ function createRemoteService({
       if (watcher) {
         watcher.quit();
         watcher = null;
+      }
+
+      // typing (remote-type.js)
+      if (typing) {
+        typing.quit();
+        typing = null;
+      }
+      if (typer) {
+        typer.quit();
+        typer = null;
       }
     },
   };
@@ -2852,9 +3894,55 @@ function registerIpc(ipcMain, service) {
   handle('remote:acceptPairing', () => service.acceptPairing());
   handle('remote:declinePairing', () => service.declinePairing());
   handle('remote:enterCode', v => service.enterCode(typeof v === 'string' ? v : ''));
+
+  // "Add a phone" (src/scripts/167-add-phone.js)
+  handle('remote:phonePair', () => service.phonePair());
+  handle('remote:phoneEnter', v => service.phoneEnter(typeof v === 'string' ? v : ''));
+  handle('remote:phoneCancel', () => service.phoneCancel());
   handle('remote:clearEnded', () => service.clearEnded());
   handle('remote:setDetail', (v, value) => service.setDetail(id(v), value === true));
   handle('remote:setAnswer', (v, value) => service.setAnswer(id(v), value === true));
+
+  // Late join: "Keep on" under the text switch, an ask for another computer's agent's
+  // conversation, and what is held of it (its own call, never in the state push)
+  handle('remote:keepLogs', v => service.keepLogs(id(v)));
+  handle('remote:askLog', (v, agentId, which) =>
+    service.askLog(id(v), short(agentId, 80), short(which, 10))
+  );
+  handle('remote:log', (v, agentId) => service.logOf(id(v), short(agentId, 80)));
+
+  // This week's thread features (remote-features.js): an ask for another computer's Changes,
+  // skills or CLIs, and what is held of the answer (its own call, never in the state push)
+  const featureKind = v => (v === 'changes' || v === 'skills' || v === 'clis' ? v : '');
+  handle('remote:askFeature', (v, kind, agentId) =>
+    service.askFeature(id(v), featureKind(kind), short(agentId, 80))
+  );
+  handle('remote:feature', (v, kind, agentId) =>
+    service.featureOf(id(v), featureKind(kind), short(agentId, 80))
+  );
+
+  // Another computer's files and Live preview (items 42 and 43): an ask, and what is held of the
+  // answers (their own calls, never in the state push). A path is at most 400 characters and a
+  // text at most 40 KB of characters here; remote-browse.js checks both again.
+  const filesOp = v => (v === 'list' || v === 'read' || v === 'save' ? v : '');
+
+  // A text is never cut here: a cut text saved would cut the user's file.
+  const wholeText = v => {
+    if (typeof v !== 'string') return null;
+    if (v.length > 40 * 1024) throw new Error('remote: large');
+    return v;
+  };
+  handle('remote:askFiles', (v, op, path, text) =>
+    service.askFiles(
+      id(v),
+      filesOp(op),
+      typeof path === 'string' && path.length <= 400 ? path : null,
+      wholeText(text)
+    )
+  );
+  handle('remote:files', v => service.filesOf(id(v)));
+  handle('remote:askPreview', v => service.askPreview(id(v)));
+  handle('remote:preview', v => service.previewOf(id(v)));
   handle('remote:setAwake', v => service.setAwake(v === true));
   handle('remote:connectAgain', () => service.connectAgain());
   handle('remote:woke', () => service.woke());
@@ -2864,7 +3952,11 @@ function registerIpc(ipcMain, service) {
   const short = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
   handle('remote:setControl', (v, value, more) =>
     service.setControl(id(v), value === true, {
-      choose: more === 'choose' || more === 'choose say' || more === 'choose say sync',
+      choose:
+        more === 'choose' ||
+        more === 'choose say' ||
+        more === 'choose say sync' ||
+        more === 'choose say sync type',
       // 'choose say': the question also showed the sentence about agents messaging agents.
       // SWITCHED OFF 2026-10-10 (a known fault: only a message's
       // first turn counts as started by another computer's agent, `remote-say.js` `inSay`): the
@@ -2874,7 +3966,10 @@ function registerIpc(ipcMain, service) {
       // 'choose say sync': the question also showed the git hand-over's sentence,
       // so the grant includes the
       // `sync` right.
-      sync: more === 'choose say sync',
+      sync: more === 'choose say sync' || more === 'choose say sync type',
+      // 'choose say sync type': the question also showed the sentence about typing into a
+      // watched terminal (remote-type.js), so the grant includes typing
+      type: more === 'choose say sync type',
     })
   );
   handle('remote:pick', (v, itemId, n, kof) =>
@@ -2896,6 +3991,22 @@ function registerIpc(ipcMain, service) {
       short(mark, 12)
     )
   );
+
+  // Thread controls (plan item 44): one of four literal words, a value of bounded length (the
+  // shape is checked again in remote-thread.js), a handle of 16 characters.
+  const THREAD_WHAT = ['rename', 'close', 'model', 'effort'];
+  handle('remote:thread', (v, agentId, what, value, mark) =>
+    service.threadOn(
+      id(v),
+      short(agentId, 80),
+      THREAD_WHAT.includes(what) ? what : '',
+      short(value, 80),
+      short(mark, 12)
+    )
+  );
+  handle('remote:resume', (v, h) => service.resumeOn(id(v), short(h, 16)));
+  handle('remote:askPast', v => service.askPast(id(v)));
+  handle('remote:past', v => service.pastOf(id(v)));
   handle('remote:handOver', v => service.handOver(id(v)));
   handle('remote:bring', v => service.bring(id(v)));
   handle('remote:start', (v, cli, text) =>
@@ -2947,6 +4058,28 @@ function registerIpc(ipcMain, service) {
   handle('remote:unview', why => service.unview(why === 'hidden' ? 'hidden' : 'closed'));
   handle('remote:viewNow', () => service.viewNow());
   handle('remote:stopView', v => service.stopView(id(v)));
+
+  // Typing (remote-type.js): only a short list of key names and short texts, a paste of bounded
+  // length, and the switch's real true get past here; remote-type.js shapes them again.
+  const typedItems = list =>
+    Array.isArray(list)
+      ? list
+          .slice(0, 64)
+          .map(it =>
+            typeof it === 'string'
+              ? it.slice(0, 20)
+              : it && typeof it === 'object' && typeof it.x === 'string'
+                ? { x: it.x.slice(0, 300) }
+                : null
+          )
+      : [];
+  handle('remote:type', (v, agentId, mark, items) =>
+    service.type(id(v), short(agentId, 80), short(mark, 12), typedItems(items))
+  );
+  handle('remote:typePaste', (v, agentId, mark, text) =>
+    service.typePaste(id(v), short(agentId, 80), short(mark, 12), short(text, 6000))
+  );
+  handle('remote:typeEnd', () => service.typeEnd());
   handle('remote:screenRows', (paneId, raw) => {
     service.screen(
       short(paneId, 80),
@@ -2978,6 +4111,7 @@ module.exports = {
   storageBackend,
   registerIpc,
   createTurnReporter,
+  createLinkBudget,
   NEEDS,
   REPORT_FRESH_MS,
 };

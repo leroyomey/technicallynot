@@ -34,7 +34,12 @@
 `;
   document.head.append(style);
 
-  const esc = s => s.replace(/[&<>]/g, c => (c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'));
+  // quotes too, like every other esc(), so the output is safe in an attribute as well
+  const esc = s =>
+    s.replace(
+      /[&<>"']/g,
+      c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
+    );
 
   // A token spanning lines is split per line, so the output can be cut into lines with no open
   // tags.

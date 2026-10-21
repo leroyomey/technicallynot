@@ -25,7 +25,7 @@
   const native = window.tnaiNative;
   if (!native?.attachments?.clip) return; // browser mode, or an older desktop build
 
-  const NAME = /[0-9a-f]{8}-clip(?:-[0-9]+)?[.](?:webm|png)/g;
+  const NAME = /[0-9a-f]{8}-clip(?:-[0-9]+)?[.](?:mp4|webm|png)/g;
   const idOf = text => (String(text || '').match(NAME) || [''])[0].slice(0, 8);
 
   const known = new Map(); // clip id -> Promise<{ id, video, frames, still } | null>

@@ -56,6 +56,10 @@ contextBridge.exposeInMainWorld('tnaiNative', {
     get: () => invoke('agentRules:get'),
     set: patch => invoke('agentRules:set', patch || {}),
   },
+  // The "/" and "$" list above the prompt box: one CLI's commands and skills (cli-commands.js).
+  cliCommands: {
+    list: cli => invoke('cliCommands:list', String(cli || '')),
+  },
   skills: {
     list: () => invoke('skills:list'),
     import: input => invoke('skills:import', input),
@@ -260,6 +264,10 @@ contextBridge.exposeInMainWorld('tnaiNative', {
   // (git-service.js); onChanged fires when .git HEAD/index/refs change.
   git: {
     status: () => invoke('git:status'),
+
+    // What the agent in that folder changed: branch, lines, commits, its pull request and checks
+    // (branch-changes.js); {ok, value} with value.repo false outside a git repository.
+    changes: folder => invoke('git:changes', String(folder || '')),
     worktrees: () => invoke('git:worktrees'),
     worktreeMerge: branch => invoke('git:worktreeMerge', String(branch)),
     worktreeRemove: (branch, options) =>
@@ -271,6 +279,23 @@ contextBridge.exposeInMainWorld('tnaiNative', {
     worktreeFree: agent => invoke('git:worktreeFree', String(agent || '')),
     worktreeRelease: paneId => invoke('git:worktreeRelease', String(paneId)),
     onChanged: listen('git:changed'),
+  },
+
+  // Watch and merge a thread's pull request (pr-watch.js): GitHub is asked every 3 minutes while
+  // watched; onEvent gets { paneId, number, url, line, message, done }, onChanged the watched list.
+  prWatch: {
+    list: () => invoke('prwatch:list'),
+    watch: (paneId, number) => invoke('prwatch:watch', String(paneId || ''), Number(number) || 0),
+    unwatch: paneId => invoke('prwatch:unwatch', String(paneId || '')),
+    merge: (paneId, number) => invoke('prwatch:merge', String(paneId || ''), Number(number) || 0),
+    onEvent: listen('prwatch:event'),
+    onChanged: listen('prwatch:changed'),
+  },
+
+  // "Open in VS Code / Cursor / File Explorer" for a thread's own folder (open-in-editor.js).
+  editors: {
+    list: () => invoke('editors:list'),
+    open: (id, paneId) => invoke('editors:open', String(id || ''), String(paneId || '')),
   },
   attachments: {
     save: (name, bytes) => invoke('attachments:save', name, bytes),
@@ -309,6 +334,33 @@ contextBridge.exposeInMainWorld('tnaiNative', {
 
     // a conversation that was read has grown: { paneId, sub }
     onChange: listen('threadLog:changed'),
+  },
+
+  // A page or picture the agent wrote or showed, as a card in the conversation (thread-designs.js).
+  // page → { ok, name, url, refs, image } (a still picture of the page); picture → { ok, name,
+  // image } (small, or whole with large); preview opens the page in Live preview.
+  designs: {
+    page: (paneId, file, options) =>
+      invoke('designs:page', String(paneId ?? ''), String(file ?? ''), {
+        shot: options?.shot !== false,
+      }),
+    picture: (paneId, file, options) =>
+      invoke('designs:picture', String(paneId ?? ''), String(file ?? ''), {
+        since: Number(options?.since) || 0,
+        large: options?.large === true,
+        check: options?.check === true,
+      }),
+    preview: (paneId, file) => invoke('designs:preview', String(paneId ?? ''), String(file ?? '')),
+  },
+
+  // What an agent made in a task (what-it-made.js, 170): check(paneId, file, since) → { ok, name,
+  // size }; text(paneId, file) → { ok, name, text, cut } for a document or data file; alive(url) →
+  // true when a local address answers.
+  made: {
+    check: (paneId, file, since) =>
+      invoke('made:check', String(paneId ?? ''), String(file ?? ''), Number(since) || 0),
+    text: (paneId, file) => invoke('made:text', String(paneId ?? ''), String(file ?? '')),
+    alive: url => invoke('made:alive', String(url ?? '')),
   },
 
   // File locks of the open project (file-locks.js), read-only: list() → [{ file, paneId, name, at,
@@ -406,8 +458,40 @@ contextBridge.exposeInMainWorld('tnaiNative', {
     acceptPairing: () => invoke('remote:acceptPairing'),
     declinePairing: () => invoke('remote:declinePairing'),
     enterCode: code => invoke('remote:enterCode', String(code ?? '')),
+    // "Add a phone" (167-add-phone.js)
+    phonePair: () => invoke('remote:phonePair'),
+    phoneEnter: code => invoke('remote:phoneEnter', String(code ?? '')),
+    phoneCancel: () => invoke('remote:phoneCancel'),
     clearEnded: () => invoke('remote:clearEnded'),
     setDetail: (id, on) => invoke('remote:setDetail', String(id), on === true),
+    // another computer's agent's conversation: "Keep on", an ask, and what is held of it
+    keepLogs: id => invoke('remote:keepLogs', String(id)),
+    askLog: (computerId, agentId, which) =>
+      invoke('remote:askLog', String(computerId), String(agentId ?? ''), String(which ?? '')),
+    log: (computerId, agentId) => invoke('remote:log', String(computerId), String(agentId ?? '')),
+    // Another computer's project files and its Live preview as a picture (items 42 and 43): an
+    // ask (op 'list' | 'read' | 'save'), what is held of the answers, and two events: onFiles
+    // ({ peer, preview? }: read again) and onLanded ({ kind, by, path }: another computer saved a
+    // file here).
+    askFiles: (computerId, op, path, text) =>
+      invoke(
+        'remote:askFiles',
+        String(computerId),
+        String(op ?? ''),
+        String(path ?? ''),
+        typeof text === 'string' ? text : null
+      ),
+    files: computerId => invoke('remote:files', String(computerId)),
+    askPreview: computerId => invoke('remote:askPreview', String(computerId)),
+    preview: computerId => invoke('remote:preview', String(computerId)),
+    onFiles: listen('remote:files'),
+    onLanded: listen('remote:landed'),
+    // this week's thread features for another computer's thread: an ask ('changes', 'skills',
+    // 'clis') and what is held of its answer (remote-features.js)
+    askFeature: (computerId, kind, agentId) =>
+      invoke('remote:askFeature', String(computerId), String(kind), String(agentId ?? '')),
+    feature: (computerId, kind, agentId) =>
+      invoke('remote:feature', String(computerId), String(kind), String(agentId ?? '')),
     forget: id => invoke('remote:forget', String(id)),
     setAnswer: (id, on) => invoke('remote:setAnswer', String(id), on === true),
     answer: (computerId, itemId, say, of) =>
@@ -432,7 +516,14 @@ contextBridge.exposeInMainWorld('tnaiNative', {
         //
         // 'choose': the question that was confirmed named picking an option
         //
-        more === 'choose' || more === 'choose say' || more === 'choose say sync' ? more : ''
+        // 'choose say sync type': it also showed the sentence about typing (remote-type.js)
+        //
+        more === 'choose' ||
+          more === 'choose say' ||
+          more === 'choose say sync' ||
+          more === 'choose say sync type'
+          ? more
+          : ''
       ),
     // mark: the agent row's `mark` as the page drew it. The main process sends nothing, and answers
     // `sent: 'changed'`, when the agent under that row is no longer that one.
@@ -459,6 +550,23 @@ contextBridge.exposeInMainWorld('tnaiNative', {
     handOver: computerId => invoke('remote:handOver', String(computerId)),
     room: (agentId, text) => invoke('remote:room', String(agentId ?? ''), String(text ?? '')),
     controlLog: () => invoke('remote:controlLog'),
+    // Thread controls (plan item 44, 164-remote-thread-more.js). thread: rename, close, model or
+    // effort of an agent there; resume: a past conversation there, by its list's handle; askPast /
+    // past: that computer's past conversations, asked and as held here; onNote: what another
+    // computer made happen here, said where it lands.
+    thread: (computerId, agentId, what, value, mark) =>
+      invoke(
+        'remote:thread',
+        String(computerId),
+        String(agentId),
+        String(what),
+        String(value ?? ''),
+        String(mark ?? '')
+      ),
+    resume: (computerId, handle) => invoke('remote:resume', String(computerId), String(handle)),
+    askPast: computerId => invoke('remote:askPast', String(computerId)),
+    past: computerId => invoke('remote:past', String(computerId)),
+    onNote: listen('remote:note'),
     // A prompt with one to three files for an agent on another computer.
     // files: [{ kind: 'jpg' | 'png' | 'txt', bytes: ArrayBuffer
     // }], pictures already made small by the page. Resolves when the files and the prompt are over.
@@ -495,9 +603,50 @@ contextBridge.exposeInMainWorld('tnaiNative', {
     screenRows: (paneId, raw) =>
       invoke('remote:screenRows', String(paneId), raw && typeof raw === 'object' ? raw : null),
     stopView: computerId => invoke('remote:stopView', String(computerId)),
+    // Typing into the panel this computer watches on another one (remote-type.js): keys as
+    // names or { x: text }, a paste, leaving the typing box. Typing is part of full control
+    // (setControl above), never a switch of its own.
+    type: (computerId, agentId, mark, items) =>
+      invoke(
+        'remote:type',
+        String(computerId),
+        String(agentId ?? ''),
+        String(mark ?? ''),
+        Array.isArray(items) ? items : []
+      ),
+    typePaste: (computerId, agentId, mark, text) =>
+      invoke(
+        'remote:typePaste',
+        String(computerId),
+        String(agentId ?? ''),
+        String(mark ?? ''),
+        String(text ?? '')
+      ),
+    typeEnd: () => invoke('remote:typeEnd'),
   },
   // Alerts to Discord (discord-alerts.js): { enabled, events, webhook: masked, set, lastError }.
   // The URL is only ever sent, never read back.
+  // Scheduled prompts (desktop/prompt-schedules.js; Settings › Agents, 155): main checks every
+  // field again, the window only asks.
+  schedules: {
+    view: () => invoke('schedules:view'),
+    save: schedule =>
+      invoke('schedules:save', schedule && typeof schedule === 'object' ? schedule : {}),
+    enable: (id, on) => invoke('schedules:enable', String(id ?? ''), on === true),
+    remove: id => invoke('schedules:remove', String(id ?? '')),
+    runNow: id => invoke('schedules:runNow', String(id ?? '')),
+    dismissMissed: id => invoke('schedules:dismissMissed', String(id ?? '')),
+    // the Board page (157): an idea started as a thread now, or put on a day once
+    startPrompt: job => invoke('schedules:startPrompt', job && typeof job === 'object' ? job : {}),
+    createOnce: job => invoke('schedules:createOnce', job && typeof job === 'object' ? job : {}),
+    onState: listen('schedules:state'),
+  },
+  // The Board page's ideas, per project folder (desktop/board-ideas.js).
+  board: {
+    ideas: folder => invoke('board:ideas', String(folder ?? '')),
+    addIdea: (folder, text) => invoke('board:addIdea', String(folder ?? ''), String(text ?? '')),
+    removeIdea: (folder, id) => invoke('board:removeIdea', String(folder ?? ''), String(id ?? '')),
+  },
   discordAlerts: {
     get: () => invoke('discordAlerts:get'),
     set: (patch = {}) =>

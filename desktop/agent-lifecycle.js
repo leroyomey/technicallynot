@@ -100,6 +100,33 @@ let send = () => {},
   root = () => '';
 
 const file = () => path.join(app.getPath('userData'), 'agent-lifecycle.json');
+
+// The marks of remotely started panels and conversations have a second home of their own, written
+// with every save once one exists, so losing agent-lifecycle.json does not lose them (and with
+// them the "Ask first" hold of a resume). It is written from the first mark on, so no such file
+// means no conversation here was ever started from another computer.
+const marksFile = () => path.join(app.getPath('userData'), 'remote-marks.json');
+
+// A third, tiny sign that marks were ever kept here, written once and never rewritten (not JSON, so
+// a tool that clears settings files does not take it with the other two). With it, or with
+// `marksUsed` in agent-lifecycle.json, a missing marks file is a lost one, not "never used".
+const seenFile = () => path.join(app.getPath('userData'), 'remote-marks.seen');
+let seenWritten = false;
+
+// True while that second read waits: the marks file is not written meanwhile, so marks it may still
+// hold are never overwritten before they were read.
+let marksPending = false;
+
+// A marks file that is there but cannot be read for a moment (another program holds it) is read
+// once more this long after the start; only a second failure is saved as lost.
+const MARKS_RETRY_MS = 2000;
+
+// When the marks file was there and could not be read (0: it was read, or never existed). For
+// LOST_MS after that, a resume of a conversation the lifecycle cannot place is refused
+// (remote-actions.js startOptions), so a conversation started from another computer is never
+// resumed without its "Ask first" hold. Saved in the marks file, so a restart does not end it.
+let marksLost = 0;
+const LOST_MS = 30 * 24 * 60 * 60 * 1000;
 const clip = (s, n) => {
   s = String(s || '').trim();
   return s.length > n ? s.slice(0, n) + '…' : s;
@@ -150,7 +177,8 @@ function resultPrints(t) {
 // ---------- Persistence: instances (live ones come back as hidden, a restarted pane re-attaches by
 // its context id) and recent tasks ----------
 let saveTimer = null,
-  lastWrite = 0;
+  lastWrite = 0,
+  marksSeen = false;
 
 // never write sooner than this after the previous write, even under constant change
 const MIN_GAP_MS = 2000;
@@ -164,6 +192,27 @@ function write(sync) {
   const keep = [...instances.values()]
     .filter(n => n.state !== 'cleared')
     .map(n => ({ ...n, paneId: '', revived: false }));
+  const marks = {
+    ...(remotePanes.size ? { remote: Object.fromEntries(remotePanes) } : null),
+    ...(remoteConvs.size ? { remoteConvs: [...remoteConvs] } : null),
+    ...(remoteStarts.length ? { remoteStarts } : null),
+    ...(marksLost ? { lost: marksLost } : null),
+  };
+  try {
+    // Once it is there, the marks file is kept up to date, also when it holds nothing.
+    if (!marksPending && (Object.keys(marks).length || marksSeen)) {
+      marksSeen = true;
+      const marksText = JSON.stringify(marks);
+      if (sync) sessionStore.writeAtomic(marksFile(), marksText);
+      else sessionStore.writeAtomicLater(marksFile(), marksText);
+    }
+  } catch {}
+  try {
+    if (marksSeen && !seenWritten) {
+      if (!fs.existsSync(seenFile())) fs.writeFileSync(seenFile(), new Date().toISOString());
+      seenWritten = true;
+    }
+  } catch {}
   try {
     const text = JSON.stringify(
       {
@@ -172,6 +221,7 @@ function write(sync) {
         ...(remotePanes.size ? { remote: Object.fromEntries(remotePanes) } : null),
         ...(remoteConvs.size ? { remoteConvs: [...remoteConvs] } : null),
         ...(remoteStarts.length ? { remoteStarts } : null),
+        ...(marksSeen ? { marksUsed: true } : null),
       },
       null,
       1
@@ -208,6 +258,83 @@ function flushSaves() {
   }
 }
 
+const fileThere = p => {
+  try {
+    return fs.existsSync(p);
+  } catch {
+    return false;
+  }
+};
+
+// The marks file → { marks, problem }. problem: '' read, 'missing' no file, 'busy' a read error
+// that may pass, 'broken' there but not marks.
+function readMarks() {
+  let raw;
+  try {
+    raw = fs.readFileSync(marksFile(), 'utf8');
+  } catch (error) {
+    return { marks: {}, problem: error.code === 'ENOENT' ? 'missing' : 'busy' };
+  }
+  try {
+    const marks = JSON.parse(raw);
+    if (!marks || typeof marks !== 'object' || Array.isArray(marks)) throw new Error('not marks');
+    marksSeen = true;
+    const lostAgo = Date.now() - marks.lost;
+    if (Number.isFinite(marks.lost) && lostAgo >= 0 && lostAgo < LOST_MS) marksLost = marks.lost;
+    return { marks, problem: '' };
+  } catch {
+    return { marks: {}, problem: 'broken' };
+  }
+}
+
+// Adds the marks and the day's starts of each record (agent-lifecycle.json, the marks file) to
+// those already held; the same start may be in both.
+function takeMarks(records) {
+  for (const from of records) {
+    if (from.remote && typeof from.remote === 'object' && !Array.isArray(from.remote))
+      for (const id of Object.keys(from.remote).slice(0, 50))
+        remotePanes.set(id, Number(from.remote[id]) || 0);
+    if (Array.isArray(from.remoteConvs))
+      for (const e of from.remoteConvs.slice(-REMOTE_CONVS))
+        if (Array.isArray(e) && typeof e[0] === 'string' && e[0] && typeof e[1] === 'string')
+          remoteConvs.set(e[0], e[1]);
+  }
+  const starts = [remoteStarts];
+  for (const from of records) if (Array.isArray(from.remoteStarts)) starts.push(from.remoteStarts);
+  const startKeys = new Set();
+  remoteStarts = starts
+    .flat()
+    .filter(e => {
+      const key = JSON.stringify(e);
+      if (startKeys.has(key)) return false;
+      startKeys.add(key);
+      return true;
+    })
+    .filter(
+      e =>
+        Array.isArray(e) &&
+        typeof e[0] === 'string' &&
+        Number.isFinite(e[1]) &&
+        Date.now() - e[1] < DAY_MS &&
+        e[1] <= Date.now()
+    )
+    .slice(-200);
+}
+
+// The second read of a marks file that could not be read at the start. Read now: its marks are
+// added and the hold ends (unless the file itself holds a loss). Still not: the loss is saved.
+function rereadMarks() {
+  marksPending = false;
+  const read = readMarks();
+  if (!read.problem) {
+    const savedLoss = read.marks.lost;
+    const lostAgo = Date.now() - savedLoss;
+    if (!(Number.isFinite(savedLoss) && lostAgo >= 0 && lostAgo < LOST_MS)) marksLost = 0;
+    takeMarks([read.marks]);
+  }
+  save();
+}
+
 function load() {
   let data = {};
   try {
@@ -226,27 +353,32 @@ function load() {
       tasks.set(t.id, t);
       if (t.result) prints.set(t.id, resultPrints(t));
     }
-  if (data.remote && typeof data.remote === 'object' && !Array.isArray(data.remote))
-    for (const id of Object.keys(data.remote).slice(0, 50))
-      remotePanes.set(id, Number(data.remote[id]) || 0);
-  if (Array.isArray(data.remoteConvs))
-    for (const e of data.remoteConvs.slice(-REMOTE_CONVS))
-      if (Array.isArray(e) && typeof e[0] === 'string' && e[0] && typeof e[1] === 'string')
-        remoteConvs.set(e[0], e[1]);
+
+  // The marks' own file: its marks are added to those of agent-lifecycle.json. One that is there
+  // and cannot be read leaves the marks unknown (marksLost), and so does one that is missing while
+  // agent-lifecycle.json or the tiny remote-marks.seen says marks were kept here (both files lost).
+  // A read error that may pass (another program holding the file) is held in memory only and read
+  // once more a little later; a parse failure or a second failure is saved as lost.
+  const read = readMarks();
+  if (read.problem === 'missing' && (data.marksUsed === true || fileThere(seenFile())))
+    read.problem = 'lost';
+  if (read.problem && read.problem !== 'missing') {
+    marksSeen = true;
+    marksLost = Date.now();
+  }
+  takeMarks([data, read.marks]);
 
   // marked before the list above existed
   for (const n of instances.values()) if (n.remote === true) markRemote(n);
-  if (Array.isArray(data.remoteStarts))
-    remoteStarts = data.remoteStarts
-      .filter(
-        e =>
-          Array.isArray(e) &&
-          typeof e[0] === 'string' &&
-          Number.isFinite(e[1]) &&
-          Date.now() - e[1] < DAY_MS &&
-          e[1] <= Date.now()
-      )
-      .slice(-200);
+
+  if (read.problem === 'busy') {
+    marksPending = true;
+    const retry = setTimeout(rereadMarks, MARKS_RETRY_MS);
+    retry.unref?.();
+  }
+
+  // a loss is written into the marks file at once, so it outlives this run
+  else if (marksLost) save();
   sweep();
 }
 
@@ -739,9 +871,12 @@ function revive(instanceId) {
 
 // `tnai new` (agent-mesh.js): a fresh conversation in a new pane, owned by the user like the
 // composer's New agent, so a lead CLI gets the delegation tools (agent-graph.js).
-function spawn(agent, pick = null, name = '') {
+function spawn(agent, pick = null, name = '', extra = {}) {
   // pick: { model, effort } already checked by model-pick.js; name: the user's own name for it
-  // (--name)
+  // (--name). extra.schedule: a scheduled prompt's run (prompt-schedules.js): its start mark, which
+  // pty:start (main.js) turns into the schedule's project folder, and that folder, which the window
+  // reads the project's access level for. Such a thread is the user's own, not started by an agent.
+  const scheduled = extra && typeof extra.schedule === 'string' ? extra : null;
   const requestId = crypto.randomUUID();
   return new Promise(resolve => {
     const timer = setTimeout(() => {
@@ -753,8 +888,10 @@ function spawn(agent, pick = null, name = '') {
       reviving.delete(requestId);
       resolve(result || { error: 'No answer' });
     });
-    spawning.add(requestId);
-    setTimeout(() => spawning.delete(requestId), 10 * 60000).unref?.();
+    if (!scheduled) {
+      spawning.add(requestId);
+      setTimeout(() => spawning.delete(requestId), 10 * 60000).unref?.();
+    }
     send('lifecycle:revive', {
       requestId,
       instanceId: '',
@@ -768,6 +905,9 @@ function spawn(agent, pick = null, name = '') {
       ownedByUser: true,
       model: pick?.model || '',
       effort: pick?.effort || '',
+      ...(scheduled
+        ? { schedule: scheduled.schedule, folder: String(scheduled.folder || '') }
+        : null),
     });
   });
 }
@@ -783,9 +923,16 @@ function spawn(agent, pick = null, name = '') {
 // the answer is an error or never came, so whatever opened can be stopped. Once answered the mark
 // is gone and a late start with it takes nothing. kept: what the asker wants back when the mark is
 // taken (remote-actions.js: who asked, and their guard, asked again before the process starts).
-function spawnRemote(agent, kept = {}) {
+// resumeId (item 44, a paired computer's Resume of a past conversation here): the conversation the
+// new panel continues. The mark is then taken only by a start that resumes exactly that one.
+function spawnRemote(agent, kept = {}, resumeId = '') {
   const requestId = crypto.randomUUID(),
-    ask = { agent: String(agent), paneId: '', kept: kept && typeof kept === 'object' ? kept : {} };
+    ask = {
+      agent: String(agent),
+      paneId: '',
+      kept: kept && typeof kept === 'object' ? kept : {},
+      contextId: typeof resumeId === 'string' ? resumeId : '',
+    };
   remoteAsks.set(requestId, ask);
   return new Promise(resolve => {
     const finish = result => {
@@ -809,7 +956,7 @@ function spawnRemote(agent, kept = {}) {
       name: '',
       chosen: false,
       agent: ask.agent,
-      contextId: '',
+      contextId: ask.contextId,
       accountId: '',
       customAgentId: '',
       ownedByUser: true,
@@ -823,10 +970,13 @@ function spawnRemote(agent, kept = {}) {
 // `pty:start` arrived with a mark: once, for the request it belongs to, the CLI that request named
 // and a panel id, it gives back what the asker left with the request (an object); in every other
 // case false.
-function remoteTake(mark, paneId, agent) {
+function remoteTake(mark, paneId, agent, resumeId = '') {
   const ask = typeof mark === 'string' ? remoteAsks.get(mark) : null;
   if (!ask || ask.paneId || ask.agent !== agent || typeof paneId !== 'string' || !paneId)
     return false;
+
+  // a fresh start takes no conversation, a Resume only the one it asked for (item 44)
+  if ((ask.contextId || '') !== (typeof resumeId === 'string' ? resumeId : '')) return false;
   ask.paneId = paneId;
   remotePanes.set(paneId, Date.now());
   save();
@@ -973,11 +1123,23 @@ module.exports = {
   remoteStarted: paneId => remotePanes.has(paneId),
   remoteResumed,
   remoteOpen: () => remotePanes.size,
+  // When the marks could not be read, else 0 (marksLost above).
+  remoteMarksLost: () => (marksLost && Date.now() - marksLost < LOST_MS ? marksLost : 0),
+  // True when this computer still knows whether that conversation was started from another
+  // computer: it is marked, or it is an instance the lifecycle holds (whose own mark was read from
+  // agent-lifecycle.json).
+  remoteKnown: (agent, contextId) =>
+    !!contextId &&
+    (remoteConversation(agent, contextId) ||
+      [...instances.values()].some(n => n.agent === agent && n.contextId === contextId)),
   remoteStartNoted,
   remoteStartsToday,
   // Started by another agent with `tnai new` (not by the user); kept across restarts in
   // agent-lifecycle.json.
   startedByAgent: paneId => !!instances.get(byPane.get(paneId))?.startedByAgent,
+  // True while the agent in that panel works on a task (prompt-schedules.js: no second run of a
+  // schedule while its last thread still works).
+  busy: paneId => instances.get(byPane.get(paneId))?.state === 'active',
   // How many of them have an open panel with a running CLI, plus the ones still starting (the limit
   // on `tnai new`, agent-graph.js refuseNew).
   startedOpen: () =>

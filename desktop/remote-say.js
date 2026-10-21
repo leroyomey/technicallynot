@@ -98,6 +98,7 @@ function createSay({
   cut = () => {},
   now = Date.now,
   timers = { set: (fn, ms) => setTimeout(fn, ms), clear: h => clearTimeout(h) },
+  runStart = 0,
 } = {}) {
   const ask = (fn, ...a) => {
     try {
@@ -125,6 +126,10 @@ function createSay({
 
   // panelId → when the app last wrote something that is not a person's into it
   const agentAt = new Map();
+
+  // panelId → the chain a newer message replaced while one of its turns still ran: that turn keeps
+  // its ten minutes until it ends (the second message used to take the interrupt away)
+  const carried = new Map();
 
   // panelId → [{ text, at }]: prompts a person sent that panel and no turn has reported yet (keyed,
   // line). A turn is that person's
@@ -197,7 +202,17 @@ function createSay({
   // exactly what is written.
   function wrote(panelId, { peerId, n, out }) {
     const old = pending.get(panelId);
-    if (old) drop(panelId, old);
+    if (old) {
+      pending.delete(panelId);
+
+      // a turn of the old chain that runs keeps its interrupt; one carried before has
+      // ended, since only one turn runs in a panel
+      if (old.cur && old.timer) {
+        const before = carried.get(panelId);
+        if (before) untime(before);
+        carried.set(panelId, old);
+      } else untime(old);
+    }
     const g = chain(peerId, n, out);
     pending.set(panelId, g);
     tags.delete(panelId);
@@ -224,6 +239,10 @@ function createSay({
   // that was left in the input and is
   // sent later by this computer's user still carries the mark, and a turn that begins with the mark
   // starts a chain by itself.)
+  // With no turn since, the record is NOT dropped: a CLI may have taken the words
+  // late and report them without the mark. It waits for its turn as after any write, and after
+  // PENDING_MS stays in the chain tied to nothing. Fails closed: the panel keeps the limits for
+  // every turn nobody typed until it is closed.
   function unwrote(panelId, n) {
     const g = pending.get(panelId);
     if (!g || g.n !== String(n) || g.started) return;
@@ -231,14 +250,15 @@ function createSay({
       untime(g);
       g.started = g.seen = g.after;
       g.cur = 0;
-    } else drop(panelId, g);
+    }
   }
 
   // The app's own interrupt for the chain's running turn. Only that turn: one that ended meanwhile
   // is left alone.
   function cutNow(panelId, g, cur) {
     g.timer = null;
-    if (pending.get(panelId) !== g || g.cur !== cur) return;
+    const live = () => pending.get(panelId) === g || carried.get(panelId) === g;
+    if (!live() || g.cur !== cur) return;
     Promise.resolve()
       .then(() => interrupt(panelId))
       .then(
@@ -246,7 +266,7 @@ function createSay({
         () => 'failed'
       )
       .then(word => {
-        if (pending.get(panelId) !== g || g.cur !== cur) return;
+        if (!live() || g.cur !== cur) return;
 
         // only the first turn's answer is told to anyone
         if ((word === 'done' || word === 'unsent') && cur === g.started) g.cut = true;
@@ -422,6 +442,21 @@ function createSay({
       // once for each turn: is it a prompt a person sent?
       if (fresh) starts.get(panelId).person = judge(panelId, promptAt(panelId, t));
     }
+
+    // The running turn of a chain a newer message replaced: its end ends its interrupt; a
+    // cleared record or another turn means it is over.
+    const old = carried.get(panelId);
+    if (old) {
+      if (real && t.startedAt === old.cur) {
+        if (t.endedAt) {
+          ended(panelId, old, t);
+          carried.delete(panelId);
+        }
+        return;
+      }
+      untime(old);
+      carried.delete(panelId);
+    }
     let g = pending.get(panelId);
     if (!g) {
       // A turn that begins with the mark and that nothing was noted for (the text was left in the
@@ -501,6 +536,15 @@ function createSay({
     // started, while it runs: between turns and in every turn nobody typed
     // the panel is in the chain.
     if (g) return !(g.free && running && t.startedAt === g.free);
+
+    // Chains live in memory only. On Windows every panel's process tree ends
+    // with the app however it ends (process-guard.js), so none outlives the chain it was in. A
+    // process older than this app run (runStart, when main.js gives it) outlived a quit elsewhere
+    // and may carry a chain the restart forgot: it is held as in one. Today `proc` lists only
+    // processes this run started, so this cannot fire: it is a guard for a future re-attach of
+    // panels across a restart, not a live case.
+    const p = runStart > 0 ? ask(proc, panelId) : null;
+    if (p && p.running === true && p.startedAt > 0 && p.startedAt < runStart) return true;
     return running && typeof t.prompt === 'string' && SAY_MARK.test(t.prompt);
   }
 
@@ -516,6 +560,9 @@ function createSay({
   function forget(panelId) {
     const g = pending.get(panelId);
     if (g) drop(panelId, g);
+    const old = carried.get(panelId);
+    if (old) untime(old);
+    carried.delete(panelId);
     raised.delete(panelId);
     modes.delete(panelId);
     tags.delete(panelId);

@@ -12,3 +12,8 @@ class_name = "RelayHub"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RelayHub"]
+
+[vars]
+# The phone app's own page address (comma list of exact origins such as https://app.example.com).
+# Only that page may read the relay's answers from a browser; never "*". Empty: no web page may.
+PHONE_ORIGINS = ""

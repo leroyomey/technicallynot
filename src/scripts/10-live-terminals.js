@@ -722,11 +722,44 @@
     const fit = new window.FitAddon.FitAddon();
     term.loadAddon(fit);
     views.add(term);
+
+    // A minimized window runs no animation frames, so a frame still waiting for a closed terminal
+    // kept all of it (its rows, page elements and listeners) until the window was shown again
+    // (test thread-stream-leak). Frames asked for a terminal go through tnaiFrame and are cancelled
+    // when it is disposed, and so is the one xterm 6's selection asks for on every buffer switch
+    // and never cancels itself.
+    const frames = new Set();
+    term.tnaiFrame = callback => {
+      const id = requestAnimationFrame(time => {
+        frames.delete(id);
+        callback(time);
+      });
+      frames.add(id);
+      return id;
+    };
     const disposeTerm = term.dispose.bind(term);
     term.dispose = () => {
       views.delete(term);
       term.tnaiDisposed = true;
+      frames.forEach(id => cancelAnimationFrame(id));
+      frames.clear();
+      const selection = term._core?._selectionService; // xterm 6.0 internals
+      if (selection?._refreshAnimationFrame) {
+        selection._coreBrowserService?.window?.cancelAnimationFrame(
+          selection._refreshAnimationFrame
+        );
+        selection._refreshAnimationFrame = undefined;
+      }
+
+      // xterm's scrollbar fades out (a CSS transition) as it is disposed, and a transition still
+      // running is held by the page's timeline until a frame is drawn, and the terminal with it.
+      // The scrollbar parts are taken out of the terminal, so that a fade still held reaches only
+      // them, not the terminal through their parent.
+      const scrollbarParts = [
+        ...(term.element?.querySelectorAll('.xterm-scrollable-element > *') || []),
+      ];
       disposeTerm();
+      scrollbarParts.forEach(part => part.remove());
     };
     term.onResize(({ cols, rows }) => {
       const box = term.element?.parentElement;
@@ -1439,6 +1472,25 @@
       const r = scan(true);
       return r.sure ? r.count : scan(false).count;
     };
+
+    // A redraw that starts in the middle of a row xterm re-wrapped: the row above the dropped
+    // repeat holds older words and then the redraw's first words, so it stayed with those words
+    // shown twice. The row is cut at the first word from which the rest of the row, followed by the
+    // repeat dropped below it, is found in the redraw; the older words before it stay.
+    const cutRowEnd = (b, y, text, shown) => {
+      const line = b.getLine(y),
+        len = line?.translateToString(true).length || 0;
+      for (let x = 1; x < len; x++) {
+        const before = line.getCell(x - 1)?.getChars() || ' ',
+          here = line.getCell(x)?.getChars() || ' ';
+        if (before !== ' ' || here === ' ') continue;
+        const end = line.translateToString(true, x).replace(DUP_SKIP, '');
+        if (!end || !shown.includes(end + text)) continue;
+        if (!line.translateToString(true, 0, x).replace(DUP_SKIP, '')) return;
+        term._core.buffer.lines.get(y).replaceCells(x, term.cols, term._core.buffer.getNullCell());
+        return;
+      }
+    };
     const dropRepeats = () => {
       const r = redrawn,
         b = term.buffer.active;
@@ -1475,7 +1527,7 @@
           if (text.length < DUP_MIN) {
             count = all.size ? tableAbove(b, top, cells, all) : 0;
             from = top - count;
-          }
+          } else cutRowEnd(b, from - 1, text, shown);
           if (!count) break;
           core.lines.splice(from, count);
           core.ybase -= count;
@@ -1500,11 +1552,60 @@
 
       // a redraw still open (resizes in a row, replay) is settled at the size it was drawn for
       endRedraw();
-      redrawn = { at: Date.now(), phase: 0, erased: 0, mark: null, tries: 0 };
+
+      // Made lower, xterm takes away the rows under the cursor first and keeps the top rows on
+      // screen, while Claude Code redraws as if those top rows had gone into the scrollback: it
+      // erases them and does not print them again, so they were lost until the panel grew again.
+      // `kept` is how many top rows that is; they go into the scrollback when the redraw starts
+      // erasing (CSI K below). Only for a change of rows on the normal screen.
+      const b = term.buffer.active,
+        lower = cols === term.cols && b.type === 'normal' ? term.rows - rows : 0,
+        kept = Math.max(0, Math.min(lower, term.rows - 1 - b.cursorY));
+      redrawn = { at: Date.now(), phase: 0, erased: 0, mark: null, tries: 0, kept };
+    };
+
+    // Moves the top `count` screen rows into the scrollback (a scroll up, as a newline at the
+    // bottom row would) and puts the redraw's mark on the new top row. Internals, guarded.
+    const keepTopRows = (r, count) => {
+      try {
+        const core = term._core,
+          b = core.buffer;
+        if (b.scrollTop !== 0 || b.scrollBottom !== term.rows - 1) return;
+        const erase = core._inputHandler._eraseAttrData();
+        for (let i = 0; i < count; i++) core._bufferService.scroll(erase);
+        r.mark?.dispose();
+        r.mark = term.registerMarker(-term.buffer.active.cursorY);
+      } catch {}
+    };
+
+    // Cursor Agent answers a change of width the other way round: it erases every row from the
+    // bottom up (CSI 2K, then CSI 1A, read from its saved output 2026-10-15) and prints its whole
+    // output again from the top row; the rows already in the scrollback stayed above as a second
+    // copy. A run of erases one row above the other that reaches the top row with every row of
+    // the screen erased is that redraw: the mark goes on the top row and the repeat is dropped as
+    // for Claude Code's. Codex and OpenCode draw on the alternate screen, which has no scrollback.
+    const eraseUpward = r => {
+      const y = term.buffer.active.cursorY,
+        up = r.up;
+      if (Date.now() - r.at > DUP_MS || term.buffer.active.type !== 'normal') {
+        endRedraw();
+        return false;
+      }
+      if (up && (y === up.row - 1 || (y === 0 && up.row === 0))) {
+        up.row = y;
+        up.count++;
+      } else r.up = { row: y, count: 1 };
+      if (y === 0 && r.up.count >= term.rows - 1) {
+        r.mark = term.registerMarker(0);
+        r.up = null;
+        r.phase = r.mark ? 2 : 0;
+      }
+      return false;
     };
     term.parser.registerCsiHandler({ final: 'H' }, params => {
       const r = redrawn;
       if (!r || r.phase === 2 || (params[0] || 1) !== 1 || (params[1] || 1) !== 1) return false;
+      r.up = null;
       if (r.phase === 1 && r.erased >= term.rows - 1) {
         r.phase = 2;
         return false;
@@ -1520,7 +1621,15 @@
       return false;
     });
     term.parser.registerCsiHandler({ final: 'K' }, params => {
-      if (redrawn?.phase === 1 && params[0] === 2) redrawn.erased++;
+      const r = redrawn;
+      if (!r || params[0] !== 2) return false;
+      if (r.phase === 0) return eraseUpward(r);
+      if (r.phase !== 1) return false;
+
+      // the first erase of the top row: the redraw is Claude Code's, keep the rows it skips
+      if (!r.erased && r.kept && term.buffer.active.cursorY === 0) keepTopRows(r, r.kept);
+      r.kept = 0;
+      r.erased++;
       return false;
     });
 
@@ -2031,6 +2140,7 @@
     if (!detectedAt) return detected.size ? '' : 'Checking…';
     const info = detected.get(id);
     if (!info) return 'No connector yet';
+    if (info.incomplete) return 'Not installed completely';
     return info.installed ? '' : 'Not installed';
   }
 
@@ -2293,6 +2403,29 @@
         '\x1b[0m'
     );
 
+  // A CLI on PATH whose install did not finish is never shown as working.
+  // The same texts as INCOMPLETE in desktop/agent-registry.js, where detection reads them from the
+  // CLI's `--version`; here they are caught in a panel's first output, for a CLI that broke after
+  // detection ran.
+  const INCOMPLETE =
+    /native binary not installed|not compatible with the version of Windows|not a valid (Win32 )?application|Cannot find module|spawn UNKNOWN|Cannot create process, error code: (193|216)\b/i;
+
+  // Says in the panel's own note (and view.error, the thread's blocked reason) that the install is
+  // incomplete, with the reinstall command as one PS> line of its own, never wrapped.
+  function sayIncomplete(view) {
+    const repair = detected.get(view.agent)?.repair || '';
+    view.error = view.agent + ' is not installed completely, so it does not start.';
+    say(
+      view,
+      view.error + (repair ? ' Reinstall it in PowerShell, then press Enter:' : ''),
+      'error'
+    );
+    if (repair)
+      view.term.writeln(
+        '\x1b[31m' + (window.tnaiPlatform?.win === false ? '$ ' : 'PS> ') + repair + '\x1b[0m'
+      );
+  }
+
   // Notes under a restored session go below its last drawn line in plain colors: a full-screen CLI
   // (Claude Code's input box, OpenCode) leaves its cursor mid-screen and its own background set, so
   // notes written there landed on top of its screen. A session that ends
@@ -2349,7 +2482,8 @@
     if (!term?.element || term.tnaiDisposed || view.drawCheck) return;
     view.drawCheck = setTimeout(() => {
       view.drawCheck = 0;
-      requestAnimationFrame(() => {
+      if (term.tnaiDisposed) return;
+      term.tnaiFrame(() => {
         if (term.tnaiDisposed || !term.element?.isConnected) return;
         const box = term.element.getBoundingClientRect();
         if (!(box.width > 0 && box.height > 0)) return;
@@ -2566,6 +2700,12 @@
       await detect();
       if (live.get(view.paneId) !== view) return; // the panel closed meanwhile
       const info = detected.get(view.agent);
+      if (info?.incomplete) {
+        view.running = false;
+        sayIncomplete(view);
+        paint(view);
+        return;
+      }
       if (!info?.installed) {
         view.running = false;
         view.error = view.agent + ' is not installed.';
@@ -2656,6 +2796,9 @@
       // starts that one panel at "Ask first" (desktop/remote-actions.js startOptions). No other
       // start carries the field.
       ...(opts.remote ? { remote: String(opts.remote) } : null),
+      // A scheduled prompt's run (47 reopen): its start mark, which main turns into the schedule's
+      // project folder (desktop/prompt-schedules.js takeFolder).
+      ...(opts.schedule ? { schedule: String(opts.schedule) } : null),
     });
 
     // closed while starting: main started nothing for it (pty-service cancel generation)
@@ -2666,6 +2809,12 @@
       paint(view);
       return;
     } // stopped while starting
+    if (!result.ok && INCOMPLETE.test(result.error?.message || '')) {
+      view.running = false;
+      sayIncomplete(view);
+      paint(view);
+      return;
+    }
     if (!result.ok) {
       view.running = false;
       view.error = result.error.message;
@@ -2689,6 +2838,9 @@
       resumeFailed: false,
     });
     view.startTheme = startTheme;
+
+    // main's word on a panel another computer started: it runs at "Ask first" (46 shows that)
+    window.TnaiLaunchPrefs?.held?.(view.paneId, result.value.held === true);
     view.term.options.minimumContrastRatio = contrastFor(view.paneId);
 
     // a visible extra view (33) re-offers its own size on the change below
@@ -2699,8 +2851,12 @@
     paint(view);
     notify();
 
-    // the ready PowerShell may just have been taken: the next one starts in a moment
-    if (view.agent === 'Terminal') warmShell();
+    // the ready PowerShell may just have been taken (or this was the session's first PowerShell):
+    // the next one starts in a moment
+    if (view.agent === 'Terminal') {
+      shellUsed = true;
+      warmShell();
+    }
 
     // Its process ended before this reply arrived (it failed at once): handled now that the pid is
     // known.
@@ -3162,7 +3318,7 @@
     let scrollRead = 0;
     term.onScroll(() => {
       if (!scrollRead && view.boxShown !== false)
-        scrollRead = requestAnimationFrame(() => {
+        scrollRead = term.tnaiFrame(() => {
           scrollRead = 0;
           if (view.boxShown !== false && !(view.pinFrames > 0)) {
             const b = term.buffer.active,
@@ -3320,6 +3476,7 @@
         ownedByUser: request.ownedByUser === true,
         askTrust: request.askTrust === true,
         ...(request.remote ? { remote: request.remote } : null),
+        ...(request.schedule ? { schedule: request.schedule } : null),
       }).then(() =>
         request.resolve({ ok: view.running === true, paneId, error: view.error || undefined })
       );
@@ -3378,7 +3535,8 @@
     };
     live.set(paneId, view);
     sessionsCache = null;
-    say(view, view.error + ' Install it, then press Enter to try again.', 'error');
+    if (detected.get(agent)?.incomplete) sayIncomplete(view);
+    else say(view, view.error + ' Install it, then press Enter to try again.', 'error');
     term.onData(data => {
       if (data === '\r') recheckBlocked(view, true);
     });
@@ -3421,25 +3579,32 @@
 
   // Theme switch (32): recolor open terminals in place.
   // A PowerShell kept ready for the next PowerShell panel (main pty:warm; Settings › General).
-  // Asked a moment after anything that changes which one is needed: the app
-  // loaded, a PowerShell panel took the ready one, the project, the theme or the setting changed.
+  // Asked a moment after anything that changes which one is needed: a PowerShell panel started
+  // (and may have taken the ready one), the project, the theme or the setting changed.
   // Main keeps the one it has when it still fits, and ends it when the setting is off.
+  // None is started while the app loads: creating its console held the
+  // main process for up to 0.9 s at start. The first PowerShell of each app session starts at
+  // its normal speed; from then on one is kept ready, so every later one opens at once.
   let warmTimer = 0;
+  let shellUsed = false;
   const warmShell = (wait = 1500) => {
     if (!native.pty.warm || !window.tnaiPlatform?.win) return;
+    const on = window.TnaiSettings?.get?.('readyShell') !== false;
+
+    // Turning it off is always passed on; starting one waits for the first PowerShell.
+    if (on && !shellUsed) return;
     clearTimeout(warmTimer);
     warmTimer = setTimeout(
       () =>
         native.pty
           .warm({
-            on: window.TnaiSettings?.get?.('readyShell') !== false,
+            on,
             theme: window.TnaiTheme?.resolved?.() || 'light',
           })
           .catch(() => {}),
       wait
     );
   };
-  warmShell(4000); // after the app's own start work
   window.addEventListener('tnai:project-changed', () => warmShell());
   window.addEventListener('tnai:theme-changed', () => warmShell());
   window.addEventListener('tnai:setting-changed', event => {
@@ -3499,6 +3664,10 @@
     view.pinFrames = frames;
     view.pinMark = mark;
     if (holding) return;
+
+    // through the terminal's own frames, cancelled when it is disposed (createTerm)
+    const nextFrame = () =>
+      view.term?.tnaiFrame ? view.term.tnaiFrame(step) : requestAnimationFrame(step);
     const step = () => {
       if (!(view.pinFrames > 0)) return; // the user scrolls (letGo in mount)
       const t = view.term,
@@ -3512,13 +3681,13 @@
         if (m) t.scrollToLine(want);
         else t.scrollToBottom();
       }
-      if (--view.pinFrames > 0) requestAnimationFrame(step);
+      if (--view.pinFrames > 0) nextFrame();
       else {
         view.pinMark = null;
         view.atBottom = !t.element?.isConnected || b.viewportY >= b.baseY;
       }
     };
-    requestAnimationFrame(step);
+    nextFrame();
   }
 
   function keepBottom(view, resize) {
@@ -3696,6 +3865,11 @@
     if (!view) return;
     if (!view.replaying) view.term?.write(data);
     const now = Date.now();
+
+    // An agent's first 15 s of output, read by handleExit when it ends at once (an install that
+    // did not finish, INCOMPLETE).
+    if (view.agent !== 'Terminal' && now - (view.startedAt || 0) < 15000)
+      view.firstOutput = ((view.firstOutput || '') + data).slice(-4096);
     if (data.includes(SIZE_NOTE)) view.resizedAt = now;
     if (now - Math.max(view.resizedAt || 0, view.reportedAt || 0) < RESIZE_REDRAW_MS) return;
     if (idleChrome(data)) return;
@@ -3749,6 +3923,24 @@
     // a process this pane already replaced (restart)
     if (pid && view.pid && pid !== view.pid) return;
     const wasLogin = view.mode === 'login';
+
+    // Ended within seconds, its first output saying the install did not finish: said as that in
+    // the panel and the thread (sayIncomplete, with the reinstall line), not as a plain exit, and
+    // detection runs again so the pickers stop offering the CLI. Read only at an early exit, so a
+    // resumed conversation that merely quotes such a text is never taken for one.
+    const firstOutput = view.firstOutput || '';
+    view.firstOutput = '';
+    if (exitCode && Date.now() - (view.startedAt || 0) < 15000 && INCOMPLETE.test(firstOutput)) {
+      view.running = false;
+      view.exitCode = exitCode;
+      sayIncomplete(view);
+      paint(view);
+      notify();
+      detect(true)
+        .then(notify)
+        .catch(() => {});
+      return;
+    }
 
     // A resume that ended with an error within seconds (the CLI refused the conversation): not
     // tried again by the next start (resumeOf).

@@ -356,6 +356,65 @@
   min-height: 0;
   padding: 4px var(--inset) 0;
 }
+
+/* A command that opened a menu of the CLI itself (161): one line above the CLI screen, with the
+   way back to the conversation. */
+.tnt-term-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  padding: 6px 6px 6px 12px;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-accent-soft);
+  color: var(--pg-text-2);
+  font-size: 13px;
+}
+.tnt-term-bar[hidden] {
+  display: none;
+}
+.tnt-term-bar-icon {
+  flex: none;
+  display: grid;
+  color: var(--pg-text-2);
+}
+.tnt-term-bar-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tnt-term-bar-text b {
+  color: var(--pg-text);
+  font: 600 12.5px var(--pg-mono);
+}
+.tnt-term-bar-back {
+  flex: none;
+  height: 28px;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text);
+  font: 500 12.5px/1 var(--pg-sans);
+  cursor: pointer;
+}
+.tnt-term-bar-back:hover {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+}
+.tnt-term-bar-back:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+@media (pointer: coarse) {
+  .tnt-term-bar-back {
+    height: 44px;
+  }
+}
 /* Under a stopped session's saved screen (120 showSaved): one line that says what it is. */
 .tnt-term-note {
   flex: none;

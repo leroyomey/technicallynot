@@ -66,7 +66,8 @@ for (const sw of [
 // Desktop tests (tools/desktop-check) that exercise the mic button set TN_VOICE_FAKE: a fake mic (a
 // beep) instead of a real device. Not use-fake-ui-for-media-stream: it grants every request before
 // the permission handler below sees it, so the test couldn't check it.
-if (process.env.TN_VOICE_FAKE) app.commandLine.appendSwitch('use-fake-device-for-media-stream');
+if (require('./build-info').voiceFake())
+  app.commandLine.appendSwitch('use-fake-device-for-media-stream');
 app.on('second-instance', () => {
   if (!win || win.isDestroyed()) return;
   if (win.isMinimized()) win.restore();
@@ -85,6 +86,7 @@ require('./opencode-link').init({
 const watch = require('./watch-service');
 const accounts = require('./account-service');
 const skills = require('./skill-service');
+const cliCommands = require('./cli-commands');
 const hooks = require('./agent-hooks');
 const fileLocks = require('./file-locks');
 const turns = require('./agent-turns');
@@ -192,18 +194,27 @@ const isLocalUrl = url => {
 // keyboard asks with win.focus(), which makes the window able to take it first.
 const quietTestWindow = inSelfTest;
 
-// Where a test's window opens: on the smallest monitor, so it does not cover what the person at
-// the PC is doing on the large one. Choosing "the monitor that is not the main one" is wrong: on a
-// PC where Windows calls the small screen the main one, it puts every test on the screen in use.
-// With one monitor only, Windows places it as usual. Returns { x, y } or nothing.
+// Where a test's or a dev copy's window opens: off the main monitor, so it does not cover what the
+// person at the PC is doing. With one monitor only, Windows places it as usual. Returns { x, y }
+// or nothing.
 function testWindowPlace() {
-  if (!quietTestWindow) return {};
+  // A dev copy (npm start) opens there too: agents start it to try their changes, and the user
+  // wants that off the main monitor as well (2026-10-21).
+  const devCopy = !app.isPackaged && !release && !inSelfTest;
+  if (!quietTestWindow && !devCopy) return {};
   const { screen } = require('electron');
   const displays = screen.getAllDisplays();
   if (displays.length < 2) return {};
 
+  // Never the main (primary) monitor, where the user works: the user, 2026-10-21, twice: "I'm
+  // working on the first monitor so I need it done on the second one" and "pass off to whoever's
+  // currently doing dev copy test on my main monitor to do it on the second monitor". On this PC
+  // the main one is the 1920 × 1080 screen and tests go to the 3440 × 1440 one. Not by the mouse
+  // pointer: the user moves it between screens, and tests then landed on the main one.
+  const main = screen.getPrimaryDisplay().id;
+  const others = displays.filter(display => display.id !== main);
   const area = display => display.workArea.width * display.workArea.height;
-  const smallest = displays.reduce((least, display) =>
+  const smallest = others.reduce((least, display) =>
     area(display) < area(least) ? display : least
   );
 
@@ -287,6 +298,10 @@ function createWindow() {
   // scale once loaded.
   win.webContents.on('did-navigate', fitZoom);
   win.webContents.on('did-finish-load', fitZoom);
+
+  // Scheduled prompts begin once the window can open threads (prompt-schedules.js), a few seconds
+  // after the first load, once per app run.
+  win.webContents.once('did-finish-load', () => setTimeout(startSchedules, 5000).unref?.());
   let shown = false;
   const reveal = () => {
     if (shown || !win || win.isDestroyed()) return;
@@ -602,6 +617,15 @@ turns.init(
         /* the rules' error is not the turn's */
       }
 
+      // A turn started or ended: the agent's conversation counter grows, so a paired computer
+      // that shows it asks for what is new.
+      try {
+        if (payload && payload.paneId)
+          remote.turnChanged(String(payload.paneId), payload.startedAt, !!payload.endedAt);
+      } catch {
+        /* connecting is off */
+      }
+
       // first: a turn that a message from another computer started is known before its report is
       // made
       remoteAgents();
@@ -703,6 +727,7 @@ links.init({
         aborted: 'was interrupted before it sent you an answer',
         error: 'stopped on an error (for example a usage limit) before it sent you an answer',
         exit: 'stopped (its process ended) before it sent you an answer',
+        cleared: 'had its conversation cleared (/clear) before it sent you an answer',
       }[reason] || 'finished its task without sending you an answer';
     appNotice(
       waiter,
@@ -808,6 +833,37 @@ const resumable = new Set(
     .map(c => c.id)
 );
 lifecycle.init(toWindow, { canResume: agent => resumable.has(agent), root: () => files.root() });
+
+// Scheduled prompts (prompt-schedules.js): a saved prompt starts a new thread at set times while
+// the app is open, through the same start as `tnai new` (lifecycle.spawn), in the schedule's
+// project.
+const promptSchedules = require('./prompt-schedules').createSchedules({
+  dir: app.getPath('userData'),
+  send: toWindow,
+  projects: async () =>
+    ((await files.projects()).value?.projects || []).filter(p => !p.missing).map(p => p.path),
+  openProject: () => files.root(),
+  agents: () => agents.ids(),
+  resolveModel: (agent, model) => require('./model-pick').resolve(agent, model, ''),
+  spawn: (agent, pick, name, extra) => lifecycle.spawn(agent, pick, name, extra),
+  submit: (paneId, text, options) => promptSubmit.submit(paneId, text, options),
+  note: (paneId, info) => lifecycle.note(paneId, info),
+  busy: paneId => lifecycle.busy(paneId),
+});
+let schedulesStarted = false;
+
+function startSchedules() {
+  if (schedulesStarted) return;
+  schedulesStarted = true;
+  promptSchedules.start();
+
+  // A wake from sleep looks again at once: a time that passed while asleep becomes a missed mark.
+  try {
+    require('electron').powerMonitor.on('resume', () => promptSchedules.check());
+  } catch {
+    // no power events on this system
+  }
+}
 const agentContext = require('./agent-context');
 agentContext.init(toWindow, { ptys, root: () => files.root() });
 gitService.init(
@@ -884,6 +940,39 @@ handle('lifecycle:state', () => lifecycle.state());
 handle('lifecycle:origin', text => lifecycle.origin(String(text || '').slice(0, 200000)));
 handle('lifecycle:note', (paneId, info) => lifecycle.note(String(paneId || ''), info || {}));
 handle('lifecycle:revive', instanceId => lifecycle.revive(String(instanceId || '')));
+
+// Settings › Agents › Scheduled prompts (155): the list, save, on/off, remove, Run now, and the
+// missed mark the bell showed.
+handle('schedules:view', () => promptSchedules.view());
+handle('schedules:save', schedule => promptSchedules.save(schedule));
+handle('schedules:enable', (id, on) => promptSchedules.setEnabled(String(id || ''), on === true));
+handle('schedules:remove', id => promptSchedules.remove(String(id || '')));
+handle('schedules:runNow', id => promptSchedules.runNow(String(id || '')));
+handle('schedules:dismissMissed', id => promptSchedules.dismissMissed(String(id || '')));
+
+// The Board page (157): a Board idea dragged into Working starts a thread on it, an idea dropped
+// on a day becomes a one-time schedule, and the ideas themselves (board-ideas.js), per project.
+handle('schedules:startPrompt', job => promptSchedules.startPrompt(job));
+handle('schedules:createOnce', job => promptSchedules.createOnce(job));
+const boardIdeas = require('./board-ideas').createIdeas(app.getPath('userData'));
+
+// Only a folder that is one of the user's projects has ideas: the window never names another.
+const isProject = async folder =>
+  ((await files.projects()).value?.projects || []).some(
+    project =>
+      path.resolve(project.path).toLowerCase() === path.resolve(String(folder || '')).toLowerCase()
+  );
+handle('board:ideas', async folder =>
+  (await isProject(folder)) ? { ok: true, ideas: boardIdeas.list(folder) } : { ok: true, ideas: [] }
+);
+handle('board:addIdea', async (folder, words) =>
+  (await isProject(folder))
+    ? boardIdeas.add(folder, words)
+    : { ok: false, error: 'Open a project first.' }
+);
+handle('board:removeIdea', async (folder, id) =>
+  (await isProject(folder)) ? boardIdeas.remove(folder, id) : { ok: false, error: 'Not a project.' }
+);
 
 // The list of past conversations of the open project (thread-list.js; Agents page, 117): read on
 // this PC only when the window asks.
@@ -962,6 +1051,9 @@ handle('agents:detect', async () => {
     ready = graph.LEADS.filter(id =>
       all.some(a => a && a.id === id && a.installed === true && a.loggedIn !== false)
     );
+
+  // kept for a paired computer's read-only "its CLIs" (remote-features.js): never a new check
+  remoteDetected = all;
   if (ready.join() !== remoteClis.join()) {
     remoteClis = ready;
     remote.controlChanged();
@@ -1048,6 +1140,13 @@ handle(
       .filter(c => c.skills)
       .map(c => c.id),
   }))
+);
+
+// The "/" and "$" list above the prompt box (160): the open thread's CLI commands, the user's
+// and the project's command files and the skills that CLI reads (cli-commands.js).
+handle(
+  'cliCommands:list',
+  settle(cli => cliCommands.list(String(cli || ''), files.root()))
 );
 handle(
   'skills:import',
@@ -1252,6 +1351,48 @@ handle('fs:write', (rel, bytes, lane) => {
 // git:changed).
 handle('git:status', () => gitService.status());
 
+// What an agent changed in its own folder, for the Changes section of a thread's Details
+// (branch-changes.js): branch, lines, commits, uncommitted files, the pull request and its checks.
+const branchChanges = require('./branch-changes').createBranchChanges({
+  git: gitService.internal.git,
+  parseStatus: gitService.internal.parseStatus,
+  numstat: gitService.internal.numstat,
+});
+handle(
+  'git:changes',
+  gitService.internal.wrap(folder => branchChanges.read(String(folder || '')))
+);
+
+// A thread's own folder (its worktree when it has one), from its panel; never from the window.
+const threadFolder = paneId => {
+  const pane = ptys.list().find(session => session.paneId === String(paneId || ''));
+  return pane && pane.cwd ? String(pane.cwd) : '';
+};
+
+// Watch and merge a thread's pull request (pr-watch.js, the thread actions menu and `tnai pr`).
+// While watched, GitHub is asked every 3 minutes (a labeled poll: GitHub cannot push to a desktop
+// app); a change goes to the window, which tells the thread's agent (154).
+const prWatch = require('./pr-watch').createPrWatch({
+  cwdOf: threadFolder,
+  deliver: (paneId, event) => toWindow('prwatch:event', { paneId, ...event }),
+  changed: () => toWindow('prwatch:changed', prWatch.list()),
+});
+handle('prwatch:list', () => prWatch.list());
+handle('prwatch:watch', (paneId, number) => prWatch.watch(String(paneId || ''), number));
+handle('prwatch:unwatch', paneId => prWatch.unwatch(String(paneId || '')));
+handle('prwatch:merge', (paneId, number) => prWatch.merge(String(paneId || ''), number));
+onQuit(() => prWatch.stop());
+
+// "Open in VS Code / Cursor / File Explorer" for a thread's folder (open-in-editor.js, 137).
+const editors = require('./open-in-editor').createOpenInEditor({
+  openPath: folder => shell.openPath(folder),
+});
+handle('editors:list', () => editors.list());
+handle(
+  'editors:open',
+  settle((id, paneId) => editors.open(String(id || ''), threadFolder(paneId)))
+);
+
 // Per-agent worktrees in userData/worktrees (worktree-service.js); pty:start below starts a pane in
 // its worktree.
 const worktrees = require('./worktree-service');
@@ -1375,6 +1516,7 @@ function trustFolder(agent, cwd, accountDir, who, paneId) {
   return ask;
 }
 const ptyCleanup = paneId => {
+  prWatch.forget(paneId);
   teams.forget(paneId);
   links.forget(paneId);
   cancelTrustAsks(paneId);
@@ -1410,6 +1552,25 @@ handle(
     if (options && typeof options === 'object' && 'askOnResume' in options) {
       const { askOnResume, ...rest } = options;
       options = rest;
+    }
+
+    // A scheduled prompt's run (prompt-schedules.js) carries a start mark: taken once here, it
+    // gives the schedule's own project folder, so its thread starts there even while another
+    // project is open. The window never sends a folder itself.
+    let scheduledFolder = '';
+    if (options && typeof options === 'object' && 'schedule' in options) {
+      const { schedule, ...rest } = options;
+      options = rest;
+      scheduledFolder = promptSchedules.takeFolder(schedule, options.agent);
+
+      // A stale or unknown mark starts nothing (never in the open project by mistake), and a
+      // scheduled run never takes the prompt box's "Own worktree" choice.
+      if (!scheduledFolder)
+        return {
+          ok: false,
+          error: { message: 'This scheduled run is no longer waiting to start.', code: 'refused' },
+        };
+      options = { ...options, worktree: false };
     }
     const asked = remoteActions.startOptions(options);
     if (asked.error) return { ok: false, error: { message: asked.error, code: 'refused' } };
@@ -1461,7 +1622,8 @@ handle(
       // its lead's lane), else the project folder.
       const tree = options.mode === 'login' ? null : await span.rest(paneTree(options, sub));
       gone();
-      const cwd = tree?.cwd || files.root() || undefined;
+      const projectRoot = scheduledFolder || files.root();
+      const cwd = tree?.cwd || projectRoot || undefined;
 
       // Every pane but a sign-in joins the agent mesh (agent-mesh.js): shims on PATH + its token.
       // A plain PowerShell panel in the folder and theme the ready PowerShell was started for takes
@@ -1498,7 +1660,7 @@ handle(
       const paneEnv =
         options.mode === 'login' || adopted
           ? null
-          : await span.rest(mesh.prepare(options.paneId, cwd, files.root()));
+          : await span.rest(mesh.prepare(options.paneId, cwd, projectRoot));
       gone();
 
       // Claude Code reads it from a file (--append-system-prompt-file): as an argument it outgrew
@@ -1567,7 +1729,7 @@ handle(
 
       // a graph node's lane (no-op for other panes)
       if (options.mode !== 'login') graph.setLane(info.paneId, tree?.branch || '');
-      lifecycle.started({ ...options, sessionId: info.sessionId, cwd, root: files.root() });
+      lifecycle.started({ ...options, sessionId: info.sessionId, cwd, root: projectRoot });
 
       // several computers, full control: another process runs in this panel now
       remotePanelChanged();
@@ -1581,7 +1743,11 @@ handle(
         graph.LEADS.includes(options.agent)
       )
         graph.rootStarted(info.paneId, options.customAgentId || '', options.name, options.agent);
-      return { ok: true, value: { ...info, worktree: tree ? tree.branch : '' } };
+
+      // held: this panel runs at "Ask first" because another computer started it (startOptions
+      // above), whatever level the window sent; the composer's Access pill shows that level for it.
+      const held = options.mode !== 'login' && lifecycle.remoteStarted(options.paneId) === true;
+      return { ok: true, value: { ...info, worktree: tree ? tree.branch : '', held } };
     } catch (error) {
       // Closed while starting: undo what the preparation registered (hooks, mesh token, sub-agent
       // node) for a pane that no longer exists.
@@ -1726,6 +1892,8 @@ mesh.init(
     remoteSay: o => sayAcross(o),
     /* agents message agents on a paired computer: remote-say.js, sayAcross below */
     context: agentContext,
+    // `tnai pr watch | unwatch` (pr-watch.js)
+    prWatch,
     peers: require('./agent-peers'),
     registry: agents,
     skills,
@@ -1794,6 +1962,11 @@ const remote = remoteService.createRemoteService({
     },
   },
   deviceName: () => userAuth.thisDevice().name,
+
+  // review 23, L8: the window is left out of screen capture while the "Add a phone" code shows
+  shield: on => {
+    if (win && !win.isDestroyed()) win.setContentProtection(on === true);
+  },
   backend: remoteService.storageBackend({
     safeStorage: require('electron').safeStorage,
     file: path.join(app.getPath('userData'), 'tnai-remote.bin'),
@@ -1835,10 +2008,88 @@ const remote = remoteService.createRemoteService({
   remoteStartsToday: id => lifecycle.remoteStartsToday(id),
   remoteStartTaken: id => lifecycle.remoteStartNoted(id), // 20 a day, kept across a restart
   cancelHeld: key => attention.cancelRemote(String(key)),
+  // Late join: a paired computer reads a running agent's conversation. The record is the panel's
+  // own saved session; the read never watches the file or tells this computer's window.
+  // Another computer's files and Live preview (remote-browse.js, remote-preview.js, plan items 42
+  // and 43), for a computer whose full-control switch is on here. The files are the open
+  // project's, through the app's own confined calls (fs-service.js: inside the project after links
+  // are followed; a save is a temp file renamed over the file), and the locks are file-locks.js's.
+  browseFiles: {
+    list: rel => files.list(rel),
+    stat: rel => files.stat(rel),
+    read: (rel, start, end) => files.read(rel, start, end),
+    write: (rel, bytes) => files.write(rel, bytes),
+    locks: () => (files.root() ? fileLocks.list(files.root()) : []),
+
+    // The real path relative to the project's real folder: fs-service confines it, and
+    // realpathSync.native follows links and junctions and gives long names (GIT~1 is .git), so the
+    // secret and save rules see what is really reached (review of item 47, M1). null outside.
+    real: async rel => {
+      const root = files.root();
+      if (!root) return null;
+      const realPath = require('fs').realpathSync.native;
+      return require('./remote-browse').realRelative(
+        realPath(root),
+        realPath(files.resolve(rel)),
+        require('path')
+      );
+    },
+  },
+  // The picture is taken by the same path as `tnai shot preview`: the window names the tab shown
+  // now, preview-shot.js loads that page in a hidden window of its own, and the PNG it wrote is
+  // made a small JPEG here and removed.
+  previewTake: async () => {
+    const shown = await mesh.activePreview(files.root() || '');
+    if (!shown) return null;
+    const got = await require('./preview-shot').take({
+      url: shown.url,
+      width: shown.w,
+      height: shown.h,
+      preset: shown.preset,
+    });
+    try {
+      const image = require('electron').nativeImage.createFromPath(got.file);
+      const full = image.getSize().width;
+      const fit = await require('./remote-preview').fitPicture(async (width, quality) =>
+        image.resize({ width: Math.min(width, full), quality: 'good' }).toJPEG(quality)
+      );
+      return fit ? { url: shown.url, bytes: fit.bytes, w: got.width, h: got.height } : undefined;
+    } finally {
+      require('fs').rm(got.file, { force: true }, () => {});
+    }
+  },
+  logRecord: paneId => require('./session-store').get(String(paneId || '')),
+  readLog: (record, where) => require('./thread-log').readForPeer(record, where),
+  // Thread controls and past conversations for a paired computer (plan item 44): the real actions
+  // (remoteThread below, remote-actions.js `resume`), this computer's list of past conversations
+  // and the record of one of its rows (thread-list.js).
+  threadAct: o => remoteThread.run(o),
+  resumePast: o => remoteActions.resume(o),
+  pastList: () => threadList.list(),
+  pastRecord: key => threadList.recordFor(key),
+  // This week's thread features for a paired computer (remote-features.js, plan item 45), read
+  // only: an agent's branch facts (branch-changes.js, its panel's own folder), the skills its CLI
+  // reads in the open project (cli-commands.js), and the CLIs' sign-in and plan usage from the
+  // window's last check and plan-limits.js. remote-features.js shapes each before it leaves.
+  featureRead: {
+    changes: panelId => {
+      const pane = ptys.list().find(session => session.paneId === panelId);
+      return pane && pane.cwd ? branchChanges.read(String(pane.cwd)) : null;
+    },
+    skills: (panelId, cli) => cliCommands.list(String(cli || ''), files.root()),
+    clis: async () =>
+      require('./remote-features').clisFrom(
+        remoteDetected,
+        await require('./plan-limits').forAccounts(await accounts.list(), false, false)
+      ),
+  },
   // The live view. While a paired computer watches one of this
   // computer's agent panels, the window is asked to hand over that panel's screen as plain rows
   // (src/scripts/115-remote-view.js; they come back on `remote:screenRows`).
   watchScreen: (paneId, on) => toWindow('remote:screen', { paneId, on: on === true }),
+  // Typing from a paired computer (remote-type.js): one batch of keys into a watched panel,
+  // through the same terminal write as a key typed here (remote-actions.js `type`).
+  typeKeys: o => remoteActions.type(o),
   // Agents message agents. sayTarget: may that panel take a
   // message from another computer's agent now. sayHere: the write, with the mark and the fixed line
   // this computer makes; remote-say.js is told what was written.
@@ -1928,6 +2179,13 @@ const remote = remoteService.createRemoteService({
       remote.gitChanged();
     },
     view: model => toWindow('remote:view', model),
+
+    // Another computer's files and Live preview (items 42 and 43). files: what this computer holds
+    // of that computer's files or picture changed ({ peer, preview? }; the window reads it with
+    // its own call). landed: another computer saved a file here ({ kind, by, path }), said where it
+    // lands.
+    files: info => toWindow('remote:files', info),
+    landed: info => toWindow('remote:landed', info),
   },
 });
 
@@ -1976,6 +2234,56 @@ const remoteActions = require('./remote-actions').createRemoteActions({
       n = nodes.find(x => x.id === nodeId);
     return n?.parentPaneId ? [n.parentPaneId, leadPane(nodes, n.parentPaneId)] : [];
   },
+  // A Resume from another computer (plan item 44) is refused while that conversation already runs
+  // in a panel here.
+  inPanel: (cli, conversationId) =>
+    ptys
+      .list()
+      .some(
+        s =>
+          s.agent === cli &&
+          s.running === true &&
+          require('./session-store').get(String(s.paneId))?.sessionId === conversationId
+      ),
+});
+
+// Thread controls from a paired computer (plan item 44): the real rename, close and model or
+// effort switch behind remote-control.js doThread. A rename and a close go through the window's
+// own paths (47: the same as `tnai rename` and a close), each said where it lands; a model or
+// effort is the CLI's own command, typed as the composer types it (46 `slash`), only while
+// nothing else is half-way in that input.
+const remoteThread = require('./remote-thread').createThreadActions({
+  agentNow: id => remoteActions.agentNow(id),
+  busy: id => turns.busy(id) === true,
+  blocked: id => !!attention.blocker(id) || !!attention.hasDraft(id),
+
+  // review 23, L5: a remote rename never takes a name another agent here has
+  taken: (paneId, name) => {
+    const wanted = String(name).toLowerCase();
+    return ptys
+      .list()
+      .some(s => s.paneId !== paneId && mesh.nameOf(s.paneId).toLowerCase() === wanted);
+  },
+  rename: async (paneId, name, from) => {
+    toWindow('lifecycle:rename', { paneId, name, by: from });
+    for (let i = 0; i < 20 && mesh.nameOf(paneId) !== name; i++)
+      await new Promise(resolve => setTimeout(resolve, 100));
+    return mesh.nameOf(paneId) === name;
+  },
+  close: async (paneId, from) => {
+    toWindow('lifecycle:close', {
+      paneId,
+      name: mesh.nameOf(paneId) || '',
+      reason: 'remote',
+      by: from,
+    });
+    const gone = () => !ptys.list().some(s => s.paneId === paneId && s.running === true);
+    for (let i = 0; i < 50 && !gone(); i++) await new Promise(resolve => setTimeout(resolve, 100));
+    return gone();
+  },
+  type: (paneId, text, agent) =>
+    promptSubmit.submit(String(paneId), String(text), { paste: false, agent }),
+  noted: (paneId, text) => toWindow('remote:note', { paneId, text }),
 });
 
 // The lead CLIs that are installed and not signed out here, as the window's last check of them
@@ -1983,6 +2291,10 @@ const remoteActions = require('./remote-actions').createRemoteActions({
 // list. Empty until the window has checked; a CLI that would start its sign-in flow is never
 // offered.
 let remoteClis = [];
+
+// The window's last check of every CLI (`agents:detect`), for a paired computer that may see
+// details here: which are installed and signed in (remote-features.js). Empty until checked.
+let remoteDetected = [];
 
 // A panel's process, conversation or name changed: its ticket ends (change 5), so the agent list
 // goes again, and a prompt still held for the process that was there is dropped now and not at its
@@ -2117,6 +2429,28 @@ async function remoteAgents() {
       task: mesh.taskOf(p.paneId),
       p: keyOf.get(p.project) || '',
     }));
+
+    // Typing (remote-type.js): the plain terminals the app runs (Your terminal, PowerShell
+    // threads), marked `term`, so a computer that may type here can watch and type into them; the
+    // remote API lists them only for such a computer. A sign-in run and a panel already listed as
+    // an agent (a CLI typed by hand) are left out.
+    const listed = new Set(remoteAgentList.map(a => a.id));
+    for (const s of ptys.list()) {
+      if (!s.running || s.agent !== 'Terminal' || s.mode !== 'run' || listed.has(s.paneId))
+        continue;
+      if (s.cwd && !keyOf.has(s.cwd))
+        keyOf.set(s.cwd, await remoteKeys.keyOf(s.cwd).catch(() => ''));
+      remoteAgentList.push({
+        id: s.paneId,
+        name: mesh.nameOf(s.paneId) || (shellChoice.has(s.paneId) ? 'Your terminal' : 'PowerShell'),
+        cli: 'Terminal',
+        status: 'idle',
+        since: 0,
+        task: '',
+        p: s.cwd ? keyOf.get(s.cwd) || '' : '',
+        term: true,
+      });
+    }
     remote.agentsChanged();
   } catch {
     /* the list stays as it was */
@@ -2151,6 +2485,8 @@ const sayRules = require('./remote-say').createSay({
   cut: (paneId, at, tag) => {
     sayCut(paneId, at, tag).catch(() => {});
   },
+  // a panel process older than this app run is held as in a chain (chains live in memory only)
+  runStart: Date.now(),
 });
 
 // A turn stopped that way has no answer of its own, so no report: this one says what happened, for
@@ -2503,6 +2839,40 @@ handle('threadLog:read', (paneId, from, sub) =>
   )
 );
 
+// A page or picture the agent wrote or showed, as a card in its conversation (159,
+// thread-designs.js). The window names a panel and the path its conversation wrote; the file is
+// found and checked here.
+const threadDesigns = require('./thread-designs');
+threadDesigns.init({
+  sessionOf: paneId => require('./session-store').get(String(paneId || '')),
+  worktreeOf: paneId => worktrees.forPane(String(paneId || '')),
+  projectRoot: () => files.root() || '',
+  nameOf: paneId => mesh.nameOf(String(paneId || '')),
+  toWindow,
+});
+handle('designs:page', (paneId, file, options) =>
+  threadDesigns.page(String(paneId || ''), String(file), { shot: options?.shot !== false })
+);
+handle('designs:picture', (paneId, file, options) =>
+  threadDesigns.picture(String(paneId || ''), String(file), {
+    since: Number(options?.since) || 0,
+    large: options?.large === true,
+    check: options?.check === true,
+  })
+);
+handle('designs:preview', (paneId, file) =>
+  threadDesigns.preview(String(paneId || ''), String(file))
+);
+
+// What an agent made in a task (what-it-made.js, src/scripts/170-what-it-made.js): a file's
+// check, a document's or data file's text, and whether a local site answers.
+const whatItMade = require('./what-it-made');
+handle('made:check', (paneId, file, since) =>
+  whatItMade.check(String(paneId || ''), String(file || ''), { since: Number(since) || 0 })
+);
+handle('made:text', (paneId, file) => whatItMade.text(String(paneId || ''), String(file || '')));
+handle('made:alive', url => whatItMade.alive(String(url || '')));
+
 // The thread layout's shared files (123): which files of the open project are held, and by whom.
 // Changes are pushed as `locks:changed` (file-locks.js).
 handle('locks:list', () => fileLocks.list(files.root()));
@@ -2698,15 +3068,22 @@ ipc.on('pty:write', (_event, paneId, data) => {
 
 // A prompt or slash command from the window (composer, /compact, context upkeep): typed in, Enter,
 // and whether the CLI took it (prompt-submit.js).
-handle('pty:submit', (paneId, text, opts) => {
+handle('pty:submit', async (paneId, text, opts) => {
   lifecycle.typed(paneId);
-  return promptSubmit.submit(String(paneId), String(text ?? ''), {
+  const result = await promptSubmit.submit(String(paneId), String(text ?? ''), {
     paste: opts?.paste !== false,
     agent: typeof opts?.agent === 'string' ? opts.agent : undefined,
     holdIfBlocked: opts?.holdIfBlocked === true,
     holdIfBusy: opts?.holdIfBusy === true,
     person: true /* sent from this computer's own window (prompt-submit.js `person`) */,
   });
+
+  // A slash command the CLI took (/compact, /init …): the thread shows that it runs until the
+  // CLI is done with it (158-cli-busy.js). Any CLI, so it is told here, not by a CLI's hooks.
+  const command = /^\s*(\/[\w:-]+)/.exec(String(text ?? ''))?.[1];
+  if (command && result?.ok && result.state === 'sent')
+    hooks.note(String(paneId), { kind: 'command', command: command.toLowerCase() });
+  return result;
 });
 ipc.on('pty:resize', (_event, paneId, cols, rows) => ptys.resize(paneId, cols, rows));
 
@@ -2747,6 +3124,9 @@ onQuit(() => {
       service.stop();
     } catch {}
 });
+
+// The right-press menu on text in every window: Copy, Cut, Paste, Select all.
+require('./text-menu').watch(app);
 
 // Installed (production) and release builds: developer tools stay closed in every Technically Not
 // window (F12, Ctrl+Shift+I, the menu). Runs from source keep them.

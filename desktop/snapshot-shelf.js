@@ -49,12 +49,13 @@ function thumbnail(image) {
     .toDataURL();
 }
 
-// A finished picture, as the PNG that went to the clipboard.
-function addPicture(png, width, height) {
+// A finished picture, as the PNG that went to the clipboard. `image` is that picture already
+// decoded, when the caller has it: decoding the PNG again held the main thread (stalls.log).
+function addPicture(png, width, height, image = null) {
   if (!Buffer.isBuffer(png) || !png.length) return;
   let thumb = '';
   try {
-    thumb = thumbnail(nativeImage.createFromBuffer(png));
+    thumb = thumbnail(image || nativeImage.createFromBuffer(png));
   } catch {}
   pictures.unshift({ id: newId(), at: Date.now(), png, width, height, thumb });
   pictures = pictures.slice(0, MAX);

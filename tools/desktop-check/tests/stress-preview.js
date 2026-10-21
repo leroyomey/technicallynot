@@ -197,9 +197,9 @@ try {
 
   // ---- 2. 20 saves in 5 s (the dev server reloads the page per change, debounced 30 ms).
   await wait(800);
-  const reloadsBefore = +(await fetch(origin + '/__reloads')
-    .then(r => r.text())
-    .catch(() => 'NaN'));
+  const reloads = async () =>
+    +((await window.TnaiTest.request(origin + '/__reloads')).text || 'NaN');
+  const reloadsBefore = await reloads();
   const tEdit = performance.now();
   const lastEditWall = await main('edits', 20, 250);
   const tLastEdit = performance.now() - (Date.now() - lastEditWall);
@@ -216,10 +216,7 @@ try {
     50
   );
   const editLoads = loadsOf('/', tEdit),
-    reloadsSent =
-      +(await fetch(origin + '/__reloads')
-        .then(r => r.text())
-        .catch(() => 'NaN')) - reloadsBefore;
+    reloadsSent = (await reloads()) - reloadsBefore;
   const editNums = {
     saves: 20,
     serverReloads: reloadsSent,

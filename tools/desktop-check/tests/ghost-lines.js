@@ -201,4 +201,61 @@ for (const entry of PAGES) {
   report('Page ' + entry.name, document.querySelector('.layout'));
   await shot('ghost-page-' + entry.name);
 }
+
+// The Live preview page's Pop out icon sits in the middle of its button (it was 1 px low): the
+// drawn icon's center against the button's center, both ways, within half a pixel.
+await window.TnaiLivePreviewPage?.open?.();
+await wait(600);
+const popButton = document.querySelector('.lpp-tabrow .lpp-pop');
+const popIcon = popButton?.querySelector('svg');
+if (popButton && popIcon) {
+  const outer = popButton.getBoundingClientRect(),
+    inner = popIcon.getBoundingClientRect();
+  const dx = inner.left + inner.width / 2 - (outer.left + outer.width / 2),
+    dy = inner.top + inner.height / 2 - (outer.top + outer.height / 2);
+  check(
+    Math.abs(dx) <= 0.5 && Math.abs(dy) <= 0.5,
+    'Pop out icon centered in its button (off by ' +
+      Math.round(dx * 10) / 10 +
+      ' px across, ' +
+      Math.round(dy * 10) / 10 +
+      ' px down)'
+  );
+
+  // "On top" belongs to the popped-out window only: hidden while the preview is docked.
+  const onTop = document.querySelector('.lpp-tabrow .lpp-ontop');
+  check(!onTop || !onTop.offsetParent, '"On top" hidden while the preview is docked');
+} else log.push('note Pop out button not shown (no native panels), not measured');
+
+// The lowest rows of Settings › Agents › Context (scrolled to the end) and the Live preview page,
+// in Dark and in Light: a faint line can show in one look only.
+// The box on the Settings page that scrolls the most (the open section's list).
+const scroller = root =>
+  [root, ...root.querySelectorAll('*')]
+    .filter(
+      e =>
+        e.offsetParent &&
+        e.scrollHeight > e.clientHeight + 4 &&
+        /auto|scroll/.test(getComputedStyle(e).overflowY)
+    )
+    .sort((a, b) => b.scrollHeight - b.clientHeight - (a.scrollHeight - a.clientHeight))[0];
+for (const look of ['dark', 'light']) {
+  window.TnaiTheme?.set(look);
+  window.TnaiRoute('settings');
+  window.TnaiSettings.open('agents');
+  await wait(400);
+  document.getElementById('saTab-context')?.click();
+  await wait(450);
+  const list = scroller(page);
+  if (list) list.scrollTop = list.scrollHeight;
+  else log.push('note Settings › agents › context does not scroll: its end is already in view');
+  await wait(300);
+  report('Settings › agents › context, end, ' + look, page);
+  await shot('ghost-agents-context-end-' + look);
+  await window.TnaiLivePreviewPage?.open?.();
+  await wait(700);
+  report('Page live-preview, ' + look, document.querySelector('.layout'));
+  await shot('ghost-page-live-preview-' + look);
+}
+window.TnaiTheme?.set('dark');
 return { ok, log };

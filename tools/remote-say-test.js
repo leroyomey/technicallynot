@@ -378,8 +378,8 @@ function rules() {
     const kept = u.say.inSay('p1');
     u.say.unwrote('p1', 'a'.repeat(16));
     check(
-      'turn: the delivery said the CLI did not take it: no turn is waited for (only for that very message)',
-      kept === true && u.say.inSay('p1') === false && u.timers.length === 0
+      'turn: the delivery said the CLI did not take it: the record stays all the same, waiting for its turn (review 21, N-c)',
+      kept === true && u.say.inSay('p1') === true && u.timers.length === 1
     );
     const s = rules();
     s.say.wrote('p1', { peerId: 'a-1', n: '8'.repeat(16), out });
@@ -753,8 +753,66 @@ function rules() {
       const r = begin();
       r.say.unwrote('p1', N('e'));
       check(
-        'review 21, 1: a delivery that gave up with no turn begun since the write is forgotten, as before',
-        r.say.inSay('p1') === false && r.timers.length === 0
+        'review 21, N-c: a delivery that gave up with no turn begun since the write is not forgotten',
+        r.say.inSay('p1') === true
+      );
+
+      // The CLI took the words late and reports them without the mark: that turn is bound.
+      r.t += 5000;
+      r.start('p1', '');
+      await r.advance(TURN_MS + 1000);
+      check(
+        'review 21, N-c: the late turn, reported without the mark, is bound and interrupted after ten minutes',
+        r.say.inSay('p1') === true && r.interrupts.length === 1,
+        r.interrupts
+      );
+    }
+
+    // Review 21, Low 6: a second message written while a turn of the first chain runs.
+    {
+      const r = begin();
+      r.t += 100;
+      const first = r.start('p1', out);
+      r.t += 60000;
+      r.say.wrote('p1', { peerId: 'a-1', n: N('f'), out: out });
+      await r.advance(TURN_MS - 60000 + 1000);
+      check(
+        "review 21, Low 6: the first chain's running turn keeps its ten-minute interrupt after a second message",
+        r.interrupts.length === 1 && r.interrupts[0][1] === first + TURN_MS && r.say.inSay('p1'),
+        r.interrupts
+      );
+      r.end('p1');
+      const before = r.interrupts.length;
+      r.t += 1000;
+      const second = r.start('p1', out);
+      await r.advance(TURN_MS + 1000);
+      check(
+        "review 21, Low 6: once it ended, the second message's own turn is bound and interrupted too",
+        r.interrupts.length === before + 1 && r.interrupts[before][1] === second + TURN_MS,
+        r.interrupts
+      );
+    }
+
+    // Review 21, Low 8: a panel process older than this app run is held as in a chain; without
+    // runStart (the tests' default) nothing changes.
+    {
+      const old = createSay({
+        proc: () => ({ agent: 'Claude Code', running: true, startedAt: 1000 }),
+        turnOf: () => null,
+        runStart: 2000,
+      });
+      const fresh = createSay({
+        proc: () => ({ agent: 'Claude Code', running: true, startedAt: 3000 }),
+        turnOf: () => null,
+        runStart: 2000,
+      });
+      const off = createSay({
+        proc: () => ({ agent: 'Claude Code', running: true, startedAt: 1000 }),
+        turnOf: () => null,
+      });
+      check(
+        'review 21, Low 8: a process from before this app run is in a chain; a newer one and the default are not',
+        old.inSay('p1') === true && fresh.inSay('p1') === false && off.inSay('p1') === false
       );
     }
     const run = () => {

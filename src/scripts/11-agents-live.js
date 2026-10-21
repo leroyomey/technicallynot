@@ -1232,32 +1232,68 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
   }
   window.TnaiPanelConfirm = panelConfirm;
   let queued = 0;
+  let queuedFrame = 0;
+  let queuedTimer = 0;
 
   // Next frame, or 100 ms if the window isn't painting (hidden or covered windows get no animation
   // frames). Every trigger in the same frame merges into this one render. Declared before the
-  // observers below use it (render is hoisted).
+  // observers below use it (render is hoisted). Whichever of the two runs first cancels the other:
+  // a minimized window runs no frames, and each render left one waiting there.
   const schedule = () => {
     if (queued) return;
     queued = 1;
     const run = () => {
+      cancelAnimationFrame(queuedFrame);
+      clearTimeout(queuedTimer);
       if (queued) {
         queued = 0;
         render();
       }
     };
-    requestAnimationFrame(run);
-    setTimeout(run, 100);
+    queuedFrame = requestAnimationFrame(run);
+    queuedTimer = setTimeout(run, 100);
   };
 
-  // Closes the terminal pane itself (its own × on the Terminal page: removes it, 10 stops the
-  // process); asks first, inside its card, while a session runs.
+  // What is still going on in a thread, as short sentences for the close question: the agent at
+  // work, a background task, helpers that still run. Read from the thread list's own record (119),
+  // so the question says what the thread itself shows.
+  const BUSY_STATUS = new Set(['working', 'starting', 'background', 'waiting-agents']);
+
+  function stillGoing(paneId, session) {
+    if (!session?.running) return [];
+    const list = window.TnaiThreadList;
+    const thread = list?.thread?.(paneId);
+    const said = [];
+    if (thread?.status === 'working' || thread?.status === 'starting')
+      said.push('It is working on a task.');
+    if (thread?.status === 'background') said.push('It has a background task running.');
+    const helpers = (list?.kids?.(paneId) || []).filter(kid => BUSY_STATUS.has(kid.status));
+    if (helpers.length)
+      said.push(
+        helpers.length === 1
+          ? '1 of its helpers is still working.'
+          : helpers.length + ' of its helpers are still working.'
+      );
+    else if (thread?.status === 'waiting-agents') said.push('It is waiting on its helpers.');
+    return said;
+  }
+
+  // Closes a thread's terminal (its × in the thread list, Delete there, Close thread in its "..."
+  // menu): removes it, 10 stops the process. It always asks first, also for a thread that is not
+  // running, so a thread is never closed by a stray click; the question says what would be
+  // stopped.
   async function closePane(paneId, host) {
     const s = agents.sessions().find(x => x.paneId === paneId);
+    const going = stillGoing(paneId, s);
+    const body = going.length
+      ? going.join(' ') + ' Closing stops it.'
+      : s?.running
+        ? 'Its session will end.'
+        : 'It leaves the thread list.';
     if (
-      s?.running &&
       !(await panelConfirm(host, {
-        title: 'Close ' + (s.name || 'this terminal') + '?',
-        body: 'Its session will end.',
+        title: 'Close ' + (s?.name || 'this thread') + '?',
+        body,
         ok: 'Close',
         danger: true,
       }))
@@ -1596,6 +1632,22 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
     const running = sessions.filter(s => s.running),
       count = st => sessions.filter(s => s.status === st).length;
     const signedIn = agents.info().filter(a => a.loggedIn === true).length;
+
+    // The tree is the deleted Overview's, never on screen in the thread design (118 takes the
+    // Overview route to Threads): only the header line and the composer's worker line, which live
+    // outside it, are kept current. Its cards were built on every agent change for nothing (speed
+    // lead 8, docs/notes/speed-numbers.md). Should the tree be shown again, the .layout class
+    // observer below renders it in full.
+    if (!shownNow() && !window.TnaiOverviewPopout?.ids?.().length) {
+      paintHeader(running.filter(s => s.agent !== 'Terminal').length, signedIn);
+
+      // Cards built in the moment at start when the old Overview class is on (02 sets it before
+      // 118 opens Threads) go too: a later thread can take that empty panel's id.
+      for (const card of cards.values()) card.el.remove();
+      cards.clear();
+      measured.clear();
+      return;
+    }
     const metricsHtml = [
       metric('Live sessions', running.length, '', 'live'),
       metric('Working', count('working') + count('background'), 'working', 'working'),
@@ -2053,6 +2105,7 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
     title: cliTitle,
     target: () => target,
     setTarget,
+    sendFrom,
     focusPane,
     close: closePane,
     cardClick,
@@ -2546,10 +2599,28 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
     }
   }
 
-  async function deliver(forceNew, input) {
+  // A second prompt box (a thread in its own window, 162) sends the way this one does, to its own
+  // thread only: the composer's target is that thread for this one send and is put back after.
+  // The main box's attachments stay with the main box.
+  async function sendFrom(input, paneId) {
+    if (!input || !paneId || sending) return false;
+    const before = target;
+    const draft = input.value;
+    let delivered = false;
+    setTarget(paneId);
+    try {
+      delivered = await deliver(false, input, { noFiles: true });
+    } finally {
+      if (target === paneId && before !== paneId) setTarget(before);
+      if (!delivered && !input.value && draft) input.value = draft;
+    }
+    return !!delivered;
+  }
+
+  async function deliver(forceNew, input, { noFiles = false } = {}) {
     // Attachments (27) may be sent without text; they are saved first and referenced on the same
-    // line.
-    const files = window.TnaiAttachments,
+    // line. A second prompt box (sendFrom) sends without the main box's attachments.
+    const files = noFiles ? null : window.TnaiAttachments,
       text = input.value.trim();
     if (!text && !files?.count()) return;
 
@@ -2746,9 +2817,20 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
       return true;
     }
 
+    // A dialog below can stay open for any time. When the agents changed meanwhile (the busy one
+    // finished, the idle one started working), the answer was given for a route that is gone:
+    // nothing is sent, the draft stays and Enter asks again on the new route (audit app-4 #4).
+    const routeKey = x => x.kind + '|' + (x.chosen?.paneId || '');
+    const routeChanged = before => {
+      if (routeKey(route(!!forceNew)) === before) return false;
+      say('The agents changed while you chose · press Enter again to send');
+      return true;
+    };
+
     // A busy lead + a prompt with nothing in common with its task (77): the user picks sub-agent /
     // new agent / send anyway; Cancel keeps the draft.
     if (r.kind === 'fold' && window.TnaiOffTopic?.unrelated(r.busyTask, full)) {
+      const asked = routeKey(r);
       const canNew = !!window.TnaiTeam && !window.TnaiPaneLimit?.full?.();
       let pick = null;
       sending = true;
@@ -2761,6 +2843,7 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
         say('Not sent · your prompt is still in the box');
         return;
       }
+      if (routeChanged(asked)) return;
       if (pick === 'new')
         Object.assign(
           r,
@@ -2796,6 +2879,7 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
       window.TnaiOffTopic?.askCold
     ) {
       coldAsked.add(coldKey);
+      const asked = routeKey(r);
       const tokens = ctxTokens(r.chosen),
         win = ctxWindow(r.chosen),
         canNew = !!window.TnaiTeam && !r.origin && !window.TnaiPaneLimit?.full?.();
@@ -2817,6 +2901,7 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
         say('Not sent · your prompt is still in the box');
         return;
       }
+      if (routeChanged(asked)) return;
       if (pick === 'compact') {
         try {
           await window.tnaiNative.pty.submit(r.chosen.paneId, '/compact', { paste: false });
@@ -2885,14 +2970,37 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
           model: r.model.model,
           effort: r.model.effort,
         }); // 73: the new pane starts on the model the prompt named
+
+      // A new agent the user asked for (New thread, New agent, Ctrl+Enter) opens as its thread as
+      // soon as its panel exists, while the tool is still starting: waiting for it to be ready
+      // first kept the user looking at the old thread for 2 to 3 s. On any other page the page
+      // stays as it is.
+      const openNewThread = paneId => {
+        const askedForNew = r.kind === 'new' && (r.explicit || forceNew || !!newAgent);
+        if (!askedForNew || !window.TnaiThreads?.visible?.()) return;
+        if (window.TnaiThreads.show?.(paneId)) return;
+
+        // The list may not have the new agent's row yet: open it at the list's next paint (an
+        // event, no polling), and stop listening after a few seconds.
+        const onPainted = () => {
+          if (window.TnaiThreads?.show?.(paneId)) stop();
+        };
+        const stop = () => {
+          window.removeEventListener('tnai:threads-painted', onPainted);
+          clearTimeout(giveUp);
+        };
+        const giveUp = setTimeout(stop, 5000);
+        window.addEventListener('tnai:threads-painted', onPainted);
+      };
       try {
-        chosen = await window.TnaiTeam.startLead(
-          r.explicit
+        chosen = await window.TnaiTeam.startLead({
+          ...(r.explicit
             ? { here: true, agent: r.agent, accountId: r.accountId }
             : r.start
               ? { agent: r.start.agent, accountId: r.start.accountId }
-              : {}
-        );
+              : {}),
+          onOpened: openNewThread,
+        });
       } finally {
         sending = false;
         if (r.model?.model) window.TnaiLaunchPrefs?.once(r.model.agent, null);
@@ -2930,8 +3038,16 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
         target = chosen.paneId;
         lead = chosen.agent === 'Claude Code';
       }
-      if (r.full) busyNote = await budgetHandoff(r);
-      else if (r.from && r.kind === 'handoff')
+
+      // held, so a prompt sent in this gap waits instead of routing before this one has its target
+      if (r.full) {
+        sending = true;
+        try {
+          busyNote = await budgetHandoff(r);
+        } finally {
+          sending = false;
+        }
+      } else if (r.from && r.kind === 'handoff')
         busyNote =
           '[' +
           r.from.name +
@@ -3099,14 +3215,26 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
       paintRoute();
       return true;
     }
-    await window.TnaiLifecycle?.sent(chosen.paneId, r.origin);
+    sending = true;
+    try {
+      await window.TnaiLifecycle?.sent(chosen.paneId, r.origin);
+    } finally {
+      sending = false;
+    }
+
+    // A prompt that is one slash command (/model, /clear …) goes to the CLI exactly as typed: the
+    // app's mark or a note around it made it plain words for the agent, and the command never ran
+    // (found 2026-10-21 while building the prompt box's / list, 160).
+    const slashOnly = !refs && /^\/[\w:-]+(?:[ \t][^\n]*)?$/.test(String(text || '').trim());
     if (
       !agents.send(
         chosen.paneId,
-        (lead
-          ? '[TN.ai] ' + busyNote + message + leftoverNote(chosen.paneId)
-          : (r.full ? busyNote : '') + message) +
-          (window.TnaiSessionSkills?.note(chosen.paneId) || ''),
+        slashOnly
+          ? String(text).trim()
+          : (lead
+              ? '[TN.ai] ' + busyNote + message + leftoverNote(chosen.paneId)
+              : (r.full ? busyNote : '') + message) +
+              (window.TnaiSessionSkills?.note(chosen.paneId) || ''),
         { userText: text, holdIfBusy: true }
       )
     ) {
@@ -3135,11 +3263,15 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
     // one task per click: the next send follows the usual target again (now this agent)
     if (r.explicit) setNewAgent(false);
 
-    // A new agent the user asked for (New thread, New agent, Ctrl+Enter) is opened as its thread
-    // at once while the Threads page shows, so the user lands on the thread they just started.
-    // On any other page the page stays as it is.
+    // The new agent's thread was opened when its panel appeared (startLead's onOpened above); this
+    // is the fallback for a start path that does not call it.
     const askedForNew = r.kind === 'new' && (r.explicit || forceNew || !!newAgent);
-    if (askedForNew && window.TnaiThreads?.visible?.()) window.TnaiThreads.show?.(chosen.paneId);
+    if (
+      askedForNew &&
+      window.TnaiThreads?.visible?.() &&
+      window.TnaiThreads.selected?.() !== chosen.paneId
+    )
+      window.TnaiThreads.show?.(chosen.paneId);
 
     // cleared above, before the awaits: text typed or dictated since then stays
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -3322,11 +3454,30 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
     let label = r.label || '';
     if (window.TnaiLaunchPrefs && !r.explicit && !r.model && r.kind !== 'mention')
       label = (r.picked ? 'Chosen ' : 'Auto ') + label;
+
+    // Aimed at another agent than the open thread (a letter under the prompt box, a press on All
+    // threads, a spoken name): the hint says so plainly, so a question meant for the open thread's
+    // agent does not go to another one unnoticed.
+    const elsewhere = elsewhereName(r);
+    if (elsewhere) label = '→ ' + elsewhere + ', not this thread';
     setText(routeHint, label);
     routeHint.hidden = !label;
     routeHint.classList.toggle('tnai-new', !!newAgent);
+    routeHint.classList.toggle('tnai-elsewhere', !!elsewhere);
     routeHint.classList.remove('tnai-far');
     fitRouteIfChanged();
+  }
+
+  // The name of the agent the next send reaches when that is not the open thread's agent, else ''.
+  // Only on the Threads page with one thread open: "All threads" shows several, and its chosen card
+  // is the target.
+  function elsewhereName(r) {
+    const threads = window.TnaiThreads;
+    if (!r.chosen || !threads?.visible?.() || window.TnaiAllThreads?.on) return '';
+    const open = threads.selected?.() || '';
+    if (!open || r.chosen.paneId === open) return '';
+    if (!agents.sessions().some(session => session.paneId === open)) return '';
+    return r.chosen.name || 'another agent';
   }
 
   // The hint leaves whole when the row has no room for all of it, and comes back when it has (the
@@ -3359,7 +3510,11 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
       // A line that names another computer is the last to leave: the key hints give their room
       // first (07, `tnai-fit-far`). Under a thread the row is as wide as the conversation, the
       // line was taken out, and a start on another computer then needed two Sends.
-      if (cut() && routeHint.classList.contains('tnai-far')) {
+      // A line that says the prompt goes to another agent than the open thread is kept the same
+      // way.
+      const mustStay =
+        routeHint.classList.contains('tnai-far') || routeHint.classList.contains('tnai-elsewhere');
+      if (cut() && mustStay) {
         row.classList.add('tnai-fit-far');
         if (!cut()) return;
         row.classList.remove('tnai-fit-far');
@@ -3381,7 +3536,9 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
     // Last in rank: with those two out the pickers still reach into the key hint that is left (a
     // thread beside a wide side column; "Access" lay over "send"), so that one leaves whole too.
     // A picker's words can stand outside its own box, so the words are measured, not the box.
-    const keyHint = [...row.querySelectorAll(':scope>.hint')].find(
+    // The context chip (168) sits before "↵ send" and is not a key hint: it is the first thing the
+    // pickers would reach, so it counts as the edge, and the key hints leave to give it room.
+    const keyHint = [...row.querySelectorAll(':scope>.hint, :scope>.tnai-ctx-chip')].find(
       hint => hint.getClientRects().length
     );
     if (!keyHint) return;
@@ -3407,7 +3564,8 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
       '\n' +
       routeHint.hidden +
       routeHint.classList.contains('tnai-new') +
-      routeHint.classList.contains('tnai-far');
+      routeHint.classList.contains('tnai-far') +
+      routeHint.classList.contains('tnai-elsewhere');
     if (key === hintFitKey) return;
     hintFitKey = key;
     fitRouteSoon();
@@ -3554,6 +3712,9 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
     'tnai:accounts-changed',
     'tnai:turn',
     // tnai:turn (42): context size vs the budget
+
+    // another thread opened (120): the "not this thread" warning follows it
+    'tnai:thread-view',
   ].forEach(name => window.addEventListener(name, paintRouteSoon));
 
   // Agents messaging each other (`tnai send`; desktop/agent-mesh.js mesh-in / mesh-out, exact

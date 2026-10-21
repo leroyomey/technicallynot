@@ -273,6 +273,17 @@ function start(dir) {
     writing = false,
     pending = '',
     cpu = process.cpuUsage();
+
+  // The main thread's own CPU time, apart from the process's other threads (Node 23.9+). With
+  // the process's figure it tells the kinds of unnamed stall apart (2026-10-21, bug sweep group
+  // 3): both near 0 = the process did not run (the PC asleep or starved); the main thread near the
+  // blocked time = our code on it (after an `await`, or Electron's own work); the main thread near
+  // 0 with the process busy = the main thread waited on something.
+  const threadCpu = typeof process.threadCpuUsage === 'function' ? process.threadCpuUsage : null;
+  let mainCpu = threadCpu ? threadCpu() : null;
+
+  // TNAI_STALL_PROFILE=1: a CPU profile names the functions of each stall (stall-profile.js).
+  const profile = require('./stall-profile').start(dir, every, ran);
   const flush = () => {
     if (writing || !pending) return;
     writing = true;
@@ -301,12 +312,21 @@ function start(dir) {
     // starved or sleeping PC, a wait on the disk or on another process).
     const used = process.cpuUsage(cpu);
     cpu = process.cpuUsage();
+    const mainUsed = threadCpu ? threadCpu(mainCpu) : null;
+    if (threadCpu) mainCpu = threadCpu();
+    let named = '';
     if (late > STALL_MS) {
       const head =
         `[tnai stall] main process blocked ~${late} ms at ${new Date(now).toISOString()}` +
         (busy ? ` · longest named section: ${busy.name} ${busy.ms} ms` : ' · no named section') +
         ` · own CPU ${Math.round((used.user + used.system) / 1000)} ms of ${span} ms` +
+        (mainUsed
+          ? ` · main thread CPU ${Math.round((mainUsed.user + mainUsed.system) / 1000)} ms`
+          : '') +
         ` · in callbacks ${Math.round(inCallbacks)} ms`;
+
+      // read at once, before newer samples bury the stretch
+      named = profile ? profile.explain(late) : '';
 
       // Node hands over its record of a pause one step later in the same turn of the loop, so the
       // line is written there.
@@ -326,7 +346,8 @@ function start(dir) {
           (gc.total >= 20
             ? ` · garbage collection ${gc.total} ms (longest pause ${gc.longest} ms)`
             : '') +
-          heap;
+          heap +
+          (named ? '\n' + named : '');
         console.warn(line);
         if (file) {
           pending += line + '\n';
@@ -334,7 +355,9 @@ function start(dir) {
         }
       });
     } else gcSince(); // pauses of a turn that was not late are not kept for a later line
-    last = now;
+
+    // reading the profile took time of this tick: the next tick counts from its end
+    last = named ? Date.now() : now;
     busy = null;
     inCallbacks = 0;
   }, TICK_MS).unref();

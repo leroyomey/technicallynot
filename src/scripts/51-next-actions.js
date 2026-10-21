@@ -527,6 +527,17 @@ ${next.length ? `<div class="n-sec" data-k="next"><span>Next steps</span><ul cla
   function paintBell() {
     const unread = items.filter(i => !i.read && alive(i)),
       count = bell.querySelector('.n-count');
+
+    // Muted (the Mute button in the bell's panel): notifications are still collected in the
+    // panel, but the bell shows no count and does not pulse, so it stops lighting up.
+    if (prefs.muted) {
+      count.hidden = true;
+      bell.title = unread.length
+        ? 'Notifications (muted): ' + unread.length + ' new'
+        : 'Notifications (muted)';
+      nudge([]);
+      return;
+    }
     count.hidden = !unread.length;
     count.textContent = unread.length > 9 ? '9+' : String(unread.length);
 
@@ -722,7 +733,10 @@ ${n.text ? `<p class="n-ask">${rich(n.text)}</p>` : ''}${
     // the same as the card: a press in progress on the list keeps its button until it ends
     if (window.TnaiPress?.defer(pop, paintPop)) return;
     const live = items.filter(alive);
-    pop.innerHTML = `<div class="n-pophead"><b>Notifications</b><button type="button" class="n-b" data-act="done-all"${live.some(i => !i.notice && entry(i.id) && actionable(entry(i.id))) ? '' : ' disabled'} title="Mark every notification that still waits on you as done (also in the shared context)">Mark all done</button><button type="button" class="n-b" data-act="clear-all"${live.length ? '' : ' disabled'}>Clear</button></div>
+    const muteButton = prefs.muted
+      ? '<button type="button" class="n-b" data-act="mute" aria-pressed="true" title="The bell lights up again for new notifications">Unmute</button>'
+      : '<button type="button" class="n-b" data-act="mute" aria-pressed="false" title="Keep collecting notifications here, without the count and the pulse on the bell">Mute</button>';
+    pop.innerHTML = `<div class="n-pophead"><b>Notifications</b>${muteButton}<button type="button" class="n-b" data-act="done-all"${live.some(i => !i.notice && entry(i.id) && actionable(entry(i.id))) ? '' : ' disabled'} title="Mark every notification that still waits on you as done (also in the shared context)">Mark all done</button><button type="button" class="n-b" data-act="clear-all"${live.length ? '' : ' disabled'}>Clear</button></div>
 <div class="n-list">${live.length ? live.map(i => (i.notice ? noticeHtml(i, i.id === popOpenId) : i.id === popOpenId ? detailHtml(entry(i.id), 'bell') : rowHtml(entry(i.id), 'bell'))).join('') : '<p class="n-empty">Nothing new since Technically Not opened. Finished agents and updates for Technically Not and your agent CLIs show up here, newest first.</p>'}</div>`;
   }
 
@@ -1074,6 +1088,14 @@ ${n.text ? `<p class="n-ask">${rich(n.text)}</p>` : ''}${
       });
       items.splice(0);
       popOpenId = '';
+      render();
+      return;
+    }
+
+    // Mute or unmute the bell (paintBell); the choice is kept with the other bell settings.
+    if (act === 'mute') {
+      prefs.muted = !prefs.muted;
+      save();
       render();
       return;
     }

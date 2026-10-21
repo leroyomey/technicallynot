@@ -175,7 +175,7 @@ const pruneDaily = () => {
 // app start, app quit: `sweep`) once the clipboard no longer names it. A clip pasted in the app
 // leaves the list and is kept like any attachment. Entries: [video, ...frames], absolute paths;
 // only clip files inside dir() are ever accepted, so a changed list file deletes nothing else.
-const CLIP = /-clip(?:-\d+)?\.(?:webm|png)$/i;
+const CLIP = /-clip(?:-\d+)?\.(?:mp4|webm|png)$/i;
 const listFile = () => path.join(app.getPath('userData'), 'unused-clips.json');
 const inside = file => {
   const rel = typeof file === 'string' ? path.relative(dir(), file) : '..';
@@ -366,11 +366,12 @@ function removeClip(files) {
   return remove(files);
 }
 
-// A snapshot clip named in `text` by one of its files ("<8 hex>-clip.webm", "<8 hex>-clip-3.png"; a
-// whole path or line is fine): where its video and frames are, newest day folder first, and its
-// first frame as a file: address for a picture in the app (27 chip, 113 preview). null when it is
-// not on disk.
-const CLIP_ID = /([0-9a-f]{8})-clip(?:-[0-9]+)?[.](?:webm|png)/;
+// A snapshot clip named in `text` by one of its files ("<8 hex>-clip.mp4", "<8 hex>-clip.webm",
+// "<8 hex>-clip-3.png"; a whole path or line is fine): where its video and frames are, newest day
+// folder first, and its first frame as a file: address for a picture in the app (27 chip, 113
+// preview). null when it is not on disk. Clips are MP4 since 2026-10-15; older ones stay WebM.
+const CLIP_ID = /([0-9a-f]{8})-clip(?:-[0-9]+)?[.](?:mp4|webm|png)/;
+const CLIP_VIDEOS = ['-clip.mp4', '-clip.webm'];
 
 async function clip(text) {
   const id = CLIP_ID.exec(String(text || ''))?.[1];
@@ -386,13 +387,16 @@ async function clip(text) {
     return null;
   }
   for (const day of days) {
-    const folder = path.join(dir(), day),
-      video = path.join(folder, id + '-clip.webm');
-    try {
-      await fsp.access(video);
-    } catch {
-      continue;
+    const folder = path.join(dir(), day);
+    let video = null;
+    for (const end of CLIP_VIDEOS) {
+      try {
+        await fsp.access(path.join(folder, id + end));
+        video = path.join(folder, id + end);
+        break;
+      } catch {}
     }
+    if (!video) continue;
     const n = name => Number(name.slice(id.length + 6, -4));
     const frames = (await fsp.readdir(folder))
       .filter(name => name.startsWith(id + '-clip-') && name.endsWith('.png') && n(name) > 0)

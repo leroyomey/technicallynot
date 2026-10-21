@@ -234,6 +234,12 @@ for (const task of [
   '[TN.ai] Your context is at 150k tokens, so',
   '[TN.ai] The user attached the skill "x" to you',
   '/compact',
+  '[TN.ai] You asked for /compact, so Technically Not will run /compact in this session',
+  '[TN.ai] Technically Not hands your work to a fresh Codex agent right after this reply.',
+  '[TN.ai] /clear has run in this session. Before it you wrote down what must survive',
+  '[TN.ai handoff: you take over from Lead (Claude Code), which the user handed off]',
+  '[TN.ai auto-continue 1/3] Continue with the next step you recommended',
+  'Your usage limit has reset. Continue the task you were working on when the limit was reached',
 ]) {
   fresh();
   links.sent('A', 'B', { text: 'x' });
@@ -320,6 +326,78 @@ check(
   !links.of('N').waitsOn.length && !links.of('N').with.length && !links.state().waits.length,
   'nothing pairs the successor with itself'
 );
+
+// A truthful clear (agent-turns.js `clearedAt`): the cleared agent's own waits end silently, a
+// question already typed into it ends and its asker is told once, a held one stays, links end.
+fresh();
+links.sent('A', 'B', { ask: true, text: 'which file?' });
+links.sent('C', 'A', { ask: true, text: 'done yet?' });
+links.sent('D', 'A', { ask: true, text: 'later?', delivered: false });
+links.sent('A', 'E', { text: 'x' });
+links.sent('E', 'A', { text: 'y' });
+const clearedTurn = { paneId: 'A', startedAt: clock, endedAt: 0, task: 'new work', clearedAt: 5 };
+links.turn(clearedTurn);
+check(!links.of('A').waitsOn.length, "a cleared agent's own question no longer waits");
+check(!links.of('C').waitsOn.length, 'a question typed into the cleared agent ends');
+check(links.of('D').waitsOn.join() === 'A', 'a question still held for it stays');
+check(!links.of('E').with.length, "the cleared agent's links end");
+check(
+  told.join() === 'C:ended:A' && why.join() === 'cleared',
+  'only the asker of a typed-in question is told, with the reason "cleared"'
+);
+links.sent('C', 'A', { ask: true, text: 'again?' });
+links.turn(clearedTurn);
+check(
+  links.of('C').waitsOn.join() === 'A' && told.length === 1,
+  'the same clear seen again in later turn events does nothing'
+);
+fresh();
+links.sent('C', 'A', { ask: true, text: 'done yet?' });
+links.turn({ paneId: 'A', startedAt: clock, endedAt: 0, task: 'new work', clearedAt: 0 });
+check(links.of('C').waitsOn.join() === 'A', 'a task without a clear keeps the waits');
+
+// Claude Code's record of a clear (agent-turns.js claudeClearedIn): the new session file's own
+// "/clear" command line, at or after the panel's last task began; a resumed or forked session has
+// none of its own.
+{
+  const fs = require('fs'),
+    os = require('os'),
+    path = require('path');
+  const { claudeClearedIn } = require('../../desktop/agent-turns')._test;
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'tnai-links-clear-'));
+  const write = (name, lines) => {
+    const file = path.join(folder, name);
+    fs.writeFileSync(file, lines.map(l => JSON.stringify(l)).join('\n') + '\n');
+    return file;
+  };
+  const clearLine = when => ({
+    type: 'user',
+    isSidechain: false,
+    message: {
+      role: 'user',
+      content: '<command-name>/clear</command-name>\n  <command-message>clear</command-message>',
+    },
+    timestamp: new Date(when).toISOString(),
+  });
+  const prompt = (text, when) => ({
+    type: 'user',
+    message: { role: 'user', content: text },
+    timestamp: new Date(when).toISOString(),
+  });
+  const since = Date.parse('2026-10-15T10:00:00Z');
+  const fresh = write('cleared.jsonl', [
+    { type: 'mode', mode: 'normal' },
+    clearLine(since + 5000),
+    prompt('next task', since + 9000),
+  ]);
+  const resumed = write('resumed.jsonl', [clearLine(since - 86400e3), prompt('old', since - 1)]);
+  const plain = write('plain.jsonl', [prompt('see /clear and <command-name>/clear', since + 1)]);
+  check(claudeClearedIn(fresh, since) === since + 5000, 'a new session that opens with /clear');
+  check(claudeClearedIn(resumed, since) === 0, 'a resumed session cleared long ago is no clear');
+  check(claudeClearedIn(plain, since) === 0, 'a prompt that only mentions /clear is no clear');
+  check(claudeClearedIn(path.join(folder, 'none.jsonl'), since) === 0, 'a missing file: 0');
+  fs.rmSync(folder, { recursive: true, force: true });
+}
 
 T.reset();
 console.log(ok ? '\nPASS links-check' : '\nFAIL links-check');

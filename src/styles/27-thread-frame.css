@@ -141,6 +141,13 @@ html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode > footer.composer > .hints
   margin-top: 10px;
 }
 
+/* The prompt goes to another agent than the open thread (11 `elsewhereName`): the route hint says
+   so in the waiting color, the one the app uses for "look at this". */
+html.tnt-open:not(#tnt):not(#pg) .composer .hints > .tnai-route-hint.tnai-elsewhere {
+  color: var(--pg-wait);
+  font-weight: 600;
+}
+
 /* Send, as the mock draws it: from the pale accent to the accent with dark ink in Dark, the darker
    accent with white in Light, so the arrow reads on every accent. */
 html.tnt-open:not(#tnt):not(#pg) .composebox .send {

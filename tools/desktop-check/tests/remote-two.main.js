@@ -43,7 +43,7 @@ const { app, safeStorage } = require('electron');
 // sends what it likes; to play one, the check has to see the messages this app's list reader is
 // handed and reach the way out through this app's trust gate. Both are inside remote-service.js,
 // which takes `createRemoteApi` when it is first loaded, so this runs before the app's own code.
-const tap = { send: null, rows: {}, known: {}, control: null, fresh: null, replies: [] };
+const tap = { send: null, rows: {}, known: {}, control: null, fresh: null, replies: [], out: [] };
 const HAND = !!process.env.TNAI_CHECK_BY_HAND;
 if (Number(process.env.TNAI_REMOTE_CHECK_PORT) && !HAND) {
   const apiMod = require('../../../desktop/remote-api.js'),
@@ -78,6 +78,25 @@ if (Number(process.env.TNAI_REMOTE_CHECK_PORT) && !HAND) {
       return read(from, obj);
     };
     return api;
+  };
+
+  // Everything this app's trust gate let out, with the time and the type (proof 31: the link's
+  // minute with a live view and a conversation read at once). Lists, replies, frames and log parts
+  // all leave through it.
+  const trustMod = require('../../../desktop/remote-trust.js'),
+    realTrust = trustMod.createTrust;
+  trustMod.createTrust = o => {
+    const trust = realTrust(o),
+      send = trust.send;
+    trust.send = (to, obj) => {
+      const went = send.call(trust, to, obj);
+      if (went === true) {
+        tap.out.push({ at: Date.now(), t: obj && typeof obj.t === 'string' ? obj.t : '' });
+        while (tap.out.length > 2000) tap.out.shift();
+      }
+      return went;
+    };
+    return trust;
   };
 }
 
@@ -226,6 +245,8 @@ module.exports = (win, profile) => {
 
   // The window publishes every panel's name in one list (file 37), so each call here sends all the
   // names this check has given.
+  // late join: the panels whose conversation record is a stand-in, and every read of one
+  const talk = { seeded: new Map(), reads: [], patched: false };
   const named = new Map(),
     publishNames = () =>
       inWindow('window.tnaiNative.mesh.names(' + JSON.stringify([...named.values()]) + ')');
@@ -245,7 +266,8 @@ module.exports = (win, profile) => {
       signedIn: s.signedIn,
       user: s.user?.email || '',
       problem: s.problem,
-      locked: s.lock.locked,
+      // the app has no plan lock since 0.3.73: no lock in the state reads as unlocked
+      locked: s.lock?.locked === true,
       plan: s.plan?.plan || '',
     };
   };
@@ -472,6 +494,26 @@ module.exports = (win, profile) => {
           ')'
       ),
     names: ({ list }) => inWindow('window.tnaiNative.mesh.names(' + JSON.stringify(list) + ')'),
+
+    // `tnai rename NAME` run by the agent of that panel: the real shim against this app's real
+    // mesh. The panel is given a fresh token for it (mesh.prepare, as pty:start does), so the
+    // stand-in CLI in it loses its old one; it never runs `tnai` itself.
+    async rename({ paneId, name }) {
+      const root = files.root();
+      const add = await mesh.prepare(String(paneId), root, root);
+      const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
+      add(env);
+      const shim = path.join(__dirname, '..', '..', '..', 'desktop', 'agent-shim.js');
+      return new Promise(resolve =>
+        require('child_process').execFile(
+          process.execPath,
+          [shim, 'tnai', 'rename', String(name)],
+          { cwd: root, env, windowsHide: true, timeout: 60000 },
+          (error, stdout, stderr) =>
+            resolve({ code: error ? error.code || 1 : 0, out: String(stdout) + String(stderr) })
+        )
+      );
+    },
     async raise({ paneId, command }) {
       await hooks.launchOptions(paneId, 'Claude Code');
       post(hooks.endpoint(paneId).hook, {
@@ -865,6 +907,112 @@ module.exports = (win, profile) => {
       await post(at.hook, { hook_event_name: 'Stop', last_assistant_message: String(answer) });
       return true;
     },
+    // Late join (proof 31). The stand-in CLI writes no record of its conversation, so for the
+    // panels named here the record is a STAND-IN: the read for another computer answers these
+    // entries (each with its time, its position and its kind as a reader gives them), and the
+    // panel's saved session gets a conversation id. Everything else (the handle, the shaping, the
+    // rate, the parts, the link) is the app's own. talkReads: every such read, with where it began.
+    async talkSeed({ paneId, entries, sessionId = 'stand-in-session' }) {
+      const threadLog = require('../../../desktop/thread-log.js');
+      const sessions = require('../../../desktop/session-store.js');
+      talk.seeded.set(String(paneId), { entries, sessionId });
+      if (!talk.patched) {
+        talk.patched = true;
+        const realRead = threadLog.readForPeer;
+        threadLog.readForPeer = async (record, where = {}, options) => {
+          const seed = record && talk.seeded.get(String(record.paneId || ''));
+          if (!seed) return realRead(record, where, options);
+          talk.reads.push({ paneId: record.paneId, where: { ...where } });
+          const after = Number.isFinite(where.after) ? where.after : -1;
+          const before = Number.isFinite(where.before) ? where.before : Infinity;
+          const list = seed.entries.filter(e => e.pos >= after && e.pos < before);
+          return {
+            readable: true,
+            found: true,
+            entries: list,
+            more: list.length ? list[0].pos > 0 : false,
+            next: seed.entries.length ? seed.entries[seed.entries.length - 1].pos + 1 : 0,
+            fresh: after < 0,
+          };
+        };
+        const realGet = sessions.get;
+        sessions.get = paneId => {
+          const seed = talk.seeded.get(String(paneId || ''));
+          const record = realGet(paneId);
+          return seed
+            ? { ...(record || {}), paneId, agent: 'Claude Code', sessionId: seed.sessionId }
+            : record;
+        };
+      }
+      return true;
+    },
+    talkReads: () => talk.reads.slice(),
+    // What left through the trust gate in the last minute: the count, the most in any 60 seconds
+    // since `since`, and the count per type.
+    sentMinute: ({ since = 0 } = {}) => {
+      const now = Date.now(),
+        list = tap.out.filter(e => e.at >= since);
+      let most = 0;
+      for (let i = 0, j = 0; i < list.length; i++) {
+        while (list[i].at - list[j].at >= 60000) j++;
+        most = Math.max(most, i - j + 1);
+      }
+      const types = {};
+      for (const e of list) types[e.t] = (types[e.t] || 0) + 1;
+      return { last: tap.out.filter(e => now - e.at < 60000).length, most, types };
+    },
+    // In the window: the conversation section of the open detail of another computer's agent, and
+    // the thread list's "why not listed" lines. what: 'read' | 'pressAll' (stubs every way a press
+    // could reach an agent or a terminal of this computer, presses every element inside the
+    // section, and counts what was reached).
+    talkWindow: ({ what }) =>
+      inWindow(
+        '(' +
+          (async ({ what }) => {
+            const wait = ms => new Promise(r => setTimeout(r, ms));
+            const section = document.querySelector('.tnh-view .ap-talk-sec');
+            const why = [...document.querySelectorAll('.tnt-why')].map(n => n.textContent);
+            if (what === 'pressAll') {
+              const reached = [];
+              const ctx = window.TnaiContext || {};
+              const keep = { ...ctx };
+              for (const name of ['decideInThread', 'sendKeptNow', 'toComposer'])
+                ctx[name] = (...a) => reached.push(name + ':' + JSON.stringify(a).slice(0, 40));
+              const pty = window.tnaiNative?.pty;
+              const realWrite = pty?.write;
+              if (pty) pty.write = (...a) => reached.push('pty.write');
+              const helper = () => reached.push('thread-helper');
+              window.addEventListener('tnai:thread-helper', helper);
+              for (const node of section ? section.querySelectorAll('*') : [])
+                if (!(node.tagName === 'BUTTON' && node.textContent.trim() === 'Show earlier'))
+                  node.click();
+              await wait(300);
+              window.removeEventListener('tnai:thread-helper', helper);
+              if (pty) pty.write = realWrite;
+              Object.assign(ctx, keep);
+              return { reached, buttons: section ? section.querySelectorAll('button').length : -1 };
+            }
+            return {
+              shown: !!section && !section.hidden,
+              buttons: section
+                ? [...section.querySelectorAll('button')].map(b => b.textContent.trim())
+                : [],
+              from: section?.querySelector('.ap-term-tools em')?.textContent || '',
+              note: section?.querySelector('.ap-none')?.textContent || '',
+              entries: section
+                ? [...section.querySelectorAll('.tnt-talk-list > *')].map(n => [
+                    n.className,
+                    n.textContent.slice(0, 80),
+                  ])
+                : [],
+              links: section ? section.querySelectorAll('a[href], img').length : -1,
+              why,
+            };
+          }).toString() +
+          ')(' +
+          JSON.stringify({ what: String(what) }) +
+          ')'
+      ),
     // A picture of this window as it is now, into tools/browser-check/out (so whoever set the two
     // windows up can look before handing over).
     async shot({ name }) {

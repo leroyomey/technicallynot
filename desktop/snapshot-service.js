@@ -326,12 +326,14 @@ async function start() {
         } catch {}
         const size = marked && !marked.isEmpty() ? marked.getSize() : null;
         if (size && size.width === s.region.width && size.height === s.region.height) {
+          // The overlay's PNG goes on as it came: encoding the decoded picture again held the main
+          // thread about 100 ms (stalls.log, snapshot:compose).
           result = {
             copied: true,
             width: size.width,
             height: size.height,
             marked: true,
-            png: marked.toPNG(),
+            png: Buffer.from(composed),
           };
           s.cropped = marked;
         } else result = { cancelled: true, error: 'marked-up snapshot was not usable' };
@@ -374,7 +376,9 @@ async function start() {
         }
 
         // the Snapshots box keeps it too, so several taken back to back can each be copied again
-        if (result.copied) shelf.addPicture(result.png, result.width, result.height);
+        // (with the picture already decoded, so the box does not decode the PNG again)
+        if (result.copied)
+          shelf.addPicture(result.png, result.width, result.height, big || s.cropped);
         delete result.png;
       }
       if (result.copied) {

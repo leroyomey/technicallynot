@@ -1011,44 +1011,181 @@ await test('no timer or alarm in the relay (either keeps the object awake and bi
   }
 });
 
-await test('a web page elsewhere (the phone app) can ask: the two plain calls answer a browser, errors too', async () => {
-  for (const path of ['/remote/ticket', '/remote/presence']) {
-    const pre = await call('OPTIONS', path);
+// The phone app's page in these tests, and a page that is not it.
+const PHONE = 'https://phone.example.com',
+  STRANGER = 'https://elsewhere.example.net';
+
+await test('the phone app page can ask: the plain calls answer it by name, errors too', async () => {
+  env.PHONE_ORIGINS = 'https://other-phone.example.org, ' + PHONE;
+  const from = page => ({ Origin: page });
+  for (const path of ['/', '/remote/ticket', '/remote/presence']) {
+    const pre = await call('OPTIONS', path, from(PHONE));
     eq(pre.status, 204, 'the question before the call, ' + path);
-    eq(pre.headers.get('Access-Control-Allow-Origin'), '*');
+    eq(pre.headers.get('Access-Control-Allow-Origin'), PHONE, 'named, never *');
+    eq(pre.headers.get('Access-Control-Allow-Credentials'), null, 'no cookies');
+    ok(/Origin/.test(pre.headers.get('Vary') || ''), 'a cache keeps pages apart');
     ok(
       /X-Relay-Proof/.test(pre.headers.get('Access-Control-Allow-Headers')),
       'the proof headers are allowed'
     );
   }
   eq(hubs.objects(), 0, 'the question reaches no meeting point');
-  const good = await call('POST', '/remote/ticket', await headers('device-aaaa'));
+  const good = await call('POST', '/remote/ticket', {
+    ...(await headers('device-aaaa')),
+    ...from(PHONE),
+  });
   eq(good.status, 200);
-  eq(good.headers.get('Access-Control-Allow-Origin'), '*', 'a ticket can be read by the page');
-  const bad = await call(
-    'POST',
-    '/remote/ticket',
-    await headers('device-aaaa', 'ticket', { secret: OTHER })
-  );
+  eq(good.headers.get('Access-Control-Allow-Origin'), PHONE, 'a ticket can be read by the page');
+  ok(/Origin/.test(good.headers.get('Vary') || ''), 'an answer names the page it is for');
+  const bad = await call('POST', '/remote/ticket', {
+    ...(await headers('device-aaaa', 'ticket', { secret: OTHER })),
+    ...from(PHONE),
+  });
   eq(bad.status, 401);
   eq(
     bad.headers.get('Access-Control-Allow-Origin'),
-    '*',
+    PHONE,
     'and so can a refusal, or the page sees only "network"'
   );
   eq((await bad.json()).error, 'invalid_proof');
-  const list = await call('GET', '/remote/presence', await headers('device-aaaa', 'presence'));
-  eq(list.headers.get('Access-Control-Allow-Origin'), '*', 'the list too');
-  const sock = await call('OPTIONS', '/remote/connect');
+  const list = await call('GET', '/remote/presence', {
+    ...(await headers('device-aaaa', 'presence')),
+    ...from(PHONE),
+  });
+  eq(list.headers.get('Access-Control-Allow-Origin'), PHONE, 'the list too');
+  const front = await call('GET', '/', from(PHONE));
+  eq(front.headers.get('Access-Control-Allow-Origin'), PHONE, 'and the front answer');
+  eq(front.headers.get('Access-Control-Allow-Credentials'), null);
+
+  // the phone page's own socket: a browser names the page, and that page is let in
+  const sock = await call('OPTIONS', '/remote/connect', from(PHONE));
   eq(sock.status, 404, 'the WebSocket call takes no such question');
   eq(sock.headers.get('Access-Control-Allow-Origin'), null);
+  const t = (await ticketFor('ph-phone1')).body.ticket;
+  const r = await call('GET', '/remote/connect?ticket=' + encodeURIComponent(t), {
+    Upgrade: 'websocket',
+    ...from(PHONE),
+  });
+  eq(r.status, 101, 'the phone page connects');
+});
+
+await test('another page gets no allowance, and its socket is refused before anything wakes', async () => {
+  env.PHONE_ORIGINS = PHONE;
+  const from = { Origin: STRANGER };
+  for (const path of ['/', '/remote/ticket', '/remote/presence']) {
+    const pre = await call('OPTIONS', path, from);
+    eq(pre.headers.get('Access-Control-Allow-Origin'), null, 'no allowance, ' + path);
+    eq(pre.headers.get('Access-Control-Allow-Headers'), null, 'nor its headers, ' + path);
+  }
+  const good = await call('POST', '/remote/ticket', { ...(await headers('device-aaaa')), ...from });
+  eq(good.headers.get('Access-Control-Allow-Origin'), null, 'its browser cannot read a ticket');
+  eq((await call('GET', '/', from)).headers.get('Access-Control-Allow-Origin'), null);
+
+  // look-alikes of the phone's address are other pages too
+  for (const page of [PHONE + '.evil.test', 'null', PHONE.replace('https', 'http'), PHONE + '/']) {
+    const pre = await call('OPTIONS', '/remote/ticket', { Origin: page });
+    eq(pre.headers.get('Access-Control-Allow-Origin'), null, 'not the phone page: ' + page);
+  }
+  const t = (await ticketFor('device-aaaa')).body.ticket;
+  const before = hubs.objects();
+  const r = await call('GET', '/remote/connect?ticket=' + encodeURIComponent(t), {
+    Upgrade: 'websocket',
+    ...from,
+  });
+  eq(r.status, 403, 'another page opens no connection');
+  eq((await r.json()).error, 'origin_not_allowed');
+  eq(hubs.objects(), before, 'and wakes no meeting point');
+
+  // the ticket was not used: the app itself (no page address) still connects with it
+  ok((await open(t)).refused === undefined, 'an app sends no Origin and is let in as before');
+});
+
+await test('no phone address set, or a wildcard written in: no page is allowed', async () => {
+  for (const list of [undefined, '', '*', 'null', ' * , https://', 'phone.example.com']) {
+    env.PHONE_ORIGINS = list;
+    const pre = await call('OPTIONS', '/remote/ticket', { Origin: PHONE });
+    eq(pre.headers.get('Access-Control-Allow-Origin'), null, 'PHONE_ORIGINS ' + list);
+    const front = await call('GET', '/', { Origin: PHONE });
+    eq(front.headers.get('Access-Control-Allow-Origin'), null);
+  }
+
+  // "null" written in is no address: a sandboxed page that sends it is not let in
+  env.PHONE_ORIGINS = 'null';
+  const sandboxed = await call('OPTIONS', '/remote/ticket', { Origin: 'null' });
+  eq(sandboxed.headers.get('Access-Control-Allow-Origin'), null, 'a page that says null');
+
+  // the apps (no Origin) are answered as before
+  const good = await call('POST', '/remote/ticket', await headers('device-aaaa'));
+  eq(good.status, 200);
+  eq(good.headers.get('Access-Control-Allow-Origin'), null);
+});
+
+await test('letter case: the setting may be written in capitals, the caller is compared as sent', async () => {
+  // g26 Low 2: browsers send the address in small letters; the setting is read the same way
+  env.PHONE_ORIGINS = 'https://Phone.Example.com';
+  const named = await call('OPTIONS', '/remote/ticket', { Origin: 'https://phone.example.com' });
+  eq(
+    named.headers.get('Access-Control-Allow-Origin'),
+    'https://phone.example.com',
+    'capitals in the setting'
+  );
+
+  // a caller in capitals (no browser sends one) is the same address, and gets its own text back
+  env.PHONE_ORIGINS = 'https://phone.example.com';
+  const shout = await call('OPTIONS', '/remote/ticket', { Origin: 'HTTPS://PHONE.EXAMPLE.COM' });
+  eq(
+    shout.headers.get('Access-Control-Allow-Origin'),
+    'HTTPS://PHONE.EXAMPLE.COM',
+    'capitals in the caller'
+  );
+
+  // and a look-alike in capitals is still another page
+  const evil = await call('OPTIONS', '/remote/ticket', {
+    Origin: 'HTTPS://PHONE.EXAMPLE.COM.EVIL.TEST',
+  });
+  eq(evil.headers.get('Access-Control-Allow-Origin'), null, 'a look-alike in capitals');
+});
+
+await test('entries that could never match: https port and closing slash taken off, the rest dropped and counted', async () => {
+  // g26 Info 2: a browser sends https://phone.example.com for both of these
+  for (const entry of ['https://phone.example.com:443', 'https://phone.example.com/']) {
+    env.PHONE_ORIGINS = entry;
+    const pre = await call('OPTIONS', '/remote/ticket', { Origin: 'https://phone.example.com' });
+    eq(pre.headers.get('Access-Control-Allow-Origin'), 'https://phone.example.com', entry);
+  }
+
+  // a path or a bare host is no page address: dropped, and the log counts them once, no address
+  const warned = [];
+  const realWarn = console.warn;
+  console.warn = (...parts) => warned.push(parts.join(' '));
+  try {
+    env.PHONE_ORIGINS = 'https://phone.example.com/app, phone.example.com, https://ok.example.com';
+    for (let i = 0; i < 2; i++) {
+      const pre = await call('OPTIONS', '/remote/ticket', { Origin: 'https://phone.example.com' });
+      eq(pre.headers.get('Access-Control-Allow-Origin'), null, 'a path is no page address');
+    }
+    const ok2 = await call('OPTIONS', '/remote/ticket', { Origin: 'https://ok.example.com' });
+    eq(
+      ok2.headers.get('Access-Control-Allow-Origin'),
+      'https://ok.example.com',
+      'the good entry stays'
+    );
+  } finally {
+    console.warn = realWarn;
+  }
+  eq(JSON.stringify(warned), '["PHONE_ORIGINS: 2 entries ignored"]', 'counted once, no address');
 });
 
 await test('unknown paths answer 404 and the front door says only that it is a relay', async () => {
   eq((await call('GET', '/remote/nothing')).status, 404);
   eq((await call('POST', '/remote/connect')).status, 404);
   const r = await call('GET', '/');
-  eq(JSON.stringify(await r.json()), '{"relay":"technically-not","v":1}');
+  eq(JSON.stringify(await r.json()), '{"relay":"technically-not","v":1,"keys":1,"phone_keys":1}');
+
+  // the phone page may read it (phone/src/own-relay.mjs relayTooOld; the test above)
+  env.PHONE_ORIGINS = 'https://phone.example.com';
+  const page = await call('GET', '/', { Origin: 'https://phone.example.com' });
+  eq(page.headers.get('Access-Control-Allow-Origin'), 'https://phone.example.com');
 });
 
 // The ids the relay lists, read as device-aaaa.
@@ -1131,8 +1268,289 @@ await test('the phone key cannot remove a device', async () => {
   const phoneKey = await hmacHex(SECRET, 'phone-key:' + HOST);
   const r = await forgetCall('ph-0123456789', 'device-bbbb', { secret: phoneKey });
   eq(r.status, 403);
+
+  // nor a phone's own key (phoneOwnKey below)
+  const ownKey = await hmacHex(SECRET, 'phone-key:' + HOST + ':ph-0123456789');
+  eq((await forgetCall('ph-0123456789', 'device-bbbb', { secret: ownKey })).status, 403, 'own');
   ok((await listed()).includes('device-bbbb'), 'still listed');
   wa.close();
+});
+
+// ---- per-device keys and revoke (docs/plans/own-relay.md, "Per-device keys") ----
+
+const deviceKey = device => hmacHex(SECRET, 'device-key:' + device);
+
+await test('a device key proves its own id: a ticket, and a connection', async () => {
+  const key = await deviceKey('device-aaaa');
+  const t = await ticketFor('device-aaaa', { secret: key });
+  eq(t.status, 200, 'ticket under the device key');
+  const ws = await open(t.body.ticket);
+  ok(!ws.refused, 'connected');
+  ws.close();
+});
+
+await test("a device key cannot speak for another computer's id or a phone's", async () => {
+  const key = await deviceKey('device-aaaa');
+  eq((await ticketFor('device-bbbb', { secret: key })).status, 401, 'another id');
+  eq((await ticketFor('ph-0123456789', { secret: key })).status, 401, 'a phone id');
+
+  // and a computer's kind of key made for a phone id is not taken either: a phone's own key also
+  // names the relay's host (phoneOwnKey below)
+  const phoneIdKey = await deviceKey('ph-0123456789');
+  eq((await ticketFor('ph-0123456789', { secret: phoneIdKey })).status, 401, 'a phone id key');
+  eq(await hubState(), undefined, 'the meeting point was not even woken');
+});
+
+// The key a phone of this build keeps for its own id (phone/src/own-relay.mjs set).
+const phoneOwnKey = (device, host = HOST) => hmacHex(SECRET, 'phone-key:' + host + ':' + device);
+const sharedPhoneKey = () => hmacHex(SECRET, 'phone-key:' + HOST);
+
+await test("a phone's own key proves its own phone id only, at this relay only", async () => {
+  const key = await phoneOwnKey('ph-aaaaaaaaaa');
+  const t = await ticketFor('ph-aaaaaaaaaa', { secret: key });
+  eq(t.status, 200, 'a ticket for its own id');
+  const ws = await open(t.body.ticket);
+  ok(!ws.refused, 'connected');
+  const list = await call(
+    'GET',
+    '/remote/presence',
+    await headers('ph-aaaaaaaaaa', 'presence', { secret: key })
+  );
+  eq(list.status, 200, 'the list');
+  eq((await ticketFor('ph-bbbbbbbbbb', { secret: key })).status, 401, 'another phone id');
+  eq((await ticketFor('device-aaaa', { secret: key })).status, 401, "a computer's id");
+  const elsewhere = await phoneOwnKey('ph-cccccccccc', 'other-relay.example');
+  eq(
+    (await ticketFor('ph-cccccccccc', { secret: elsewhere })).status,
+    401,
+    "the key made for another relay's host"
+  );
+  ws.close();
+});
+
+await test('the shared phone key works until a phone moves to its own key, then never again', async () => {
+  const shared = await sharedPhoneKey();
+  const { wa } = await join2();
+  const old = await open((await ticketFor('ph-aaaaaaaaaa', { secret: shared })).body.ticket);
+  ok(!old.refused, 'an older phone page is connected under the shared key');
+
+  // a phone of this build asks once with its own key: it has moved
+  const moved = await ticketFor('ph-bbbbbbbbbb', { secret: await phoneOwnKey('ph-bbbbbbbbbb') });
+  eq(moved.status, 200, 'the moved phone gets its ticket');
+  eq(old.closed?.code, 4010, 'the socket that came in under the shared key is closed');
+  const again = await ticketFor('ph-aaaaaaaaaa', { secret: shared });
+  eq(again.status, 401, 'the shared key is refused from then on');
+  eq(again.body.error, 'invalid_proof', 'in words an older phone page already shows');
+  eq(again.body.why, 'phone_key_retired', 'and why, for this build');
+  eq((await ticketFor('ph-cccccccccc', { secret: shared })).status, 401, 'also for a new phone id');
+  eq(wa.closed, null, 'a computer stays connected');
+  eq((await ticketFor('device-aaaa')).status, 200, 'and still gets tickets');
+  wa.close();
+});
+
+// The review's probe (g18b Medium 1): a ticket lives a minute, so one asked for under the shared
+// key just before it ends must not open a socket after it.
+await test('a ticket asked under the shared key before the move still connects after it: no', async () => {
+  const shared = await sharedPhoneKey();
+  const { wa } = await join2();
+  const held = await ticketFor('ph-aaaaaaaaaa', { secret: shared });
+  eq(held.status, 200, 'a ticket under the shared key, not used yet');
+  const seen = wa.inbox.length;
+  const moved = await ticketFor('ph-bbbbbbbbbb', { secret: await phoneOwnKey('ph-bbbbbbbbbb') });
+  eq(moved.status, 200, 'another phone moves to its own key');
+  const late = await open(held.body.ticket);
+  eq(late.refused, 401, 'the held ticket opens nothing after the move');
+  eq(late.body?.why, 'phone_key_retired', 'with the reason this build shows');
+  eq((await open(held.body.ticket)).refused, 401, 'and stays dead');
+  ok(
+    !wa.inbox.slice(seen).some(m => /"presence"/.test(m) && /ph-aaaaaaaaaa/.test(m)),
+    'nobody is told the phone is online'
+  );
+  wa.close();
+});
+
+await test('a device key cannot take the place of a connected computer', async () => {
+  const { wa, wb } = await join2();
+  const stolen = await deviceKey('device-aaaa');
+  eq((await ticketFor('device-bbbb', { secret: stolen })).status, 401);
+  eq(wb.closed, null, 'B stays connected');
+  wa.close();
+  wb.close();
+});
+
+const revokeCall = async (gone, o = {}) => {
+  const what = (o.undo ? 'unrevoke:' : 'revoke:') + gone;
+  const h = o.headers || (await headers(o.as || 'relay-owner', what, o));
+  const r = await call('POST', '/remote/revoke?d=' + gone + (o.undo ? '&undo=1' : ''), h);
+  return { status: r.status, body: await r.json(), headers: h };
+};
+
+await test('revoke: only the secret itself may throw a device out', async () => {
+  const key = await deviceKey('device-aaaa');
+  eq(
+    (await revokeCall('device-bbbb', { as: 'device-aaaa', secret: key })).status,
+    403,
+    'device key'
+  );
+  const phoneKey = await hmacHex(SECRET, 'phone-key:' + HOST);
+  eq(
+    (await revokeCall('device-bbbb', { as: 'ph-0123456789', secret: phoneKey })).status,
+    403,
+    'phone key'
+  );
+  eq(
+    (
+      await revokeCall('device-bbbb', {
+        as: 'ph-0123456789',
+        secret: await phoneOwnKey('ph-0123456789'),
+      })
+    ).status,
+    403,
+    "a phone's own key"
+  );
+  eq((await revokeCall('device-bbbb', { secret: OTHER })).status, 401, 'a wrong secret');
+  eq((await ticketFor('device-bbbb')).status, 200, 'B is still let in');
+});
+
+await test('revoke: the device is closed (4009), told offline to the others, and refused from then on', async () => {
+  const { wa, wb } = await join2();
+  const r = await revokeCall('device-bbbb');
+  eq(r.status, 200);
+  eq(wb.closed?.code, 4009, 'its socket is closed as revoked');
+  ok(
+    wa.inbox.some(m => /"presence"/.test(m) && /device-bbbb/.test(m) && /"online":false/.test(m)),
+    'A is told B is offline'
+  );
+  ok(!(await records()).includes('d:device-bbbb'), 'its record is gone');
+  const key = await deviceKey('device-bbbb');
+  const again = await ticketFor('device-bbbb', { secret: key });
+  eq(again.status, 403, 'a ticket under its own key');
+  eq(again.body.error, 'device_revoked');
+  eq((await ticketFor('device-bbbb')).status, 403, 'even under the secret');
+  ok(!(await records()).includes('d:device-bbbb'), 'and nothing is recorded for it');
+  wa.close();
+});
+
+await test('revoke: a copied call does nothing; undo lets it in again', async () => {
+  const first = await revokeCall('device-bbbb');
+  eq(first.status, 200);
+  const copied = await call('POST', '/remote/revoke?d=device-bbbb', first.headers);
+  eq(copied.status, 401, 'the same proof again');
+  eq((await revokeCall('device-bbbb', { undo: true })).status, 200, 'undo');
+  eq((await ticketFor('device-bbbb')).status, 200, 'let in again');
+});
+
+await test("revoke: the close that answers revoke's own does not bring the record back", async () => {
+  const { wa, wb } = await join2();
+  eq((await revokeCall('device-bbbb')).status, 200);
+  await wb.answerClose();
+  ok(!(await records()).includes('d:device-bbbb'), 'no record after its close');
+  ok(!(await listed()).includes('device-bbbb'), 'and not listed as offline');
+  wa.close();
+});
+
+await test('revoke: a phone id throws out that phone alone; other phones and computers stay', async () => {
+  const keyA = await phoneOwnKey('ph-aaaaaaaaaa'),
+    keyB = await phoneOwnKey('ph-bbbbbbbbbb');
+  const { wa } = await join2();
+  const lost = await open((await ticketFor('ph-aaaaaaaaaa', { secret: keyA })).body.ticket);
+  const kept = await open((await ticketFor('ph-bbbbbbbbbb', { secret: keyB })).body.ticket);
+  ok(!lost.refused && !kept.refused, 'two phones are connected');
+  const r = await revokeCall('ph-aaaaaaaaaa');
+  eq(r.status, 200);
+  eq(r.body.phone_key_ended, true, 'the answer says the shared phone key ended');
+  eq(lost.closed?.code, 4009, 'the lost phone is closed');
+  eq(kept.closed, null, 'the other phone stays connected');
+  ok(!(await records()).includes('d:ph-aaaaaaaaaa'), "the lost phone's record is gone");
+  ok((await records()).includes('d:ph-bbbbbbbbbb'), "the other phone's record is kept");
+  const back = await ticketFor('ph-aaaaaaaaaa', { secret: keyA });
+  eq(back.status, 403, 'the lost phone is refused');
+  eq(back.body.error, 'device_revoked');
+  eq((await ticketFor('ph-bbbbbbbbbb', { secret: keyB })).status, 200, 'the other one is not');
+  eq(wa.closed, null, 'a computer stays connected');
+  eq((await ticketFor('device-aaaa')).status, 200, 'and still gets tickets');
+  eq((await revokeCall('ph-aaaaaaaaaa', { undo: true })).status, 200, 'undo');
+  eq((await ticketFor('ph-aaaaaaaaaa', { secret: keyA })).status, 200, 'let in again');
+  wa.close();
+  kept.close();
+});
+
+await test('revoke: a phone on the shared key ends that key, so the lost phone cannot come back under a new id', async () => {
+  const shared = await sharedPhoneKey();
+  const lost = await open((await ticketFor('ph-aaaaaaaaaa', { secret: shared })).body.ticket);
+  const other = await open((await ticketFor('ph-bbbbbbbbbb', { secret: shared })).body.ticket);
+  ok(!lost.refused && !other.refused, 'two older phone pages are connected');
+  eq((await revokeCall('ph-aaaaaaaaaa')).status, 200);
+  eq(lost.closed?.code, 4009, 'the lost phone is closed as revoked');
+  eq(other.closed?.code, 4010, 'the other one, on the same key, is closed too');
+  const newId = await ticketFor('ph-cccccccccc', { secret: shared });
+  eq(newId.status, 401, 'a new phone id under the shared key is refused');
+  eq(newId.body.why, 'phone_key_retired');
+  eq(
+    (await ticketFor('ph-bbbbbbbbbb', { secret: await phoneOwnKey('ph-bbbbbbbbbb') })).status,
+    200,
+    'the other phone comes back once it keeps its own key'
+  );
+  await new Promise(r => setTimeout(r, 1));
+  eq((await revokeCall('ph-aaaaaaaaaa', { undo: true })).status, 200, 'undo');
+  eq(
+    (await ticketFor('ph-aaaaaaaaaa', { secret: shared })).status,
+    401,
+    'undo does not bring the shared key back'
+  );
+});
+
+// The review's second probe (g18b Medium 1), for the other way the shared key ends.
+await test('revoke: a ticket asked under the shared key before a phone revoke still connects after it: no', async () => {
+  const shared = await sharedPhoneKey();
+  const held = await ticketFor('ph-cccccccccc', { secret: shared });
+  eq(held.status, 200, 'a ticket under the shared key, not used yet');
+  eq((await revokeCall('ph-aaaaaaaaaa')).status, 200, 'a phone is thrown out');
+  const late = await open(held.body.ticket);
+  eq(late.refused, 401, 'the held ticket opens nothing after the revoke');
+  eq(late.body?.why, 'phone_key_retired');
+  eq((await open(held.body.ticket)).refused, 401, 'and stays dead');
+});
+
+await test('revoke: after a phone revoke, a new secret lets every phone pair again (a new secret is a new meeting point)', async () => {
+  eq((await revokeCall('ph-aaaaaaaaaa')).status, 200, 'the lost phone thrown out');
+  env = { ...env, RELAY_SECRET: OTHER };
+  const underNew = (device, o = {}) => ({
+    secret: hmacHex(OTHER, 'phone-key:' + HOST + (o.shared ? '' : ':' + device)),
+  });
+  const sharedNew = await underNew('ph-bbbbbbbbbb', { shared: true }).secret;
+  eq(
+    (await ticketFor('ph-bbbbbbbbbb', { secret: sharedNew })).status,
+    200,
+    'an older phone page with the new secret typed in (nothing has moved in the new meeting point)'
+  );
+  const own = await ticketFor('ph-aaaaaaaaaa', { secret: await underNew('ph-aaaaaaaaaa').secret });
+  eq(own.status, 200, 'the same phone id, its own key under the new secret');
+  ok(!(await open(own.body.ticket)).refused, 'and it connects');
+  const oldKey = await phoneOwnKey('ph-cccccccccc');
+  eq((await ticketFor('ph-cccccccccc', { secret: oldKey })).status, 401, 'a key of the old secret');
+});
+
+await test('revoke: an id of the wrong shape is refused before anything else', async () => {
+  const r = await call(
+    'POST',
+    '/remote/revoke?d=bad%20id',
+    await headers('relay-owner', 'revoke:bad id')
+  );
+  eq(r.status, 400);
+  eq((await r.json()).error, 'invalid_device');
+  eq(await hubState(), undefined, 'the meeting point was not woken');
+});
+
+await test('revoke: at most 256 ids are kept refused', async () => {
+  for (let i = 0; i < 256; i++) {
+    await new Promise(r => setTimeout(r, 1));
+    eq((await revokeCall('gone-' + String(i).padStart(4, '0'))).status, 200, 'revoke ' + i);
+  }
+  await new Promise(r => setTimeout(r, 1));
+  const full = await revokeCall('gone-9999');
+  eq(full.status, 429);
+  eq(full.body.error, 'too_many_revoked');
 });
 
 console.log(`\n${passed} passed, ${failed} failed (Node ${process.versions.node})`);

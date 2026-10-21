@@ -186,6 +186,21 @@
     }
     busy = true;
     tell();
+
+    // The panel opened for this resume; closed again when no process started in it, so a failed
+    // resume leaves no empty thread behind.
+    let record = null;
+    const dropPanel = async () => {
+      if (!record) return;
+      const id = record.id;
+      if (agents.sessions().some(session => session.paneId === id && session.running === true))
+        return;
+      await agents.stop?.(id);
+      document
+        .querySelector('.terminal-pane[data-pane-id="' + CSS.escape(id) + '"]')
+        ?.querySelector('.terminal-pane-tools button[title="Close terminal"]')
+        ?.click();
+    };
     try {
       const taken =
         !!thread.name &&
@@ -196,7 +211,7 @@
         thread.name && !taken
           ? thread.name
           : window.TnaiPaneNames?.pick?.() || thread.name || thread.cli;
-      const record = window.TnaiNewTerminalPane({ name, quiet: true, reuseEmpty: true });
+      record = window.TnaiNewTerminalPane({ name, quiet: true, reuseEmpty: true });
       if (!record) {
         say(window.TnaiPaneLimit?.message || 'This workspace has no room for another thread.');
         return;
@@ -217,6 +232,7 @@
         ownedByUser: thread.known === true && thread.ownedByUser === true,
       });
       if (!opened?.ok) {
+        await dropPanel();
         say('Not resumed: ' + (opened?.error || thread.cli + ' could not start.'));
         return;
       }
@@ -225,6 +241,7 @@
       close();
       openThread(record.id);
     } catch (error) {
+      await dropPanel().catch(() => {});
       say('Not resumed: ' + (error?.message || error));
     } finally {
       busy = false;

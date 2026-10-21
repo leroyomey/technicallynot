@@ -121,19 +121,23 @@ await wait(500);
     acts = b.parentElement,
     bb = box(b),
     others = [...acts.children].filter(el => el !== b && shown(el)),
-    more = acts.querySelector('.tnt-head-menu'),
-    before = others.filter(el => el !== more);
+    more = acts.querySelector('.tnt-head-menu');
 
   // The order a user reads: past conversations, handoff history, the page button, the column's
-  // button, and the thread's own "..." menu last.
+  // button, then the buttons that came later (the pop-out 162, the thread actions 154, the on/off
+  // button 137 keeps right before "..."), and the thread's own "..." menu last.
   const order = [...acts.children].filter(shown);
   const at = selector => order.indexOf(acts.querySelector(selector));
+  const mine = order.indexOf(b);
+  const before = order.filter((el, index) => index < mine);
+  const after = order.filter((el, index) => index > mine);
+  const LATER = ['tnt-head-popout', 'tnt-head-work', 'tnt-head-power', 'tnt-head-menu'];
   check(
     acts.lastElementChild === more &&
-      b.nextElementSibling === more &&
+      after.every(el => LATER.some(name => el.classList.contains(name))) &&
       near(bb.width, bb.height, 0.6) &&
       bb.width > 26,
-    'the button is the last one before the thread’s "..." menu, square (' +
+    'the button comes right before the pop-out, thread actions, on/off and "..." buttons, square (' +
       n(bb.width) +
       ' by ' +
       n(bb.height) +
@@ -152,7 +156,7 @@ await wait(500);
   check(
     others.every(el => near(box(el).top + box(el).height / 2, bb.top + bb.height / 2, 1)) &&
       before.every(el => box(el).right <= bb.left + 0.6) &&
-      box(more).left >= bb.right - 0.6,
+      after.every(el => box(el).left >= bb.right - 0.6),
     'it shares the row’s center line and lies over nothing'
   );
   const icon = b.querySelector('svg'),

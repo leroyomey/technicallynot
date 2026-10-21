@@ -11,9 +11,11 @@
  *                 row reads "Back to the conversation". Only for a tool with a conversation.
  *   Stop / Start  Stop while the session runs (it asks first, as the old page does), Start while
  *                 it is stopped (10 `TnaiAgents.stop` / `start`)
+ *   Open in VS Code / Cursor / File Explorer   the thread's own folder (its worktree when it has
+ *                 one) in each editor found on this computer (desktop/open-in-editor.js)
  *   Hand off to a fresh agent   54 `TnaiContextUpkeep.handOff`, shown only while the agent is
  *                 idle and can be handed off
- *   Close thread  11 `TnaiLiveTasks.close`, which asks first while the session runs
+ *   Close thread  11 `TnaiLiveTasks.close`, which always asks first
  *
  * Two quicker ways in: the on/off button just before "..." on the top row does Stop / Start in one
  * press (`.tnt-head-power`), and a right press on a thread in the list (119) opens that thread
@@ -23,6 +25,9 @@
  * `.tnt-menu-row`, 27-thread-frame.css), a press outside or Escape closes it, the arrow keys move
  * through the rows and the keyboard goes back to the button. Its few own rules are at the end of
  * src/styles/29-thread-view.css. `window.TnaiThreadMore`. Test: `thread-more`.
+ *
+ * The same menu also shows another list of rows (`openList`): the thread actions of 154 (commit,
+ * pull request, review), with a label row over them.
  */
 (() => {
   'use strict';
@@ -160,6 +165,28 @@
     return mates.length ? 'Team · ' + (mates.length + 1) + ' agents' : 'Team';
   }
 
+  // The editors found on this computer, the file manager last (desktop/open-in-editor.js), asked
+  // once: [{ id, label }]. Opening uses the thread's own folder, looked up by the desktop side.
+  let editors = [];
+  new Promise(resolve => resolve(window.tnaiNative.editors?.list?.()))
+    .then(found => {
+      if (Array.isArray(found)) editors = found;
+    })
+    .catch(() => {});
+
+  async function openInEditor(editor, paneId) {
+    let answer = null;
+    try {
+      answer = await window.tnaiNative.editors.open(editor.id, paneId);
+    } catch {}
+    if (!answer?.ok)
+      window.toast?.(
+        'Could not open it in ' +
+          editor.label +
+          (answer?.error?.message ? ': ' + answer.error.message : '.')
+      );
+  }
+
   // The rows for one thread, as it is now. `keepFocus` rows put the keyboard somewhere themselves
   // (the name's field); after every other row it goes back to the menu's button.
   function rowsFor(paneId) {
@@ -182,6 +209,33 @@
       else
         rows.push({ id: 'screen', label: 'CLI screen', icon: 'square-terminal', go: showScreen });
     }
+
+    // a window of its own for this thread, and the way back (162)
+    const popout = window.TnaiThreadPopout;
+    if (popout?.isOut?.(paneId))
+      rows.push({
+        id: 'popback',
+        label: 'Back into the app',
+        icon: 'arrow-left',
+        go: id => popout.back(id),
+      });
+    else if (popout?.can?.(paneId))
+      rows.push({
+        id: 'popout',
+        label: 'Pop out into its own window',
+        icon: 'external-link',
+        go: id => popout.open(id),
+      });
+
+    // the thread's own folder in an editor found on this computer, or the file manager
+    if (session.cwd)
+      for (const editor of editors)
+        rows.push({
+          id: 'editor-' + editor.id,
+          label: 'Open in ' + editor.label,
+          icon: editor.id === 'files' ? 'folder' : 'file-text',
+          go: id => openInEditor(editor, id),
+        });
     if (session.running) rows.push({ id: 'stop', label: 'Stop', icon: 'square-stop', go: stop });
     else rows.push({ id: 'start', label: 'Start', icon: 'play', go: start });
 
@@ -206,6 +260,10 @@
   // Set while the menu was opened from an All threads card (135): { host, rename(paneId) }.
   let card = null;
 
+  // Set while the menu shows another list of rows than this thread's own (154, the thread
+  // actions): { name, label, rows: [{ id, label, icon, go(paneId) }] }.
+  let list = null;
+
   // Where a question about the thread is asked: its card, or the open thread's island.
   const hostOf = paneId => (card && pane === paneId ? card.host : island());
 
@@ -223,8 +281,13 @@
 
   // Drawn again at every opening: which rows there are depends on the thread's state.
   function paint() {
-    shownRows = rowsFor(pane);
+    shownRows = list ? list.rows : rowsFor(pane);
+    menu.setAttribute('aria-label', list ? list.name : 'This thread');
+    const label = document.createElement('div');
+    label.className = 'tnt-menu-label';
+    label.textContent = list?.label || '';
     menu.replaceChildren(
+      ...(list?.label ? [label] : []),
       ...shownRows.map(row => {
         const rowButton = document.createElement('button');
         rowButton.type = 'button';
@@ -233,6 +296,13 @@
         rowButton.dataset.row = row.id;
         rowButton.innerHTML = icon(row.icon, 16) + '<span></span>';
         rowButton.querySelector('span').textContent = row.label;
+
+        // A row that cannot work for this thread (another computer's thread, 164): greyed by
+        // 12-inactive-ui.js, with its reason in its own words beside the label.
+        if (row.off) {
+          rowButton.dataset.off = row.off;
+          rowButton.querySelector('span').textContent = row.label + ' · ' + row.off;
+        }
         return rowButton;
       })
     );
@@ -285,12 +355,13 @@
 
   // `forPane` and `fromCard` are given by an All threads card: the menu is then about that card's
   // thread, not the open one.
-  function open(anchor, forPane, fromCard) {
+  function open(anchor, forPane, fromCard, rowList) {
     const paneId = forPane || openPane();
     const from = anchor || menuButton();
     if (!paneId || !from || isOpen()) return;
     build();
     card = forPane && fromCard ? fromCard : null;
+    list = rowList || null;
     pane = paneId;
     button = from;
     paint();
@@ -363,9 +434,15 @@
 
   // ---------- a right press on a thread in the list ----------
   // Opens that thread and its menu at the row, so a thread can be stopped, started, renamed or
-  // closed without opening it first. Another computer's agent has no such menu.
+  // closed without opening it first. Another computer's agent: its own rows (164).
   document.addEventListener('contextmenu', event => {
     const row = event.target.closest?.('.tnt-lst .tnt-th');
+    if (row?.dataset.remote && window.TnaiRemoteThreadMore?.menuAtRow) {
+      event.preventDefault();
+      close();
+      window.TnaiRemoteThreadMore.menuAtRow(row);
+      return;
+    }
     if (!row || row.dataset.remote || !row.dataset.pane) return;
     event.preventDefault();
     close();
@@ -404,6 +481,13 @@
 
     // the on/off button of an All threads card (135): asks over that card before a stop
     stopOrStart,
+
+    // The same menu with other rows, under `anchor`, about the thread `paneId` (154, the thread
+    // actions): list = { name, label, rows: [{ id, label, icon, go(paneId), keepFocus }] }.
+    openList: (anchor, paneId, rowList) => open(anchor, paneId, null, rowList),
+
+    // the button the open menu stands under, or null
+    anchor: () => (isOpen() ? button : null),
 
     // the rows the menu has for a thread now (the open one when none is named): [{ id, label }]
     rows: paneId => rowsFor(paneId || openPane()).map(row => ({ id: row.id, label: row.label })),

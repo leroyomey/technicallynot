@@ -180,6 +180,37 @@ try {
   files.clear();
   window.TnaiLiveTasks.record(shell, 'second prompt', 'test');
   check(files.takeSent(shell) === 0, 'a prompt sent without chips gives none back');
+
+  // ---- Escape right after a send takes the prompt back
+  // With text in the box Escape changes nothing; in the empty box, within 10 s of the send, it
+  // cancels the prompt (here: ends the running command) and the words come back.
+  prompt().value = '';
+  prompt().dispatchEvent(new Event('input', { bubbles: true }));
+  check(!!(await busy(shell)), 'setup: the thread works on a third command');
+  window.TnaiLiveTasks.record(shell, 'add a dark mode toggle', 'test');
+  const escape = () =>
+    prompt().dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    );
+  prompt().focus();
+  prompt().value = 'a draft';
+  escape();
+  await wait(300);
+  check(
+    prompt().value === 'a draft' && !!window.TnaiComposerStop.undoable(),
+    'Escape with text in the box keeps the text and takes nothing back'
+  );
+  prompt().value = '';
+  escape();
+  await wait(1500);
+  check(
+    !!(await ended(shell, 'tnai-stop-three')),
+    'Escape in the empty box ends the running command'
+  );
+  check(
+    prompt().value === 'add a dark mode toggle' && !window.TnaiComposerStop.undoable(),
+    'and the prompt is back in the box ("' + prompt().value + '")'
+  );
 } catch (error) {
   ok = false;
   log.push('ERROR ' + (error?.stack || error));

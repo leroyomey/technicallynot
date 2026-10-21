@@ -91,6 +91,13 @@ const seen = {
   });
   viewMod.createViews = o => realViews(tap(o));
   viewMod.createWatcher = o => realWatcher(tap(o));
+
+  // typing (remote-type.js) sends through the trust gate itself too
+  const typeMod = require('../desktop/remote-type.js'),
+    realTyping = typeMod.createTyping,
+    realTyper = typeMod.createTyper;
+  typeMod.createTyping = o => realTyping(tap(o));
+  typeMod.createTyper = o => realTyper(tap(o));
 }
 const { bindingOf } = answerMod,
   { shape } = apiMod;
@@ -322,6 +329,12 @@ function world() {
           c.asked.push(panelId + (on ? ' on' : ' off'));
           if (on) w.queue.push(() => c.svc.screen(panelId, c.term[panelId] || null));
         },
+        // typing (remote-type.js): what the app would write into the panel's terminal
+        typeKeys: o => {
+          const ok = o.guard() === true;
+          (c.typedKeys = c.typedKeys || []).push({ panelId: o.panelId, data: o.data, ok });
+          return ok ? 'done' : 'refused';
+        },
         on: {
           changed: s => {
             c.changes++;
@@ -333,6 +346,11 @@ function world() {
           view: m => {
             c.shown.push(m);
           },
+        },
+        // review 23, L8: every time the window is (true) or no longer is (false) kept out of
+        // screen capture
+        shield: on => {
+          (c.shields = c.shields || []).push(on);
         },
         power: {
           // keep-awake: c.holds is every start (true) and end (false) of the system's "do not
@@ -356,6 +374,69 @@ function world() {
           seen.acts++;
           (c.said ||= []).push({ ...o, guardThen: o.guard() });
           return typeof c.onSay === 'function' ? c.onSay(o) : 'sent';
+        },
+
+        // Late join: c.records[panelId] is the panel's saved session record; c.readLog(record,
+        // where) answers a read for another computer (every read is kept in c.logReads).
+        logRecord: panelId => (c.records || {})[panelId] || null,
+        readLog: async (record, where) => {
+          (c.logReads ||= []).push({ record, where });
+          return typeof c.readLog === 'function' ? c.readLog(record, where) : { entries: [] };
+        },
+
+        // This week's thread features (remote-features.js): what this computer would read for
+        // another one; every read is kept in c.featureReads
+        featureRead: {
+          changes: panelId => {
+            (c.featureReads ||= []).push('changes ' + panelId);
+            return { repo: true, branch: 'feature-x', folder: 'C:\\secret\\path', ahead: 2 };
+          },
+          skills: (panelId, cli) => {
+            (c.featureReads ||= []).push('skills ' + panelId);
+            return { cli, skills: [{ name: 'deploy', about: 'Ship it', from: 'project' }] };
+          },
+          clis: () => {
+            (c.featureReads ||= []).push('clis');
+            return [{ cli: 'Codex', installed: true, signedIn: true, account: 'me@example.com' }];
+          },
+        },
+
+        // Another computer's files and Live preview (remote-browse.js, remote-preview.js):
+        // c.files is the project as path → text; every read and write is kept in c.fileOps
+        browseFiles: {
+          list: async rel => {
+            (c.fileOps ||= []).push('list ' + rel);
+            const names = Object.keys(c.files || {})
+              .filter(p => (rel ? p.startsWith(rel + '/') : true))
+              .map(p => p.slice(rel ? rel.length + 1 : 0).split('/')[0]);
+            return { ok: true, value: [...new Set(names)].map(name => ({ name, kind: 'file' })) };
+          },
+          stat: async rel =>
+            c.files && Object.hasOwn(c.files, rel)
+              ? { ok: true, value: { size: Buffer.byteLength(c.files[rel]) } }
+              : { ok: false },
+          read: async (rel, start, end) => {
+            (c.fileOps ||= []).push('read ' + rel);
+            return { ok: true, value: Buffer.from(c.files[rel]).subarray(start, end) };
+          },
+          write: async (rel, bytes) => {
+            (c.fileOps ||= []).push('write ' + rel);
+            c.files[rel] = Buffer.from(bytes).toString('utf8');
+            return { ok: true, value: true };
+          },
+          locks: () => c.locks || [],
+
+          // the real path: c.links maps a name to where it really leads, else itself
+          real: async rel => (c.links && Object.hasOwn(c.links, rel) ? c.links[rel] : rel),
+        },
+        previewTake: async () => {
+          (c.fileOps ||= []).push('shot');
+          return {
+            url: 'http://localhost:5173/?x=1',
+            bytes: Buffer.from([0xff, 0xd8, 0xff, 1, 2, 3, 0xff, 0xd9]),
+            w: 1280,
+            h: 800,
+          };
         },
 
         // a choice (6i): what the app would answer OpenCode with
@@ -1156,6 +1237,25 @@ const item = (paneId, kind, detail) => ({
       'showFile', // attachments with a prompt
       'bring',
       'handOver', // the git hand-over
+      'keepLogs',
+      'askLog',
+      'log', // late join: "Keep on", an ask for a conversation, what is held of it
+      'askFeature',
+      'feature', // this week's thread features: an ask for Changes, skills or CLIs, its answer
+      'askFiles',
+      'files',
+      'askPreview',
+      'preview', // another computer's files and Live preview picture: an ask, what is held of it
+      'thread',
+      'resume',
+      'askPast',
+      'past', // thread controls (item 44): rename/close/model/effort, Resume, past conversations
+      'type',
+      'typePaste',
+      'typeEnd', // typing into a watched panel (item 41, remote-type.js)
+      'phonePair',
+      'phoneEnter',
+      'phoneCancel', // "Add a phone": the code, the six digits, Cancel (remote-link.js)
     ]
       .map(k => 'remote:' + k)
       .sort();
@@ -5242,7 +5342,15 @@ const item = (paneId, kind, detail) => ({
       turnsMod.init((channel, payload) => {
         if (channel === 'agent:turn' && payload.paneId === 'r14-cursor') got.push(payload);
       });
+
+      // the chat's history is read off the main loop (group 8, 2026-10-15), so wait for it
+      const waitFor = async test => {
+        for (let tries = 0; tries < 100 && !test(); tries++) {
+          await new Promise(done => setTimeout(done, 20));
+        }
+      };
       turnsMod.started('r14-cursor', 'Cursor Agent', '', 'chat', dir);
+      await waitFor(() => got.some(x => x.endedAt));
       const old = got.filter(x => x.endedAt).at(-1);
       check(
         'review 14, 2: the last task of a resumed Cursor Agent chat is published as read from history',
@@ -5258,6 +5366,7 @@ const item = (paneId, kind, detail) => ({
 
       // reads at once what the watcher would bring a moment later
       turnsMod.fromPty('pty:exit', { paneId: 'r14-cursor' });
+      await waitFor(() => got.some(x => x.result === 'The new answer'));
       const fresh = got.filter(x => x.endedAt && x.result === 'The new answer').at(-1);
       check(
         'a task that ends while the chat is followed is not marked',
@@ -6090,6 +6199,216 @@ const item = (paneId, kind, detail) => ({
     check('live view: quit leaves no timer', w.timers.length === 0, w.timers.length);
   }
 
+  // ---- typing into a watched panel (remote-type.js, plan item 41): A watches a panel on B and
+  // types into it. The rules themselves are tools/remote-type-test.js; this is the wiring. ----
+  {
+    const w = world(),
+      A = w.computer('a-1', 'Desk'),
+      B = w.computer('b-2', 'Laptop');
+    seen.now = w.now;
+    const wire0 = seen.wire.length;
+    const boot = (c, how) => {
+      const n = seen.sends.length;
+      how();
+      c.raw = seen.sends[n];
+    };
+    for (const c of [A, B]) boot(c, () => c.svc.setOn(true));
+    const KX = 'a'.repeat(40);
+    const panel = (name, more) => ({
+      name,
+      cli: 'Claude Code',
+      mode: 'run',
+      running: true,
+      hand: false,
+      instance: 'conv-' + name,
+      pid: 4321,
+      startedAt: 1700000000001,
+      ...more,
+    });
+    B.panels = { p1: panel('Moss'), p3: panel('PowerShell', { cli: 'Terminal', pid: 4400 }) };
+    const relist = async () => {
+      B.agents = [
+        { id: 'p1', name: 'Moss', cli: 'Claude Code', status: 'idle', since: 0, p: KX },
+        {
+          id: 'p3',
+          name: 'PowerShell',
+          cli: 'Terminal',
+          status: 'idle',
+          since: 0,
+          p: KX,
+          term: true,
+        },
+      ];
+      B.svc.agentsChanged();
+      await w.advance(5000);
+    };
+    for (const c of [A, B]) c.key = KX;
+    B.term.p1 = { cols: 20, rows: 2, lines: [['agent-screen'], ['']] };
+    B.term.p3 = { cols: 20, rows: 2, lines: [['PS C:'], ['']] };
+    const toPeer = (to, t) =>
+      seen.wire
+        .slice(wire0)
+        .filter(m => m.to === to && m.obj.t === t)
+        .map(m => m.obj);
+    const fresh = to => {
+      const m = seen.wire
+        .slice(wire0)
+        .filter(x => x.to === to && x.obj.c)
+        .at(-1);
+      return m ? { c: m.obj.c, ms: w.t - m.at } : { c: 1, ms: 0 };
+    };
+    const markOf = id => A.pc('b-2')?.agents.find(r => r.id === id)?.mark || '',
+      model = () => A.shown.at(-1) || null,
+      keysOf = () => B.typedKeys || [];
+    await w.advance(60000);
+    await w.pair(A, B);
+    await relist();
+    B.svc.setControl('a-1', true);
+    await relist();
+    check(
+      'typing: full control alone does not give it; the other computer is not told it may type, and no plain terminal is listed for it',
+      B.pc('a-1').typeable === false &&
+        A.pc('b-2').canType === false &&
+        toPeer('a-1', 'control').at(-1).type === undefined &&
+        !A.pc('b-2').agents.some(r => r.id === 'p3'),
+      [B.pc('a-1').typeable, A.pc('b-2').canType, A.pc('b-2').agents.map(r => r.id)]
+    );
+    check('typing: Watch an agent', A.svc.view('b-2', 'p1', markOf('p1')).sent === 'asked');
+    await w.advance(50);
+    check('typing: the view is on', model() && model().state === 'on', model());
+    check(
+      'typing: without the switch a press sends nothing',
+      A.svc.type('b-2', 'p1', markOf('p1'), [{ x: 'ls' }]).state === 'not_typing' &&
+        toPeer('b-2', 'type').length === 0
+    );
+    A.raw('b-2', {
+      t: 'type',
+      n: 'e'.repeat(16),
+      ...fresh('a-1'),
+      v: 'f'.repeat(16),
+      id: 'p1',
+      to: 'f'.repeat(16),
+      r: 'd'.repeat(16),
+      s: 1,
+      f: 1,
+      k: ['Enter'],
+    });
+    await w.advance(200);
+    check(
+      'typing: a batch from a computer without the switch is dropped unread: no word back, nothing written',
+      toPeer('a-1', 'typed').length === 0 && keysOf().length === 0
+    );
+
+    // typing is part of full control (rule 13): granted when the full-control question showed its
+    // sentence ('choose say sync type'); the view of the old grant ended with it, so A watches
+    // again
+    B.svc.setControl('a-1', false);
+    B.svc.setControl('a-1', true, { choose: true, sync: true, type: true });
+    await relist();
+    check(
+      'typing: full control turned on under the typing sentence: marked here, told to the other computer with one word, and its plain terminals are listed for it',
+      B.pc('a-1').typeable === true &&
+        toPeer('a-1', 'control').at(-1).type === true &&
+        A.pc('b-2').canType === true &&
+        A.pc('b-2').agents.some(r => r.id === 'p3' && r.cli === 'Terminal'),
+      [B.pc('a-1').typeable, toPeer('a-1', 'control').at(-1), A.pc('b-2').agents.map(r => r.id)]
+    );
+    check('typing: Watch again', A.svc.view('b-2', 'p1', markOf('p1')).sent === 'asked');
+    await w.advance(50);
+    const sent0 = w.sent.length;
+    check(
+      'typing: a press sends a batch',
+      A.svc.type('b-2', 'p1', markOf('p1'), [{ x: 'zebra' }, 'Enter']).state === 'sending'
+    );
+    await w.advance(300);
+    check(
+      'typing: the keys are written once into that panel, and the word "done" comes back',
+      keysOf().length === 1 &&
+        keysOf()[0].panelId === 'p1' &&
+        keysOf()[0].data === 'zebra\r' &&
+        keysOf()[0].ok === true &&
+        toPeer('a-1', 'typed').at(-1).state === 'done' &&
+        model().typing.said === 'done',
+      [keysOf(), toPeer('a-1', 'typed'), model() && model().typing]
+    );
+    const line = B.svc.controlLog().find(e => e.op === 'type');
+    check(
+      'typing: one line in the control list, with the counts and the computer, never the letters',
+      !!line &&
+        line.head === '5 characters, 1 Enter' &&
+        /^Desk \(…a-1\)$/.test(line.name) &&
+        line.agent === 'Moss',
+      line
+    );
+    check(
+      'typing: the watched computer says who typed into which panel, for the mark where the keys land',
+      JSON.stringify(B.svc.state().typed.map(x => [x.panelId, x.peer, x.name])) ===
+        JSON.stringify([['p1', 'a-1', 'Desk (…a-1)']])
+    );
+    check(
+      'typing: the typed text is in no state, log or relay message on either computer',
+      !JSON.stringify(B.svc.state()).includes('zebra') &&
+        !JSON.stringify(A.svc.state()).includes('zebra') &&
+        !JSON.stringify(B.svc.controlLog()).includes('zebra') &&
+        !JSON.stringify(model()).includes('zebra') &&
+        w.sent.slice(sent0).every(t => !/zebra/.test(t))
+    );
+    check(
+      'typing: a press for a row the page did not draw is refused',
+      A.svc.type('b-2', 'p1', '0'.repeat(12), ['Enter']).state === 'changed' &&
+        A.svc.type('b-2', 'p1', '', ['Enter']).state === 'changed'
+    );
+
+    // a plain terminal: watched and typed into like an agent
+    check(
+      'typing: Watch a plain terminal',
+      A.svc.view('b-2', 'p3', markOf('p3')).sent === 'asked',
+      markOf('p3')
+    );
+    await w.advance(50);
+    check(
+      'typing: the terminal view is on',
+      model() && model().state === 'on' && model().agent === 'p3'
+    );
+    check(
+      'typing: before its first picture a key is not sent',
+      A.svc.type('b-2', 'p3', markOf('p3'), [{ x: 'x' }]).state === 'not_typing' ||
+        !!model().picture
+    );
+
+    // the views send one picture a second between them: the terminal's first one comes then
+    await w.advance(1100);
+    A.svc.type('b-2', 'p3', markOf('p3'), [{ x: 'dir' }]);
+    await w.advance(300);
+    check(
+      'typing: letters go into the plain terminal',
+      keysOf().at(-1).panelId === 'p3' && keysOf().at(-1).data === 'dir',
+      keysOf()
+    );
+    const count = keysOf().length;
+    A.svc.typePaste('b-2', 'p3', markOf('p3'), 'one\ntwo');
+    await w.advance(4000);
+    check(
+      'typing: a paste of two lines into a plain terminal is refused there, nothing written, and the box says so',
+      keysOf().length === count && model().typing.said === 'refused',
+      [keysOf().length, model() && model().typing]
+    );
+
+    // every way full control ends, typing ends, and it does not come back by itself
+    B.svc.setControl('a-1', false);
+    B.svc.setControl('a-1', true);
+    await relist();
+    check(
+      'typing: full control turned on again without the typing sentence does not include typing',
+      B.pc('a-1').typeable === false && A.pc('b-2').canType === false
+    );
+    B.svc.setControl('a-1', false);
+    check('typing: full control off: no typing', B.pc('a-1').typeable === false);
+    for (const c of [A, B]) c.svc.quit();
+    await w.advance(120000);
+    check('typing: quit leaves no timer', w.timers.length === 0, w.timers.length);
+  }
+
   // ---- choose option N and
   // the link's one budget (6h). A chooses, B has the agent, C is paired with B and holds
   // no right. OpenCode only; the app's answer to OpenCode is a stand-in (c.chose). ----
@@ -6693,6 +7012,38 @@ const item = (paneId, kind, detail) => ({
           .join() === 'p1,p2',
       [sentIn(60000), (A.pc('b-2')?.agents || []).map(a => a.id)]
     );
+
+    // ---- an operation that ends in silence gives its reserved place back at once ----
+    // A sends 25 prompts without a number: each is taken (admitted) and ends in silence. Were each
+    // counted as owed for a minute, the link would read 25 more than it sent, past the line a
+    // choice stops at, and A's choice below would get silence.
+    {
+      const before = await fill(45);
+      const mark = sentBy('b-2');
+      for (let i = 0; i < 25; i++)
+        A.raw('b-2', { t: 'prompt', ...fresh('a-1'), id: 'p1', to: ticket('p1'), text: 'No n' });
+      await w.advance(50);
+      const q2 = item(A, 'q2'),
+        calls = B.chose.length;
+      A.raw('b-2', {
+        t: 'choose',
+        n: num(),
+        ...fresh('a-1'),
+        id: 'p1',
+        to: ticket('p1'),
+        of: q2 ? q2.kof : 'AAAAAAAAAAAAAAAA',
+        pick: 1,
+      });
+      await w.advance(50);
+      check(
+        'budget: 25 operations that ended in silence (nothing sent back) are not counted as owed: a choice below 70 messages sent is still taken',
+        before < 55 && sentBy('b-2') - mark <= 6 && !!q2 && B.chose.length === calls + 1,
+        [before, sentBy('b-2') - mark, B.chose.length - calls]
+      );
+    }
+    delete B.panels.p9;
+    await w.advance(61000);
+    await relist();
 
     // ---- "does a paired computer hold full control here"
     // without reading anything while connecting is off ----
@@ -7472,6 +7823,580 @@ const item = (paneId, kind, detail) => ({
     for (const c of [A, B, C]) c.svc.quit();
     await w.advance(120000);
     check('say: quit leaves no timer', w.timers.length === 0, w.timers.length);
+  }
+
+  // ---- this week's thread features (remote-features.js, plan item 45): Changes, skills, CLIs ----
+  {
+    const w = world(),
+      A = w.computer('a-1', 'Desk'),
+      B = w.computer('b-2', 'Laptop');
+    const ROOT = 'c'.repeat(40);
+    for (const c of [A, B]) {
+      c.project = { root: ROOT, head: 'd'.repeat(40) };
+      c.key = ROOT;
+    }
+    A.agents = [
+      { id: 'p1', name: 'Moss', cli: 'Codex', status: 'idle', since: 0, p: ROOT },
+      { id: 'p2', name: 'Fern', cli: 'Codex', status: 'idle', since: 0, p: 'e'.repeat(40) },
+    ];
+    for (const id of ['p1', 'p2'])
+      A.panels[id] = {
+        name: id,
+        cli: 'Codex',
+        mode: 'run',
+        running: true,
+        hand: false,
+        instance: 'i1',
+        pid: 5,
+        startedAt: 1,
+      };
+    A.svc.setOn(true);
+    B.svc.setOn(true);
+    await w.advance(50);
+    await w.pair(A, B);
+    await w.advance(5000);
+    const asked = B.svc.askFeature('a-1', 'changes', 'p1');
+    await w.advance(2000);
+    const got = B.svc.featureOf('a-1', 'changes', 'p1');
+    check(
+      'features: a thread’s Changes arrive shaped, without the folder’s path',
+      asked.state === 'asked' &&
+        got &&
+        got.state === 'ok' &&
+        got.value.branch === 'feature-x' &&
+        !JSON.stringify(got).includes('secret'),
+      [asked, got]
+    );
+    check(
+      'features: the state push carries none of it',
+      !JSON.stringify(B.svc.state()).includes('feature-x')
+    );
+    check(
+      'features: an agent of another project is not asked about here (rule 12)',
+      B.svc.askFeature('a-1', 'changes', 'p2').state === 'not_sent'
+    );
+    B.svc.askFeature('a-1', 'clis');
+    B.svc.askFeature('a-1', 'skills', 'p1');
+    await w.advance(2000);
+    const clis = B.svc.featureOf('a-1', 'clis');
+    check(
+      'features: the CLIs arrive without any account',
+      clis &&
+        clis.state === 'ok' &&
+        clis.value.clis[0].cli === 'Codex' &&
+        !JSON.stringify(clis).includes('example.com'),
+      clis
+    );
+    const skills = B.svc.featureOf('a-1', 'skills', 'p1');
+    check(
+      'features: the skills arrive written the way that CLI uses them',
+      skills && skills.state === 'ok' && skills.value.skills[0].insert === '$deploy',
+      skills
+    );
+    const before = (A.featureReads || []).length;
+    A.svc.setDetail('b-2', false);
+    await w.advance(1000);
+    await w.advance(6000);
+    B.svc.askFeature('a-1', 'clis');
+    await w.advance(2000);
+    check(
+      'features: with "show details" off nothing is read for that computer',
+      (A.featureReads || []).length === before,
+      A.featureReads
+    );
+    for (const c of [A, B]) c.svc.quit();
+    await w.advance(120000);
+    check('features: quit leaves no timer', w.timers.length === 0, w.timers.length);
+  }
+
+  // ---- a phone with full control gets only what was reviewed for phones (review of item 47,
+  // H2): no typing, no git hand-over, no files, no Live preview picture, no thread features ----
+  {
+    const w = world(),
+      A = w.computer('a-1', 'Desk'),
+      P = w.computer('ph-0123456789', 'Android phone');
+    const ROOT = 'c'.repeat(40);
+    const drain = async () => {
+      for (let step = 0; step < 20; step++) await w.advance(50);
+    };
+    for (const c of [A, P]) {
+      c.project = { root: ROOT, head: 'd'.repeat(40) };
+      c.key = ROOT;
+    }
+    A.files = { 'src/a.js': 'one\n' };
+    A.agents = [{ id: 'p1', name: 'Moss', cli: 'Codex', status: 'idle', since: 0, p: ROOT }];
+    A.panels.p1 = {
+      name: 'Moss',
+      cli: 'Codex',
+      mode: 'run',
+      running: true,
+      hand: false,
+      instance: 'i1',
+      pid: 5,
+      startedAt: 1,
+    };
+    A.svc.setOn(true);
+    P.svc.setOn(true);
+    await w.advance(50);
+    await w.pair(A, P);
+    await w.advance(5000);
+    A.svc.setControl('ph-0123456789', true, { choose: true, sync: true, type: true });
+    await w.advance(5000);
+    const pc = A.pc('ph-0123456789');
+    check(
+      'phone: full control is on, but typing and the git hand-over are not given to a phone',
+      pc && pc.control === true && pc.typeable !== true && P.pc('a-1').canType !== true,
+      pc && { control: pc.control, typeable: pc.typeable }
+    );
+    P.svc.askFiles('a-1', 'list', '');
+    await drain();
+    P.svc.askFiles('a-1', 'save', 'src/a.js', 'two\n');
+    await drain();
+    check(
+      'phone: no file is listed, read or saved for a phone',
+      !(A.fileOps || []).length && A.files['src/a.js'] === 'one\n',
+      A.fileOps
+    );
+    P.svc.askPreview('a-1');
+    await drain();
+    check(
+      'phone: no Live preview picture is taken for a phone',
+      !(A.fileOps || []).includes('shot')
+    );
+    P.svc.askFeature('a-1', 'changes', 'p1');
+    await drain();
+    check(
+      'phone: no thread feature is read for a phone',
+      !(A.featureReads || []).length,
+      A.featureReads
+    );
+    for (const c of [A, P]) c.svc.quit();
+    await w.advance(120000);
+  }
+
+  // ---- review 23, L8: the window is kept out of screen capture while the "Add a phone" code
+  // shows, and only then ----
+  {
+    const w = world(),
+      A = w.computer('a-1', 'Desk');
+    A.svc.setOn(true);
+    await w.advance(50);
+    check('L8: nothing is shielded before a code is made', !(A.shields || []).length);
+    const made = A.svc.phonePair();
+    await w.advance(50);
+    check(
+      'L8: while the code shows, the window is out of screen capture',
+      !!made.code && (A.shields || []).join() === 'true',
+      { made: !!made.code, shields: A.shields }
+    );
+    A.svc.phoneCancel();
+    await w.advance(50);
+    check('L8: Cancel gives the window back to capture', (A.shields || []).join() === 'true,false');
+    A.svc.phonePair();
+    await w.advance(50);
+    A.svc.setOn(false);
+    await w.advance(50);
+    check(
+      'L8: turning connecting off with the code shown gives it back too',
+      (A.shields || []).join() === 'true,false,true,false',
+      A.shields
+    );
+    A.svc.quit();
+    await w.advance(120000);
+  }
+
+  // ---- another computer's files and Live preview (remote-browse.js, remote-preview.js, plan
+  // items 42 and 43): only behind the target's full-control switch, only the open project ----
+  {
+    const w = world(),
+      A = w.computer('a-1', 'Desk'),
+      B = w.computer('b-2', 'Laptop');
+    const ROOT = 'c'.repeat(40);
+
+    // the answering side reads, checks the real path and writes: several settles
+    const drain = async () => {
+      for (let step = 0; step < 20; step++) await w.advance(50);
+    };
+    for (const c of [A, B]) {
+      c.project = { root: ROOT, head: 'd'.repeat(40) };
+      c.key = ROOT;
+    }
+    A.files = { 'src/a.js': 'one\n', '.env': 'KEY=1', 'src/held.js': 'held\n' };
+    A.locks = [{ file: 'src/held.js', name: 'Wren' }];
+    A.agents = [{ id: 'p1', name: 'Moss', cli: 'Codex', status: 'idle', since: 0, p: ROOT }];
+    A.panels.p1 = {
+      name: 'Moss',
+      cli: 'Codex',
+      mode: 'run',
+      running: true,
+      hand: false,
+      instance: 'i1',
+      pid: 5,
+      startedAt: 1,
+    };
+    A.svc.setOn(true);
+    B.svc.setOn(true);
+    await w.advance(50);
+    await w.pair(A, B);
+    await w.advance(5000);
+
+    // full control is off on A: nothing is read there, and B hears nothing
+    check('files: asked', B.svc.askFiles('a-1', 'list', '').state === 'asked');
+    await drain();
+    check(
+      'files: with full control off nothing is read on that computer',
+      !(A.fileOps || []).length && B.svc.filesOf('a-1').list.state === 'asked',
+      A.fileOps
+    );
+    B.svc.askPreview('a-1');
+    await drain();
+    check(
+      'preview: with full control off no picture is taken',
+      !(A.fileOps || []).includes('shot')
+    );
+    A.svc.setControl('b-2', true);
+    await w.advance(5000);
+    B.svc.askFiles('a-1', 'list', '');
+    await drain();
+    const list = B.svc.filesOf('a-1').list;
+    check(
+      'files: the folder arrives, the secret left out and counted',
+      list.state === 'shown' &&
+        list.entries.length === 1 &&
+        list.entries[0][0] === 'src' &&
+        list.hidden === 1,
+      list
+    );
+    B.svc.askFiles('a-1', 'read', 'src/a.js');
+    await drain();
+    check('files: a file arrives', B.svc.filesOf('a-1').file.text === 'one\n');
+    check(
+      'files: the state push carries none of it',
+      !JSON.stringify(B.svc.state()).includes('one\\n')
+    );
+    B.svc.askFiles('a-1', 'save', 'src/a.js', 'two\n');
+    await drain();
+    check(
+      'files: a save lands through the save path and is in that computer’s activity list',
+      A.files['src/a.js'] === 'two\n' &&
+        B.svc.filesOf('a-1').save.state === 'saved' &&
+        A.svc.state().log.some(e => e.kind === 'file_saved' && e.path === 'src/a.js'),
+      [A.files, B.svc.filesOf('a-1').save]
+    );
+    B.svc.askFiles('a-1', 'read', 'src/held.js');
+    await drain();
+    B.svc.askFiles('a-1', 'save', 'src/held.js', 'mine\n');
+    await drain();
+    check(
+      'files: a file an agent holds is refused with its name',
+      A.files['src/held.js'] === 'held\n' && B.svc.filesOf('a-1').save.holder === 'Wren',
+      B.svc.filesOf('a-1').save
+    );
+
+    // review of item 47: a file that makes a CLI run commands is read but never saved (H1), and
+    // a name that really leads to a secret is refused by where it leads (M1)
+    A.files['.claude/settings.json'] = '{}\n';
+    A.files['notes.txt'] = 'KEY=1';
+    A.links = { 'notes.txt': '.env' };
+    await w.advance(61000);
+    B.svc.askFiles('a-1', 'read', '.claude/settings.json');
+    await drain();
+    B.svc.askFiles('a-1', 'save', '.claude/settings.json', '{"hooks":1}\n');
+    await drain();
+    check(
+      'files: .claude/settings.json is read but its save is refused through the real wiring',
+      B.svc.filesOf('a-1').save.state === 'guarded' && A.files['.claude/settings.json'] === '{}\n',
+      B.svc.filesOf('a-1').save
+    );
+    B.svc.askFiles('a-1', 'read', 'notes.txt');
+    await drain();
+    check(
+      'files: a link to .env is refused by its real path through the real wiring',
+      B.svc.filesOf('a-1').file.state === 'hidden',
+      B.svc.filesOf('a-1').file
+    );
+    B.svc.askPreview('a-1');
+    await drain();
+    const picture = B.svc.previewOf('a-1');
+    check(
+      'preview: the picture and the page address without its query',
+      picture &&
+        picture.state === 'shown' &&
+        picture.url === 'http://localhost:5173/' &&
+        picture.data,
+      picture
+    );
+
+    // another project open on B: nothing is asked (rule 12)
+    B.key = 'e'.repeat(40);
+    check(
+      'files: another project open here asks nothing',
+      B.svc.askFiles('a-1', 'list', '').state === 'no_project'
+    );
+    B.key = ROOT;
+
+    // full control off again: A reads nothing more
+    A.svc.setControl('b-2', false);
+    await w.advance(5000);
+    const before = A.fileOps.length;
+    B.svc.askFiles('a-1', 'read', 'src/a.js');
+    await drain();
+    check(
+      'files: after full control went off nothing is read',
+      A.fileOps.length === before,
+      A.fileOps
+    );
+    for (const c of [A, B]) c.svc.quit();
+    await w.advance(120000);
+    check('files: quit leaves no timer', w.timers.length === 0, w.timers.length);
+  }
+
+  // ---- late join: another computer reads a running agent's conversation (remote-log.js) ----
+  {
+    const w = world(),
+      A = w.computer('a-1', 'Desk'),
+      B = w.computer('b-2', 'Laptop');
+    const ROOT = 'c'.repeat(40);
+    for (const c of [A, B]) {
+      c.project = { root: ROOT, head: 'd'.repeat(40) };
+      c.key = ROOT;
+    }
+    A.agents = [{ id: 'p1', name: 'Moss', cli: 'Claude Code', status: 'idle', since: 0, p: ROOT }];
+    A.panels.p1 = {
+      name: 'Moss',
+      cli: 'Claude Code',
+      mode: 'run',
+      running: true,
+      hand: false,
+      instance: 'i1',
+      pid: 5,
+      startedAt: 1,
+    };
+    A.records = { p1: { agent: 'Claude Code', sessionId: 's1' } };
+    A.readLog = () => ({
+      entries: [
+        { kind: 'you', text: 'MARKER-PROMPT fix the cart', at: w.now(), pos: 0 },
+        { kind: 'say', text: 'MARKER-ANSWER done', at: w.now(), pos: 10 },
+        { kind: 'result', id: 'x', text: 'MARKER-RESULT', at: w.now(), pos: 20 },
+      ],
+      more: false,
+      next: 30,
+      fresh: true,
+    });
+    A.svc.setOn(true);
+    B.svc.setOn(true);
+    await w.advance(50);
+    await w.pair(A, B);
+    await w.advance(5000);
+    const row = () => B.pc('a-1')?.agents.find(r => r.id === 'p1') || null;
+    check(
+      'late join: a switch that was on before the new sentence shares no conversation',
+      row() && row().talk === false && A.pc('b-2').reads === false,
+      row()
+    );
+    check(
+      'late join: an ask without a handle sends nothing',
+      B.svc.askLog('a-1', 'p1', 'first').state === 'not_sent'
+    );
+    A.svc.keepLogs('b-2');
+    await w.advance(5000);
+    check(
+      'late join: "Keep on" lets the conversation be read; the window never gets the handle',
+      row() && row().talk === true && !('lk' in row()) && A.pc('b-2').reads === true,
+      row()
+    );
+    const asked = B.svc.askLog('a-1', 'p1', 'first');
+    await w.advance(2000);
+    const got = B.svc.logOf('a-1', 'p1');
+    check(
+      'late join: the conversation arrives, shaped, without the result',
+      asked.state === 'asked' &&
+        got &&
+        got.entries.map(e => e.k).join() === 'you,say' &&
+        !JSON.stringify(got).includes('MARKER-RESULT'),
+      [asked, got]
+    );
+    check(
+      'late join: the state push carries none of its words',
+      !JSON.stringify(B.svc.state()).includes('MARKER') && row().log && row().log.state === 'held'
+    );
+    check(
+      'late join: one line on the computer that was read',
+      A.svc.state().log.filter(e => e.kind === 'read').length === 1
+    );
+
+    // Finding 11: what B's own agents can read of other computers carries none of it. `tnai
+    // agents` lists them from sayTargets() through remote-say.js `list` (main.js sayComputers);
+    // `tnai context` reads this computer's own results, never the service; the control list and
+    // the Devices state are the rest of what the service hands out.
+    {
+      const sayRules = require('../desktop/remote-say.js').createSay({ now: w.now });
+      const targets = B.svc.sayTargets();
+      const agentsOut = JSON.stringify(sayRules.list(targets));
+      const everything = JSON.stringify([
+        targets,
+        agentsOut,
+        B.svc.controlLog(),
+        B.svc.state(),
+        A.svc.state(),
+      ]);
+      check(
+        "late join: nothing of a held conversation is in what B's agents can read (tnai agents, the control list, the state)",
+        !everything.includes('MARKER-PROMPT') && !everything.includes('MARKER-ANSWER'),
+        everything.slice(0, 200)
+      );
+    }
+    check(
+      'late join: the read named the panel record and no helper',
+      A.logReads.length === 1 && A.logReads[0].record.sessionId === 's1'
+    );
+
+    // a new conversation in the same panel: the old handle reads nothing
+    A.records.p1 = { agent: 'Claude Code', sessionId: 's2' };
+    await w.advance(6000);
+    B.svc.askLog('a-1', 'p1', 'new');
+    await w.advance(2000);
+    check(
+      'late join: a reused panel with a new conversation answers nothing for the old handle',
+      A.logReads.length === 1,
+      A.logReads.length
+    );
+
+    // a turn grows the counter on the row
+    A.svc.agentsChanged();
+    await w.advance(5000);
+    const before = row().rev || 0;
+    A.svc.turnChanged('p1', 100, false);
+    A.svc.turnChanged('p1', 100, false);
+    A.svc.turnChanged('p1', 100, true);
+    await w.advance(20000);
+    check(
+      'late join: a turn start and end grow the counter, repeated pushes do not',
+      row().rev === before + 2,
+      [before, row().rev]
+    );
+
+    // the switch off: B drops what it holds and nothing more arrives
+    A.svc.setDetail('b-2', false);
+    await w.advance(2000);
+    check(
+      'late join: the switch off drops what the other computer holds',
+      B.svc.logOf('a-1', 'p1') === null && row().talk === false
+    );
+    A.svc.setDetail('b-2', true);
+    await w.advance(5000);
+    check('late join: off then on works again at once', row() && row().talk === true);
+
+    // the budget: a log part is a stream message and pays off no owed reply
+    const { createLinkBudget } = require('../desktop/remote-service.js');
+    let t = 0;
+    const budget = createLinkBudget(() => t);
+    for (let i = 0; i < 70; i++) budget.pass({ t: 'needs' }, undefined, () => true);
+    check(
+      'late join: a log part is refused at the stream line',
+      budget.pass({ t: 'log', n: 'x' }, 'stream', () => true) === false
+    );
+    const owed = createLinkBudget(() => t);
+    owed.admit('x');
+    owed.pass({ t: 'log' }, 'stream', () => true);
+    check('late join: a log part pays off no owed reply', owed.lastMinute() === 2);
+
+    // the session ends: nothing of it stays
+    B.svc.askLog('a-1', 'p1', 'first');
+    await w.advance(2000);
+    A.svc.setOn(false);
+    await w.advance(2000);
+    check('late join: the session ended: nothing held', B.svc.logOf('a-1', 'p1') === null);
+  }
+
+  // ---- the link's one budget on its own (createLinkBudget): what pays off an owed reply ----
+  {
+    const { createLinkBudget } = require('../desktop/remote-service.js');
+    let t = 1000;
+    const clock = () => t,
+      went = () => true;
+
+    // `viewing` is the reply to `view`: it pays off the place its view reserved
+    const views = createLinkBudget(clock);
+    views.admit('x');
+    views.pass({ t: 'viewing', n: 'a', state: 'on' }, undefined, went);
+    check(
+      'budget alone: a view taken and its `viewing` sent count as one message, not one plus one owed',
+      views.lastMinute() === 1,
+      views.lastMinute()
+    );
+
+    // `got` answers file pieces nobody admitted: it must not pay off another operation's reply
+    const files = createLinkBudget(clock);
+    files.admit('x');
+    files.pass({ t: 'got', f: 'a', i: 40, state: 'more' }, 'reply', went);
+    check(
+      "budget alone: a `got` sent while another operation's reply is owed counts as one sent plus one still owed",
+      files.lastMinute() === 2,
+      files.lastMinute()
+    );
+
+    // an operation that ended in silence gives back its place, but still counts toward that
+    // computer's 30 operations a minute
+    const quiet = createLinkBudget(clock);
+    let taken = 0;
+    for (let i = 0; i < 30; i++) {
+      const place = quiet.admit('x');
+      if (place) {
+        taken++;
+        quiet.giveBack(place);
+      }
+    }
+    check(
+      'budget alone: 30 operations that ended in silence leave nothing owed, and the 31st of that computer in the minute is still refused',
+      taken === 30 && quiet.lastMinute() === 0 && quiet.admit('x') === false,
+      [taken, quiet.lastMinute()]
+    );
+    t += 60000;
+    check(
+      'budget alone: a minute later that computer is taken again',
+      quiet.admit('x') !== false,
+      quiet.lastMinute()
+    );
+
+    // A reply pays off an operation that is still owed, never outlives it (group 4 Medium 1): 30
+    // operations taken at 0 s and answered at 50 s, then 30 more at 61 s. The real figure is 60
+    // (30 replies sent in the last minute, 30 owed); two separate lists said 30.
+    t = 1000000;
+    const edge = createLinkBudget(clock);
+    for (let i = 0; i < 30; i++) edge.admit('a');
+    t += 50000;
+    for (let i = 0; i < 30; i++) edge.pass({ t: 'acted', n: 'a' }, undefined, went);
+    t += 11000;
+    let late = 0;
+    for (let i = 0; i < 30; i++) if (edge.admit('b')) late++;
+    check(
+      'budget alone: replies sent before the minute edge pay off only their own operations (60, not 30)',
+      late === 30 && edge.lastMinute() === 60,
+      [late, edge.lastMinute()]
+    );
+
+    // giveBack frees the place its own admit took, never a newer one (group 4 Info 3): the older
+    // operation ends in silence after a newer one was taken; once the older place would have
+    // expired, the newer one is still owed.
+    t = 2000000;
+    const own = createLinkBudget(clock);
+    const older = own.admit('a');
+    t += 30000;
+    own.admit('a');
+    own.giveBack(older);
+    t += 31000;
+    check(
+      'budget alone: giveBack frees its own place, so the newer operation is still owed a minute later',
+      own.lastMinute() === 1,
+      own.lastMinute()
+    );
+    own.giveBack(older);
+    check(
+      'budget alone: a second giveBack of the same place frees nothing more',
+      own.lastMinute() === 1,
+      own.lastMinute()
+    );
   }
   console.log(
     `${passed} passed, ${failed} failed (Node ${process.versions.node}${process.versions.electron ? ', Electron ' + process.versions.electron : ''})`

@@ -199,7 +199,7 @@ function detectQuestion(raw) {
     if (n >= 2 && pointer) {
       at = Math.max(at, j - 1);
       let k = i - 1;
-      while (k > i - 7 && k >= 0 && !/[?:]s*$/.test(lines[k])) k--;
+      while (k > i - 7 && k >= 0 && !/[?:]\s*$/.test(lines[k])) k--;
       soft = lines[k >= 0 && k > i - 7 ? k : i - 1] || lines[i];
     }
   }
@@ -758,6 +758,14 @@ function localDelivery(paneId, by) {
   if (!p.localOut) schedule(paneId);
 }
 
+// Review 23, L7: a delivery (this computer's own or a remote prompt) has its text in that panel's
+// input with an Enter still to come. Keys typed from another computer meanwhile would be sent as
+// part of it, so remote-actions.js `type` answers "changed" while this is true.
+function deliveryOpen(paneId) {
+  const p = panes.get(paneId);
+  return !!p && ((p.localOut || 0) > 0 || !!p.remoteOut);
+}
+
 // A prompt from another computer got its one Enter and the CLI gives no sign (prompt-submit.js
 // "unconfirmed"): its text may still sit in the input. This computer's user gets the "unsent text"
 // note, so the reason prompts for that panel are held can be seen and acted on, and the hold itself
@@ -1284,6 +1292,7 @@ module.exports = {
   cancelRemote,
   remoteRecheck,
   localDelivery,
+  deliveryOpen,
   remoteUnconfirmed,
   list: payload,
   _test: {

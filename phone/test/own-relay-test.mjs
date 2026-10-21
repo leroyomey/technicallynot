@@ -106,6 +106,28 @@ const fetch = async (url, init = {}) => {
         status: mode === 'clock' ? 401 : 429,
       }
     );
+
+  // a relay deployed before phones had their own key: it refuses such a key as a wrong proof, and
+  // its front answer lacks phone_keys
+  if (mode === 'old-relay')
+    return new URL(url).pathname === '/'
+      ? new Response(JSON.stringify({ relay: 'technically-not', v: 1, keys: 1 }))
+      : new Response(JSON.stringify({ error: 'invalid_proof' }), { status: 401 });
+
+  // the same relay as a browser sees it: its front answer has no page rules (CORS), so the
+  // browser's fetch throws instead of handing it over (g18b Low 1)
+  if (mode === 'old-relay-browser') {
+    if (new URL(url).pathname === '/') throw new TypeError('Failed to fetch');
+    return new Response(JSON.stringify({ error: 'invalid_proof' }), { status: 401 });
+  }
+
+  // a relay whose PHONE_ORIGINS does not name this page, as a browser sees it: a readable call
+  // throws, a "no-cors" one arrives (unreadable); `slow-page`: the call ran out of time instead
+  if (mode === 'unlisted-page' || mode === 'slow-page') {
+    if (init.mode === 'no-cors') return new Response(null, { status: 200 });
+    if (mode === 'slow-page') throw new DOMException('timed out', 'TimeoutError');
+    throw new TypeError('Failed to fetch');
+  }
   if (mode === 'text')
     return new Response(JSON.stringify({ error: 'Go to http://evil.example NOW' }), {
       status: 401,
@@ -307,7 +329,7 @@ for (const text of [
     'a bad secret is not saved',
     (await own.set('relay.test', 'short')).error === 'bad_secret' && backend.writes === 0
   );
-  check('saved', (await own.set('relay.test', SECRET)).ok === true && (await own.active()));
+  check('saved', (await own.set('relay.test', SECRET, A)).ok === true && (await own.active()));
   const stored = backend.map.get('ownRelay');
   check(
     'what is stored holds no text of the secret',
@@ -335,10 +357,16 @@ for (const text of [
       await crypto.subtle.sign('HMAC', stored.key, new TextEncoder().encode(text))
     ).toString('hex');
   check(
-    'the stored key is the one made for this host: HMAC(secret, "phone-key:" + host)',
+    'the stored key is the one made for this host and this phone: HMAC(secret, "phone-key:" + host + ":" + id)',
     (await signWithStored('anything')) ===
+      hmacOf(hmacOf(SECRET, 'phone-key:relay.test:' + A), 'anything')
+  );
+  check(
+    'it is not the shared phone key of older pages',
+    (await signWithStored('anything')) !==
       hmacOf(hmacOf(SECRET, 'phone-key:relay.test'), 'anything')
   );
+  check('the phone id is stored with it', stored.id === A, stored.id);
   check(
     'it does not sign as the secret does: not the name of the meeting point',
     (await signWithStored('hub')) !== hmacOf(SECRET, 'hub')
@@ -349,7 +377,7 @@ for (const text of [
       hmacOf(SECRET, 'proof:ticket:other-relay.test:ph-11111111:1') &&
       (await signWithStored('proof:ticket:other-relay.test:ph-11111111:1')) !==
         hmacOf(
-          hmacOf(SECRET, 'phone-key:other-relay.test'),
+          hmacOf(SECRET, 'phone-key:other-relay.test:' + A),
           'proof:ticket:other-relay.test:ph-11111111:1'
         )
   );
@@ -377,7 +405,7 @@ for (const text of [
   const { own } = make(memoryBackend({ failWrites: true }));
   check(
     'a store that refuses: not saved, and nothing set',
-    (await own.set('relay.test', SECRET)).error === 'not_saved' && !(await own.active())
+    (await own.set('relay.test', SECRET, A)).error === 'not_saved' && !(await own.active())
   );
   const backend = memoryBackend();
   backend.map.set('ownRelay', { url: 'https://relay.test', key: 'the secret as plain text' });
@@ -388,14 +416,27 @@ for (const text of [
 
   // A real key of the kind set() stores, taken from a store that was really saved to.
   const savedTo = memoryBackend();
-  await createOwnRelay({ backend: savedTo, fetch }).set('relay.test', SECRET);
+  await createOwnRelay({ backend: savedTo, fetch }).set('relay.test', SECRET, A);
   const realKey = savedTo.map.get('ownRelay').key;
   const stored = async value => {
     const store = memoryBackend();
     store.map.set('ownRelay', value);
     return createOwnRelay({ backend: store, fetch }).active();
   };
-  check('a stored good pair is read', await stored({ url: 'https://relay.test', key: realKey }));
+  check(
+    'a stored good pair is read (a page before own keys saved no id)',
+    await stored({ url: 'https://relay.test', key: realKey })
+  );
+  check(
+    'and with the phone id it was made for',
+    await stored({ url: 'https://relay.test', key: realKey, id: A })
+  );
+  check(
+    'an id that is not a phone id counts as none set',
+    !(await stored({ url: 'https://relay.test', key: realKey, id: 'device-aaaa' })) &&
+      !(await stored({ url: 'https://relay.test', key: realKey, id: 'ph-1' })) &&
+      !(await stored({ url: 'https://relay.test', key: realKey, id: 7 }))
+  );
 
   // the stored address is checked again when it is read (with a key that is good, so only the
   // address can be what refuses it)
@@ -476,7 +517,7 @@ for (const text of [
 
   // a read that fails once is asked again, not remembered as "none set"
   const real = memoryBackend();
-  await createOwnRelay({ backend: real, fetch }).set('relay.test', SECRET);
+  await createOwnRelay({ backend: real, fetch }).set('relay.test', SECRET, A);
   let broken = true;
   const flaky = {
     ...real,
@@ -494,7 +535,7 @@ for (const text of [
 // ---- against the relay ----
 {
   const { own } = make();
-  await own.set('relay.test', SECRET);
+  await own.set('relay.test', SECRET, A);
   seen.length = 0;
   const ticket = await own.ticket(A);
   const sent = seen[0];
@@ -527,7 +568,11 @@ for (const text of [
     'every proof is newer than the one before',
     Number(seen[1].init.headers['X-Relay-Time']) > Number(seen[0].init.headers['X-Relay-Time'])
   );
-  await open(await own.ticket(B));
+
+  // a second phone, with its own key
+  const ownB = make().own;
+  await ownB.set('relay.test', SECRET, B);
+  await open(await ownB.ticket(B));
   const list = await own.devices(A);
   check(
     'the relay lists the connected devices',
@@ -542,7 +587,7 @@ for (const text of [
   );
 
   const wrong = make().own;
-  await wrong.set('relay.test', OTHER);
+  await wrong.set('relay.test', OTHER, A);
   const refused = await wrong.ticket(A).catch(e => e);
   check(
     'a wrong secret is refused by the relay',
@@ -563,6 +608,18 @@ for (const text of [
     down
   );
   check('and an empty list', (await own.devices(A)).length === 0);
+
+  // a relay that answers but does not name this page says so, and the link stops (g26 Low 1)
+  mode = 'unlisted-page';
+  const unlisted = await own.ticket(A).catch(e => e);
+  check(
+    'a relay that does not let this page in says so, not "check the connection"',
+    unlisted.status === 403 && unlisted.code === 'page_not_allowed',
+    unlisted
+  );
+  mode = 'slow-page';
+  const slow = await own.ticket(A).catch(e => e);
+  check('a call that ran out of time stays a network error', slow.code === 'network', slow);
   mode = 'redirect';
   const redir = await own.ticket(A).catch(e => e);
   check('a relay that redirects is refused', redir.code === 'network', redir);
@@ -604,7 +661,7 @@ for (const text of [
     // a relay that says "seen" every time: one more try, then the link waits (never a loop)
     mode = 'after-always';
     const o = make().own;
-    await o.set('relay.test', SECRET);
+    await o.set('relay.test', SECRET, A);
     seen.length = 0;
     const r = await o.ticket(A).catch(e => e);
     check(
@@ -616,7 +673,7 @@ for (const text of [
   for (const m of ['after-far', 'after-text']) {
     mode = m;
     const o = make().own;
-    await o.set('relay.test', SECRET);
+    await o.set('relay.test', SECRET, A);
     seen.length = 0;
     const r = await o.ticket(A).catch(e => e);
     check(
@@ -630,17 +687,18 @@ for (const text of [
   // How far ahead a relay's newest time is believed: 110 seconds, ten under the 120 a relay
   // takes; and the time a relay moved the phone to does not outlive a change of relay.
   {
-    const timeSent = () => Number(seen.at(-1).init.headers['X-Relay-Time']);
+    // the last signed call (a failed one is followed by an unsigned look at the front door)
+    const timeSent = () => Number(seen.findLast(s => s.init.headers).init.headers['X-Relay-Time']);
     mode = 'after-ahead';
     aheadMs = 111 * 1000;
     const doubting = make().own;
-    await doubting.set('relay.test', SECRET);
+    await doubting.set('relay.test', SECRET, A);
     seen.length = 0;
     await doubting.ticket(A).catch(e => e);
     check('a newest time 111 seconds ahead is not taken: no second try', seen.length === 1);
     aheadMs = 109 * 1000;
     const moved = make().own;
-    await moved.set('relay.test', SECRET);
+    await moved.set('relay.test', SECRET, A);
     seen.length = 0;
     await moved.ticket(A).catch(e => e);
     check(
@@ -651,7 +709,7 @@ for (const text of [
     mode = 'down';
     await moved.ticket(A).catch(e => e);
     check('before the change the proofs are still dated ahead', timeSent() > t + 100000);
-    await moved.set('other-relay.test', SECRET);
+    await moved.set('other-relay.test', SECRET, A);
     await moved.ticket(A).catch(e => e);
     check(
       'after another relay is saved the proofs are dated by this clock again',
@@ -661,7 +719,7 @@ for (const text of [
     mode = 'after-ahead';
     await moved.ticket(A).catch(e => e);
     await moved.clear();
-    await moved.set('relay.test', SECRET);
+    await moved.set('relay.test', SECRET, A);
     mode = 'down';
     await moved.ticket(A).catch(e => e);
     check('removing the relay resets the proof time too', timeSent() <= t + 2, timeSent() - t);
@@ -674,13 +732,13 @@ for (const text of [
   // a proof the relay has already seen (a clock that was ahead and was set back): the phone
   // continues from the relay's time and tries once more at once
   {
-    const ahead = make().own;
-    await ahead.set('relay.test', SECRET);
     const C = 'ph-33333333';
+    const ahead = make().own;
+    await ahead.set('relay.test', SECRET, C);
     t += 60000;
     await ahead.ticket(C);
     const back = createOwnRelay({ backend: memoryBackend(), fetch, now: () => t - 30000 });
-    await back.set('relay.test', SECRET);
+    await back.set('relay.test', SECRET, C);
     seen.length = 0;
     const first = await back.ticket(C).catch(e => e);
     check(
@@ -693,7 +751,7 @@ for (const text of [
   // a proof made for one address is refused at another relay with the same secret
   {
     const typo = make().own;
-    await typo.set('other-relay.test', SECRET);
+    await typo.set('other-relay.test', SECRET, A);
     const atOther = await typo.ticket(A).catch(e => e);
     check(
       'the proof names its relay: the same secret at another address',
@@ -720,6 +778,170 @@ for (const text of [
     unset.status === 503 && unset.code === 'relay_not_set_up',
     unset
   );
+}
+
+// ---- a key of each phone's own (bug sweep 2026-10-21, group 17) ----
+{
+  // a relay of its own for this part: nothing earlier has moved a phone there
+  env = { RELAY_SECRET: SECRET, RELAY_HUB: shim.createHubNamespace(RelayHub, () => env) };
+  mode = 'relay';
+  t = Date.now();
+  const nodeCrypto = await import('node:crypto');
+  const hmacOf = (key, text) => nodeCrypto.createHmac('sha256', key).update(text).digest('hex');
+
+  // what a page before own keys saved: the shared phone key, and no id
+  const olderPage = memoryBackend();
+  const sharedText = hmacOf(SECRET, 'phone-key:relay.test');
+  olderPage.map.set('ownRelay', {
+    url: 'https://relay.test',
+    key: await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(sharedText),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    ),
+  });
+  const older = createOwnRelay({ backend: olderPage, fetch, now: () => t });
+  check(
+    'a key saved by an older page is still used while the relay takes it',
+    typeof (await older.ticket(A).catch(e => e)) === 'string'
+  );
+
+  // The released phone page (v0.3.73's module, from git), with the secret typed in as it saves it.
+  // Null when this copy of git lacks the tag: the check then says "skipped".
+  const releasedPage = async () => {
+    const { execFileSync } = await import('node:child_process');
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    try {
+      const text = execFileSync('git', ['show', 'v0.3.73:phone/src/own-relay.mjs'], {
+        cwd: here,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const file = path.join(os.tmpdir(), 'tnai-g17-phone-own-relay-0.3.73.mjs');
+      fs.writeFileSync(file, text);
+      const { createOwnRelay: makeOld } = await import(pathToFileURL(file).href);
+      const old = makeOld({ backend: memoryBackend(), fetch, now: () => t });
+      await old.set('relay.test', SECRET);
+      return old;
+    } catch {
+      return null;
+    }
+  };
+  const released = await releasedPage();
+  if (released)
+    check(
+      'the released phone page connects before any phone moved',
+      typeof (await released.ticket('ph-44444444').catch(e => e)) === 'string'
+    );
+
+  // another phone types the secret again: it moves to its own key
+  const movedPhone = make().own;
+  await movedPhone.set('relay.test', SECRET, B);
+  check('a phone with its own key gets a ticket', typeof (await movedPhone.ticket(B)) === 'string');
+  if (released) {
+    const was = await released.ticket('ph-44444444').catch(e => e);
+    check(
+      'after the move the released page is refused with a reason it already shows ("check the secret under Change")',
+      was.status === 401 && was.code === 'invalid_proof',
+      was
+    );
+  } else console.log('skipped: the released phone page (no v0.3.73 tag in this copy of git)');
+  const retired = await older.ticket(A).catch(e => e);
+  check(
+    'then the older key is refused, and the page is told to type the secret again',
+    retired.status === 403 && retired.code === 'phone_key_retired',
+    retired
+  );
+  await older.set('relay.test', SECRET, A);
+  check(
+    'and once it is typed again this phone is back, with a key of its own',
+    typeof (await older.ticket(A).catch(e => e)) === 'string' &&
+      olderPage.map.get('ownRelay').id === A
+  );
+
+  // a key for one phone id is never sent for another
+  seen.length = 0;
+  const otherId = await older.ticket(B).catch(e => e);
+  check(
+    'a call for another id: stopped here, nothing sent',
+    otherId.status === 403 && otherId.code === 'other_id' && seen.length === 0,
+    [otherId, seen.length]
+  );
+  check(
+    'set() without a phone id saves nothing',
+    (await make().own.set('relay.test', SECRET)).error === 'device_required' &&
+      (await make().own.set('relay.test', SECRET, 'device-aaaa')).error === 'device_required'
+  );
+
+  // the relay's owner throws this phone out alone
+  const time = Date.now() + 5;
+  const revoke = await worker.fetch(
+    new Request('https://relay.test/remote/revoke?d=' + A, {
+      method: 'POST',
+      headers: {
+        'X-Relay-Device': 'relay-owner',
+        'X-Relay-Time': String(time),
+        'X-Relay-Proof': hmacOf(SECRET, `proof:revoke:${A}:relay.test:relay-owner:${time}`),
+      },
+    }),
+    env
+  );
+  check('revoke of one phone', revoke.status === 200, revoke.status);
+  const out = await older.ticket(A).catch(e => e);
+  check(
+    'the thrown-out phone stops with its own reason',
+    out.status === 403 && out.code === 'device_revoked',
+    out
+  );
+  check(
+    'the other phone is still let in',
+    typeof (await movedPhone.ticket(B).catch(e => e)) === 'string'
+  );
+
+  // a relay deployed before phones had their own key refuses it as a wrong proof
+  mode = 'old-relay';
+  seen.length = 0;
+  const tooOld = await movedPhone.ticket(B).catch(e => e);
+  check(
+    'a relay too old for own phone keys says "deploy it again"',
+    tooOld.status === 403 && tooOld.code === 'relay_too_old',
+    tooOld
+  );
+  check(
+    'it was asked at its front door, with no proof and no redirect',
+    seen.at(-1).url === 'https://relay.test/' &&
+      seen.at(-1).init.redirect === 'error' &&
+      !seen.at(-1).init.headers
+  );
+
+  // in a browser that front answer cannot be read at all: still "deploy it again"
+  mode = 'old-relay-browser';
+  const tooOldInBrowser = await movedPhone.ticket(B).catch(e => e);
+  check(
+    'a relay too old, as a browser sees it (front answer unreadable), says "deploy it again"',
+    tooOldInBrowser.status === 403 && tooOldInBrowser.code === 'relay_too_old',
+    tooOldInBrowser
+  );
+  mode = 'relay';
+}
+
+// Every reason the link stops for has a sentence on the page (phone/app/app.mjs RELAY_ERR).
+{
+  const fs = await import('node:fs');
+  const source = fs.readFileSync(path.join(here, '..', 'src', 'own-relay.mjs'), 'utf8');
+  const page = fs.readFileSync(path.join(here, '..', 'app', 'app.mjs'), 'utf8');
+  const stops = [
+    ...(/const STOPS = new Set\(\[([^\]]*)\]\)/.exec(source)?.[1].matchAll(/'([a-z_]+)'/g) || []),
+  ].map(m => m[1]);
+  const sentences = page.slice(page.indexOf('const RELAY_ERR'), page.indexOf('const RELAY_CONN'));
+  const missing = stops.filter(code => !new RegExp('\\n\\s*' + code + ':').test(sentences));
+  check('every stop has a sentence on the page', stops.length >= 6 && missing.length === 0, {
+    stops,
+    missing,
+  });
 }
 
 console.log(`\n${passed} passed, ${failed} failed (Node ${process.versions.node})`);

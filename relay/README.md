@@ -43,6 +43,24 @@ With the secret someone can also keep your devices from connecting, by taking th
 
 To lock everyone out, set a new secret (step 3 and 4 again) and enter it on your own computers. Your pairings stay: they rest on the six digits, not on the secret.
 
+**Your computers do not keep the secret.** When you enter it on a computer, the app keeps only a key made from the secret for that computer's own id. That key speaks for that one computer and nothing else: someone who copies one computer's settings can take that computer's place on the relay, and cannot take another computer's place, fill the relay with devices or throw the others off. Like every device of yours, it can still see which of your devices exist and when each was last seen, and remove one that is offline from that list (the app's Remove does that). A relay deployed before this does not know these keys: run `npm run deploy` once before you update the app, or the updated computers cannot connect to it (their Devices page then says the relay is older than the app). Each phone does the same with its own id (below).
+
+### Throwing one device out
+
+If a computer is lost or stolen, you usually do not need a new secret. From this folder, with the secret saved by `npm run setup-secret`:
+
+`npm run revoke -- https://your-relay-address DEVICE-ID`
+
+The relay disconnects that device at once and refuses it from then on. Only the secret can do this; the key a computer keeps cannot, so a stolen computer cannot throw out yours. To let it in again: the same command with `undo` at the end. A computer you threw out and want back with a clean start gets a new id when you delete `tnai-own-relay-device.json` in the app's settings folder (`%APPDATA%\TechnicallyNot.ai` on Windows); pair it again afterwards. The relay keeps up to 256 thrown-out ids.
+
+**When you still need a new secret.** A revoke stops the key a computer keeps. It does not stop anyone who has the secret itself, so set a new secret (step 3 and 4 again, then enter it on your computers) when the lost device is:
+
+- the computer you set the relay up from (`npm run setup-secret` keeps the secret in a file there),
+- a computer that still runs an app older than these keys,
+- a computer whose Devices page said its id was good for this run only (it keeps the secret until its id is saved).
+
+**A lost phone.** Each phone keeps a key of its own id too (below), so `npm run revoke` with the lost phone's id (they begin `ph-`) throws out that phone alone; your computers and your other phones stay. It also ends the one shared phone key that phone pages before this kept, since the lost phone may hold it: a phone that still used it shows "Your relay refused the secret" (or, on a newer page, "Your relay now gives each phone its own key"); press Change on its relay card and type the secret again. `undo` lets the phone back; the shared key stays ended. A new secret also works, as for a computer: it starts an empty meeting point, so every phone pairs again with the new secret and no earlier revoke stands in the way.
+
 The secret must be 32 to 200 characters with no spaces, at least 12 of them different, with no run of seven characters typed along a keyboard row, the alphabet or the digits (forward or backward), and either three kinds of character (small letters, capitals, digits, signs) or 40 characters and more. The one `npm run secret` prints is right, and so are 64 random hex characters; a word repeated or a row of keys is refused.
 
 Also refused: one piece written over and over (`MyDogRex2019!` two and a half times), and a secret of 32 to 39 characters with only two kinds of character. About one random 32-character text of letters in 770 is the second case; what `npm run secret` prints is 43 long and always passes. Blanks and line ends around the secret are taken off, here and in the app, so a secret saved with a line end after it is the same secret.
@@ -67,7 +85,11 @@ Be clear about what that check is worth: it looks at the shape of the text, and 
 
 It never sends the secret. For each call it sends its device id, the time, and a keyed hash (HMAC-SHA-256) under the secret of the call, this relay's host, the device id and the time. So a proof is worth nothing at another address. The relay accepts a proof once and only within two minutes of its own clock. A proof buys one ticket. The relay remembers that ticket, opens one connection for it within a minute, and opens nothing for any other ticket.
 
-The phone app is a web page, and a page cannot keep a key from a script that got onto it. So the phone does not keep a key of the secret itself. It keeps one made from the secret for this relay's host (HMAC of `phone-key:` and the host), which can sign a proof to this relay and nothing else. The relay accepts a proof under either key, and under the phone's key only for a device id that begins `ph-`, as every phone's does: so that key cannot ask for a ticket in a computer's name.
+The phone app is a web page, and a page cannot keep a key from a script that got onto it. So the phone does not keep a key of the secret itself. It keeps one made from the secret for this relay's host and its own phone id (HMAC of `phone-key:`, the host, `:` and the id), which can sign a proof of that one phone to this relay and nothing else: not another phone, not a computer, nothing for another relay.
+
+Phone pages before this kept one shared phone key for every phone (HMAC of `phone-key:` and the host). The relay still takes it, for phone ids only, until a phone proves with its own key or a phone is thrown out; from then on it answers that key with "invalid_proof" (and `why: phone_key_retired`), closes the connections that came in under it (close code 4010), and never takes it again. A page that still holds it asks for the secret once more and keeps a phone key of its own from then on. A relay deployed before phones had their own key refuses that key; its front answer (`GET /`) has no `phone_keys: 1`, and the phone page then says to deploy the relay again.
+
+**Which web page may call the relay.** A browser lets the phone page read the relay's answers only when the relay names that page's address. The relay names one list, `PHONE_ORIGINS` in `wrangler.toml` (exact addresses such as `https://app.example.com`, comma separated), and no other page: never every page (`*`), and never with the browser's cookies. Any other page's browser cannot read an answer, and its socket is refused (`origin_not_allowed`). Your computers send no page address and are not affected. Empty, as it ships until the phone app has its own address, no web page can reach the relay; a phone page that is not on the list says "Your relay does not let this page in yet" and shows its own address to add. An entry with `:443` or a closing `/` is read without them; an entry that is still no page address (a path, a bare host) is ignored, and the relay's log counts how many. Set it in `wrangler.toml`, not the Cloudflare dashboard: each deploy writes the file's value over it. A relay deployed before 2026-10-21 lets every page read its answers until you deploy it again.
 
 ## What a ticket is signed with, and what that saves you
 

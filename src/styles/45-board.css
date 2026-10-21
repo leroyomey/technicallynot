@@ -1,0 +1,441 @@
+/* Technically Not · 45-board.css — the Board page (src/scripts/157-board-page.js), built from the
+   approved mock docs/plans/design-concepts/app-board.body.html (user, 2026-10-16: "Build it like
+   this"). One island beside the thread list; five columns as soft surfaces with no lines between
+   them; a Week view of seven days. Tokens only: no color, font or radius of its own. One change
+   from the mock: a card's tool name is on the card's second line, not beside its title. */
+
+/* ---------------------------------------------------------------- the page in the layout */
+.layout > .bd-page {
+  display: none;
+}
+.layout.board-mode {
+  grid-template-columns: var(--nav-width, 205px) minmax(0, 1fr);
+}
+.layout.board-mode > .sidebar {
+  grid-column: 1;
+  grid-row: 1;
+}
+.layout.board-mode > .bd-page {
+  display: flex;
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 12px 12px 0;
+  box-sizing: border-box;
+}
+.layout.board-mode > .overview-view,
+.layout.board-mode > .workspace,
+.layout.board-mode > .preview,
+.layout.board-mode > .tnai-resizer {
+  display: none;
+}
+
+/* The Board sends nothing by itself, so the docked prompt box stays out of the way (as Settings). */
+body:has(.layout.board-mode) .composer {
+  display: none !important;
+}
+
+.bd-page {
+  color: var(--pg-text);
+  font: 14px/1.45 var(--pg-sans);
+}
+.bd-page [hidden] {
+  display: none !important;
+}
+.bd-island {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--tnt-glass);
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r);
+}
+
+/* ---------------------------------------------------------------- the island's top row */
+.bd-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 20px 10px;
+}
+.bd-head h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+.bd-views {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--pg-panel);
+  border-radius: var(--pg-r-sm);
+}
+.bd-views button {
+  padding: 4px 12px;
+  border: 0;
+  border-radius: calc(var(--pg-r-sm) - 2px);
+  background: transparent;
+  color: var(--pg-text-2);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.bd-views button[aria-pressed='true'] {
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+}
+.bd-head-note {
+  flex: 1;
+  min-width: 160px;
+  color: var(--pg-text-3);
+  font-size: 12.5px;
+}
+.bd-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-accent);
+  color: var(--pg-on-accent, #fff);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------- Board: the columns */
+.bd-board {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+  grid-auto-rows: max-content;
+  align-content: start;
+  align-items: start;
+  gap: 10px;
+  padding: 4px 20px 20px;
+}
+.bd-col {
+  min-height: 120px;
+  padding: 10px;
+  border-radius: var(--pg-r);
+  background: var(--pg-panel);
+  transition: background 0.15s;
+}
+.bd-col.bd-drop-on {
+  background: var(--pg-accent-soft);
+}
+.bd-col-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+/* What a start from Up next costs, in one plain line under its head. */
+.bd-col-note {
+  margin: -6px 4px 10px;
+  color: var(--pg-text-3);
+  font-size: 11.5px;
+}
+
+/* The empty screens (a board with nothing on it, a Week with no schedule): the app's empty slot
+   (06 .set-empty: dashed outline, centered words) with its one or two buttons. */
+.bd-page .bd-empty {
+  margin: 4px 20px 20px;
+}
+.bd-page .bd-empty p {
+  margin: 0 0 12px;
+}
+.bd-empty-acts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.bd-link {
+  padding: 6px 12px;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.bd-page[data-view='week'] .bd-week:has(> .bd-empty) {
+  display: block;
+}
+
+.bd-col-head em {
+  color: var(--pg-text-3);
+  font-style: normal;
+  font-weight: 400;
+}
+
+/* ---------------------------------------------------------------- cards */
+.bd-card {
+  margin-bottom: 8px;
+  padding: 10px 11px;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel-2);
+  cursor: pointer;
+  transition:
+    transform 0.12s,
+    background 0.12s;
+}
+.bd-card:hover {
+  background: var(--pg-panel-hover);
+}
+.bd-card[draggable='true'] {
+  cursor: grab;
+}
+.bd-card.bd-dragging {
+  opacity: 0.45;
+}
+.bd-card:focus-visible,
+.bd-page button:focus-visible,
+.bd-idea-input:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 1px;
+}
+.bd-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.bd-card-top b {
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* The tool's name, on the card's second line (a long title squeezed it beside the title). */
+.bd-card .bd-tool {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--pg-text-3);
+  font-size: 11.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bd-card p {
+  margin: 6px 0 0;
+  color: var(--pg-text-2);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+.bd-card .bd-meta {
+  margin-top: 7px;
+  color: var(--pg-text-3);
+  font: 11.5px/1.4 var(--pg-mono);
+  overflow-wrap: anywhere;
+}
+.bd-card .bd-plus {
+  color: var(--pg-ready);
+}
+.bd-card .bd-minus {
+  color: var(--pg-err);
+}
+.bd-card .bd-when {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 7px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+  font-size: 11.5px;
+}
+.bd-card .bd-when svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+.bd-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+.bd-opts button {
+  padding: 4px 9px;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.bd-opts button:first-child {
+  background: var(--pg-accent-soft);
+}
+.bd-opts button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.bd-idea-input {
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+/* The status dot, in the thread list's own tones. */
+.bd-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tone, var(--pg-text-4));
+}
+.bd-page [data-tone='work'] {
+  --tone: var(--pg-work);
+}
+.bd-page [data-tone='needs'] {
+  --tone: var(--pg-wait);
+}
+.bd-page [data-tone='ready'] {
+  --tone: var(--pg-ready);
+}
+.bd-page [data-tone='err'] {
+  --tone: var(--pg-err);
+}
+.bd-page [data-tone='idle'] {
+  --tone: var(--pg-text-4);
+}
+
+/* ---------------------------------------------------------------- Week */
+/* Up next stays above the days as a strip, so its ideas can be dragged onto a day. */
+.bd-page[data-view='week'] .bd-board {
+  flex: none;
+  grid-template-columns: 1fr;
+  max-height: 40%;
+}
+.bd-page[data-view='week'] .bd-col:not([data-col='next']) {
+  display: none;
+}
+.bd-page[data-view='week'] .bd-col[data-col='next'] {
+  min-height: 0;
+}
+.bd-page[data-view='week'] [data-col='next'] [data-cards] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.bd-page[data-view='week'] [data-col='next'] .bd-card {
+  width: 220px;
+  margin: 0;
+}
+.bd-week {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+
+  /* Seven days share the row's width: each is at least a seventh of it (less the six gaps), so a
+     wide window holds exactly seven with no empty band on the right; under 120 px a day they wrap
+     (user 2026-10-21: "let the days fill the row"). */
+  grid-template-columns: repeat(auto-fit, minmax(max(120px, (100% - 48px) / 7), 1fr));
+  grid-auto-rows: max-content;
+  align-content: start;
+  align-items: start;
+  gap: 8px;
+  padding: 4px 20px 20px;
+}
+.bd-day {
+  min-height: 260px;
+  padding: 10px 8px;
+  border-radius: var(--pg-r);
+  background: var(--pg-panel);
+  transition: background 0.15s;
+}
+.bd-day.today {
+  background: var(--pg-accent-soft);
+}
+.bd-day.bd-drop-on {
+  background: var(--pg-panel-hover);
+}
+.bd-day-head {
+  padding: 0 4px 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.bd-day-head span {
+  display: block;
+  color: var(--pg-text-3);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+.bd-run {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.bd-run .t {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--pg-text-3);
+  font: 11.5px/1.3 var(--pg-mono);
+}
+.bd-run b {
+  display: block;
+  margin-top: 3px;
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.bd-run small {
+  display: block;
+  margin-top: 2px;
+  color: var(--pg-text-2);
+  font-size: 11.5px;
+}
+.bd-run.future {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--pg-line-2);
+}
+.bd-run.missed small {
+  color: var(--pg-wait);
+}
+.bd-run.failed small,
+.bd-run.skipped small {
+  color: var(--pg-err);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bd-card,
+  .bd-col,
+  .bd-day {
+    transition: none;
+  }
+}

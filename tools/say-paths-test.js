@@ -713,6 +713,17 @@ process.on('exit', () => {
       l.ok === true && l.register === false,
       l
     );
+
+    // Review 21, Low 7: the panel above runs Claude Code, which `launch` refuses by itself. A plain
+    // Terminal panel is one `launch` would register; in the chain it must not.
+    sessions[0].agent = 'Terminal';
+    const lt = await raw('A', { op: 'launch', agent: 'claude', args: [] });
+    sessions[0].agent = 'Claude Code';
+    check(
+      'chain: a CLI started in a plain Terminal panel that is in the chain also runs unregistered (review 21, Low 7)',
+      lt.ok === true && lt.register === false,
+      lt
+    );
     const other = await raw('B', { op: 'send', to: 'Alpha', text: 'hi' });
     check(
       "chain: it is that panel's only: another agent of this computer sends as always",

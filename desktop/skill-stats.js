@@ -43,6 +43,11 @@ function load() {
   } catch {}
   if (!data || typeof data.skills !== 'object' || !data.skills)
     data = { since: Date.now(), skills: {} };
+
+  // The table has no prototype, so a skill named `__proto__` (any folder name an agent read) is an
+  // ordinary row and never reaches Object.prototype (audit app-5 #5).
+  if (Object.getPrototypeOf(data.skills) !== null)
+    data.skills = Object.assign(Object.create(null), data.skills);
   return data;
 }
 

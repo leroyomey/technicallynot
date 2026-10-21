@@ -54,6 +54,14 @@ class FakeSocket {
     server.readyState = 3;
     s.sockets.delete(server);
   }
+
+  // The client answers a close the server started (its close frame comes back). Cloudflare then
+  // runs the object's webSocketClose for that socket, which plain close() above does not.
+  async answerClose() {
+    const server = this.peer,
+      s = server.state;
+    await s.ns.wake(s).webSocketClose(server, this.closed?.code ?? 1005, '', true);
+  }
   json() {
     return this.inbox.map(x => JSON.parse(x));
   }

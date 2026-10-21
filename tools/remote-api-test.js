@@ -1507,6 +1507,13 @@ d.api.stop();
       )
   );
   check(
+    'typing (remote-type.js): "it may type" is read only from a real true',
+    shapeControl({ t: 'control', c: 4, clis: [], watch: true, type: true }).type === true &&
+      ['true', 1, 'yes', {}, [true], null].every(
+        v => shapeControl({ t: 'control', c: 4, clis: [], type: v }).type === false
+      )
+  );
+  check(
     'control message: a counter and the fixed CLI words in their fixed order; anything else is "no control"',
     JSON.stringify(
       shapeControl({
@@ -1517,7 +1524,14 @@ d.api.stop();
       })
     ) ===
       // sync: the git hand-over, say: agents messaging agents; each is true only for a real true
-      JSON.stringify({ c: 4, clis: ['claude', 'codex'], watch: false, sync: false, say: false }) &&
+      JSON.stringify({
+        c: 4,
+        clis: ['claude', 'codex'],
+        watch: false,
+        sync: false,
+        say: false,
+        type: false,
+      }) &&
       [
         { t: 'control' },
         { c: 0, clis: [] },
@@ -1672,7 +1686,13 @@ d.api.stop();
     'the agent list carries the counter of change 13',
     from(k, 'agents').at(-1).c === 2 &&
       JSON.stringify(view().control) ===
-        JSON.stringify({ clis: ['claude', 'codex'], watch: false, sync: false, say: false }),
+        JSON.stringify({
+          clis: ['claude', 'codex'],
+          watch: false,
+          sync: false,
+          say: false,
+          type: false,
+        }),
     [from(k, 'agents').at(-1), view().control]
   );
   k.detail = false;
@@ -2636,6 +2656,65 @@ d.api.stop();
   s.api.stop();
   r.api.stop();
   check('after stop nothing more is told', s.api.reported({ ...base, at: w.t }) === false);
+}
+
+// ---- late join: the log handle and the turn counter on a row ----
+{
+  const wire = [];
+  const s = {
+    detail: true,
+    rev: 0,
+    agents: [{ id: 'p1', name: 'Moss', cli: 'Claude Code', status: 'idle', since: 0 }],
+  };
+  s.api = createRemoteApi({
+    now: () => w.t,
+    timers,
+    items: () => [],
+    agents: () => s.agents,
+    showDetail: () => s.detail,
+    logKey: () => 'abcdefabcdef0123',
+    logRev: () => s.rev,
+    send(to, obj) {
+      wire.push(JSON.parse(JSON.stringify(obj)));
+      return true;
+    },
+  });
+  s.api.sessionStarted('dev-l');
+  const rows = () => wire.filter(m => m.t === 'agents').map(m => m.agents[0]);
+  check(
+    'a row carries lk and rev where the text may go',
+    rows()[0] && rows()[0].lk === 'abcdefabcdef0123' && rows()[0].rev === 0,
+    rows()
+  );
+  advance(ROSTER_MS + 10);
+  s.detail = false;
+  s.api.detailChanged('dev-l');
+  const last = rows()[rows().length - 1];
+  check('without the text switch a row has no lk and no rev', !('lk' in last) && !('rev' in last));
+  s.detail = true;
+  s.api.detailChanged('dev-l');
+  advance(ROSTER_MS + 10);
+  const before = rows().length;
+
+  // a hundred turn counter changes in a minute: a list at most every 15 seconds
+  for (let i = 0; i < 100; i++) {
+    s.rev++;
+    s.api.agentsChanged();
+    advance(600);
+  }
+  const sent = rows().length - before;
+  check(
+    'a hundred changes of the counter alone in a minute send at most five lists',
+    sent >= 1 && sent <= 5,
+    sent
+  );
+  const n = rows().length;
+  s.agents[0].status = 'working';
+  s.agents[0].since = w.t;
+  s.api.agentsChanged();
+  advance(ROSTER_MS + 10);
+  check('a change of status still goes at once', rows().length === n + 1, rows().length - n);
+  s.api.stop();
 }
 
 a.api.stop();

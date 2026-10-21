@@ -331,6 +331,9 @@
     if (thread) paintOne(thread, known);
     ui.list.hidden = !!thread;
     ui.one.hidden = !thread;
+
+    // another computer's past conversations, under this computer's (164, plan item 44)
+    window.TnaiRemoteThreadMore?.paintPast?.(pop, ui);
     if (wasKey === shownKey) {
       // the list came in while the popover had the keyboard: its first row takes it
       if (!thread && document.activeElement === pop) focusList('');
@@ -352,7 +355,11 @@
 
   // What Tab moves through: the list's one tab stop, or the detail's two buttons.
   function tabStops() {
-    if (ui.one.hidden) return [...ui.rows.children].filter(row => row.tabIndex === 0);
+    // another computer's part of the popover (164): its rows, or its one conversation alone
+    const far = window.TnaiRemoteThreadMore?.pastStops?.() || null;
+    if (far?.only) return far.buttons;
+    if (ui.one.hidden)
+      return [...ui.rows.children].filter(row => row.tabIndex === 0).concat(far ? far.buttons : []);
     return [ui.back, ui.resume].filter(button => !button.disabled);
   }
 
@@ -442,6 +449,7 @@
     if (!isOpen()) return;
     const back = opener;
     pop.hidden = true;
+    window.TnaiRemoteThreadMore?.pastClosed?.();
     [headButton, footButton].forEach(button => button.setAttribute('aria-expanded', 'false'));
     window.TnaiFloat?.detach?.(pop);
     window.removeEventListener('pointerdown', onOutsidePress, true);

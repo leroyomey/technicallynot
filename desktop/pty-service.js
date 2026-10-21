@@ -101,7 +101,30 @@ const INHERITED_SESSION_MARKERS = [
   'CLAUDE_CODE_MESSAGING_SOCKET',
   'CLAUDE_CODE_MESSAGING_TOKEN',
   'CLAUDE_PID',
+
+  // A Claude Code background session (the daemon's worker, Claude Code 2.1.300) is marked by
+  // CLAUDE_CODE_SESSION_KIND=bg, and that marker forces the full-screen renderer before
+  // CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN is even read. When the app was started from such a
+  // session, every panel inherited it and drew full-screen, with no scrollback.
+  'CLAUDE_CODE_SESSION_KIND',
+  'CLAUDE_CODE_SESSION_NAME',
+  'CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT',
+  'CLAUDE_JOB_DIR',
 ];
+
+// The rest of a background session's markers (CLAUDE_BG_BACKEND, CLAUDE_BG_PTY_AUTH and others):
+// they point at the daemon's job and sockets, which a panel's own session must never use.
+const INHERITED_BACKGROUND_PREFIX = 'CLAUDE_BG_';
+
+// A copy of the app's environment for a new panel, without the markers above.
+function panelEnvironment(source) {
+  const env = { ...source };
+  for (const key of INHERITED_SESSION_MARKERS) delete env[key];
+  for (const key of Object.keys(env)) {
+    if (key.startsWith(INHERITED_BACKGROUND_PREFIX)) delete env[key];
+  }
+  return env;
+}
 const sessions = new Map(); // paneId -> session
 
 // paneId -> cancel generation, between stop() of the old process and the new one registering (start
@@ -570,8 +593,7 @@ async function launch({
 
   // Markers of the Claude Code session Technically Not itself may have been started from; an agent
   // pane is its own top-level session.
-  const env = { ...process.env };
-  for (const key of INHERITED_SESSION_MARKERS) delete env[key];
+  const env = panelEnvironment(process.env);
 
   // Agent mesh (agent-mesh.js): shim folder first on PATH, the pane's token and port.
   if (typeof paneEnv === 'function') paneEnv(env);
@@ -1097,6 +1119,7 @@ module.exports = {
     store.init();
   },
   start,
+  panelEnvironment,
   // pty:stop from the UI also cancels a start still on its way (see generations).
   stop(paneId, reason) {
     cancel(paneId);

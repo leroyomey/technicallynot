@@ -1,8 +1,8 @@
 {
   "name": "tnai",
   "productName": "TechnicallyNot.ai",
-  "version": "0.3.73",
-  "tnaiBuild": 79,
+  "version": "0.3.74",
+  "tnaiBuild": 80,
   "tnaiPublicRepo": "",
   "tnaiAccountsUrl": "",
   "description": "Technically Not: a free, open-source visual AI software-building workspace (Windows desktop app).",

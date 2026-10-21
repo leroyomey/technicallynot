@@ -319,6 +319,11 @@
     const holding = pin.get(term) > 0;
     pin.set(term, frames);
     if (holding) return;
+
+    // Through the terminal's own frames (10 createTerm), cancelled when it is disposed: a minimized
+    // window runs no frames, and a thread closed in the meantime stayed in memory whole (its rows,
+    // page elements and listeners) until the window was shown again (test thread-stream-leak).
+    const nextFrame = () => (term.tnaiFrame ? term.tnaiFrame(step) : requestAnimationFrame(step));
     const step = () => {
       const left = pin.get(term) || 0;
       if (!(left > 0)) return;
@@ -330,9 +335,9 @@
         term.scrollToBottom();
       }
       pin.set(term, left - 1);
-      requestAnimationFrame(step);
+      nextFrame();
     };
-    requestAnimationFrame(step);
+    nextFrame();
   }
 
   function keepBottom(term, resize) {

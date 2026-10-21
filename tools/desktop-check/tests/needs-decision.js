@@ -1,9 +1,9 @@
 /*
  * Technically Not tools · desktop-check/tests/needs-decision.js — An agent waiting on a "- Decide:"
  * question (51 deciding, stood in here on a real PowerShell thread; nothing is sent to an agent):
- * its row in the thread list takes the needs-you tone, the agent card that 11 keeps says "Needs
- * your decision · <question>" and holds the options, a click sends the choice (49 decide,
- * stubbed), the "N need you" chip, the window title and Ctrl+Shift+J count it. Returns {ok, log}.
+ * its row in the thread list takes the needs-you tone, the "N need you" chip, the window title and
+ * Ctrl+Shift+J count it, and the hidden old grid of 11 builds no card for it. Answering from the
+ * thread is `decision-steps`. Returns {ok, log}.
  */
 const log = [],
   wait = ms => new Promise(r => setTimeout(r, ms));
@@ -43,12 +43,8 @@ try {
     !!(await until(() => threadRow() && threadRow().tone !== 'needs', 5000)),
     'before: the thread row does not say it needs the user (tone ' + threadRow()?.tone + ')'
   );
-  const card = await until(() => document.querySelector('.tnai-card[data-pane="' + paneId + '"]'));
   const chip = document.querySelector('.tnai-needs-chip');
-  check(
-    !!card && !!chip && chip.hidden && card.querySelector('.tnai-card-decide').hidden,
-    'before: no decision box on the card, no "need you" chip'
-  );
+  check(!!chip && chip.hidden, 'before: no "need you" chip');
 
   const sent = [],
     jumped = [];
@@ -66,28 +62,12 @@ try {
   };
   if (L) L.focusPane = p => jumped.push(p);
   A.repaint();
-  const pill = await until(
-    () =>
-      card.querySelector('.c-status').textContent === 'Needs your decision' &&
-      card.querySelector('.c-status')
-  );
+
+  // (The old Overview card of 11 that held the options is no longer built; the thread answers a
+  // decision on its own, tested by `decision-steps`.)
   check(
-    !!pill && card.hasAttribute('data-needs-you'),
-    'card status pill: "' + card.querySelector('.c-status').textContent + '"'
-  );
-  check(
-    /Needs your decision · Which router\?/.test(card.querySelector('.c-now').textContent),
-    'card Now line: "' + card.querySelector('.c-now').textContent + '"'
-  );
-  const box = card.querySelector('.tnai-card-decide'),
-    opts = [...box.querySelectorAll('[data-act="decide"]')];
-  check(
-    !box.hidden &&
-      /Which router\?/.test(box.querySelector('.c-decide').textContent) &&
-      opts.length === 2 &&
-      opts[0].textContent === 'Hash router' &&
-      !!opts[1].querySelector('.tnai-rec'),
-    'card: the question and both options, the recommended one tagged'
+    !document.querySelector('.tnai-card[data-pane="' + paneId + '"]'),
+    'the hidden old grid builds no card for it'
   );
 
   // What the user sees of it on the Threads page: the thread row takes the "needs you" tone.
@@ -116,31 +96,13 @@ try {
   check(jumped[0] === paneId || !L, 'the chip goes to it too');
   console.log('TNAI_SHOT:needs-decision-card');
   await wait(600);
-
-  const onOverview = location.hash,
-    viewBefore = document.querySelector('.layout')?.className;
-  opts[1].click();
-  await wait(100);
-  check(
-    sent.length === 1 && sent[0][0] === 'test-entry' && sent[0][1] === '1' && sent[0][2] === 'send',
-    'click an option → the choice is sent (' + JSON.stringify(sent[0]) + ')'
-  );
-  check(
-    document.querySelector('.layout')?.className === viewBefore && location.hash === onOverview,
-    'clicking an option does not open the Agents page'
-  );
+  check(sent.length === 0, 'nothing was sent to the agent along the way');
 
   N.deciding = real.deciding;
   A.repaint();
   check(
-    !!(await until(
-      () =>
-        box.hidden &&
-        chip.hidden &&
-        !/Needs your decision/.test(card.querySelector('.c-status').textContent) &&
-        !/^\(\d+\) /.test(document.title)
-    )),
-    'answered: box, chip and title count go away'
+    !!(await until(() => chip.hidden && !/^\(\d+\) /.test(document.title))),
+    'answered: chip and title count go away'
   );
 } catch (e) {
   check(false, 'error: ' + (e?.stack || e));

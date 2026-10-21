@@ -322,6 +322,8 @@ function createThreadList({
         };
         out.push(row);
         next.set(row.key, {
+          cli: r.cli,
+          id: r.id,
           file: r.file,
           bytes: r.bytes,
           first: h?.first || (rec?.task ? clip(words(rec.task), EXCERPT) : ''),
@@ -348,6 +350,13 @@ function createThreadList({
             running = null;
           });
       return running;
+    },
+    // The session record of one row of the last list, for a paired computer that reads it (plan
+    // item 44, remote-service.js pastCheck; thread-log.js readForPeer): { agent, sessionId, file }.
+    // The file is this list's own find, never anything another computer named.
+    recordFor(key) {
+      const k = kept.get(String(key || ''));
+      return k && k.cli && k.id ? { agent: k.cli, sessionId: k.id, file: k.file || '' } : null;
     },
     // One row of the last list, looked at: the first thing asked and how it ended. The window names
     // the row, never a file.

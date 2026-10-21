@@ -1,0 +1,55 @@
+/* Technically Not · 49-context-chip.css — the amber chip in the row under the prompt box that says
+   how full the open thread's conversation is and compacts it on a press (168-context-chip.js).
+   From the approved mockup docs/plans/design-concepts/video-ideas.body.html (`.chip`), with the
+   thread design's tokens only: amber is --pg-wait ("needs you"), in Dark (07) and Light (31). */
+
+.composer .hints > .tnai-ctx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--pg-wait) 60%, transparent);
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--pg-wait) 14%, transparent);
+  color: var(--pg-text);
+  font: 500 11px/1 var(--pg-sans);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s var(--pg-ease);
+}
+
+.composer .hints > .tnai-ctx-chip[hidden] {
+  display: none;
+}
+
+.composer .hints > .tnai-ctx-chip .tn-ico {
+  flex: none;
+  color: var(--pg-wait);
+}
+
+.composer .hints > .tnai-ctx-chip:hover {
+  background: color-mix(in srgb, var(--pg-wait) 24%, transparent);
+}
+
+/* While the agent works: shown, but no press (its title says why). */
+.composer .hints > .tnai-ctx-chip[aria-disabled='true'] {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.composer .hints > .tnai-ctx-chip[aria-disabled='true']:hover {
+  background: color-mix(in srgb, var(--pg-wait) 14%, transparent);
+}
+
+.composer .hints > .tnai-ctx-chip:focus-visible {
+  outline: 2px solid var(--pg-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer .hints > .tnai-ctx-chip {
+    transition: none;
+  }
+}

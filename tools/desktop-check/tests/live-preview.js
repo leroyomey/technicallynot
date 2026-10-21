@@ -466,14 +466,7 @@ try {
   await shot('live-preview-worktree');
   window.TnaiAgents.send(lanePane, windows ? 'Stop-Process -Id $srv.Id' : 'kill %1');
   check(
-    !!(await until(async () => {
-      try {
-        await fetch(laneUrl, { cache: 'no-store' });
-        return false;
-      } catch {
-        return true;
-      }
-    }, 8000)),
+    !!(await until(async () => (await window.TnaiTest.request(laneUrl)).status === 0, 8000)),
     'the worktree dev server was stopped'
   );
   await window.TnaiAgents.stop?.(lanePane);
@@ -488,13 +481,7 @@ try {
   );
 
   // ---- Stop: the pane process ends and the state says so.
-  check(
-    await fetch(running.url, { cache: 'no-store' }).then(
-      r => r.ok,
-      () => false
-    ),
-    'server answers before Stop'
-  );
+  check((await window.TnaiTest.request(running.url)).ok, 'server answers before Stop');
   const t1 = Date.now();
   panel.querySelector('.lp-bar [data-act=run]').click();
   const exited = await until(() => api.tabs()[0]?.state === 'exited' && api.tabs()[0], 10000);

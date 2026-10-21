@@ -16,6 +16,7 @@ const graph = require('./agent-graph');
 
 // is a request's short text the whole request (pure: requiring it touches no key and opens nothing)
 const { wholeShell } = require('./remote-api.js');
+const errors = require('./agent-errors');
 
 // 'whole', 'full' or '': how a held shell request may be answered from another computer (pure, like
 // the line above)
@@ -86,7 +87,45 @@ async function lockDenied(paneId, h) {
     edit: true,
     whole: h.tool_name === 'Write' || h.tool_name === 'NotebookEdit',
   });
-  return r.ok ? '' : 'File lock (Technically Not): ' + r.text;
+  if (r.ok) editStarted(paneId, h.tool_use_id, owner.project, f, !!r.taken);
+  return r.ok
+    ? ''
+    : 'File lock (Technically Not): ' + r.text + '\n' + errors.line(r.code || 'locked', r.hint);
+}
+
+// The edits of each panel whose file lock was taken before the edit ran (app-3 #12): the lock is
+// taken on PreToolUse, before the permission answer, so an edit the user then denies, or one that
+// fails, would hold the file for nothing. Per panel and file: { project, file, taken, calls: Set of
+// call ids still running, edited: one of them went through }.
+const editCalls = new Map();
+const editKey = (paneId, file) => paneId + '\n' + String(file);
+
+function editStarted(paneId, call, project, file, taken) {
+  if (!call) return;
+  const key = editKey(paneId, file);
+  const entry = editCalls.get(key) || { project, file, taken, calls: new Set(), edited: false };
+  entry.calls.add(String(call));
+  editCalls.set(key, entry);
+}
+
+// An edit call ended: ok, or failed / denied. When the last running call of that file ends and none
+// of them went through, a lock that call took is given back. Returns whether it was given back.
+function editEnded(paneId, call, ok) {
+  for (const [key, entry] of editCalls) {
+    if (!key.startsWith(paneId + '\n') || !entry.calls.delete(String(call))) continue;
+    if (ok) entry.edited = true;
+    if (entry.calls.size) return false;
+    editCalls.delete(key);
+    if (!entry.taken || entry.edited || !locks) return false;
+    return locks.release(entry.project, [entry.file], paneId).released.length > 0;
+  }
+  return false;
+}
+
+// The panel's turn ended or it is gone: its running edits are over (file-locks.js ends its locks
+// itself when the task ends).
+function editsForgotten(paneId) {
+  for (const key of [...editCalls.keys()]) if (key.startsWith(paneId + '\n')) editCalls.delete(key);
 }
 
 // How every agent Technically Not starts should work: Technically Not's hidden program skills, one
@@ -454,6 +493,11 @@ function onHook(paneId, h) {
         question: endingQuestion(h.last_assistant_message),
       });
 
+    // A compact begins. trigger: 'manual' (/compact) or 'auto' (the context was full). It ends
+    // when the conversation's record gets its compact line (thread-log readers, 158).
+    case 'PreCompact':
+      return emit(paneId, { kind: 'compact-start', trigger: String(h.trigger || '') });
+
     // Claude Code 2.1.284 fires StopFailure instead of Stop when an API error (usage/rate limit,
     // auth failure…) ended the turn: stopped, no answer.
     case 'StopFailure':
@@ -640,6 +684,9 @@ function openCodeEvent(paneId, m) {
       });
       if (h.tool_name === 'Bash' && locks) locks.shellEnd(paneId, call);
 
+      // a failed edit gives back the file lock its gate call took (editEnded)
+      editEnded(paneId, call, !m.failed);
+
       // a child's tokens so far, on its turn's sub-agent count
       if (h.agent_id) turns.openCodeChild(paneId, h.agent_id, false);
 
@@ -760,6 +807,7 @@ function openCodeEvent(paneId, m) {
       o.questions.clear();
       loops.hook(paneId, { hook_event_name: 'Stop' });
       if (locks) locks.shellStop(paneId);
+      editsForgotten(paneId);
       return;
   }
 }
@@ -784,6 +832,7 @@ async function gateDenied(paneId, m) {
         ? await lockDenied(paneId, {
             tool_name: tool === 'write' ? 'Write' : 'Edit',
             tool_input: { file_path: f },
+            tool_use_id: typeof m.call === 'string' ? m.call.slice(0, 80) : '',
           })
         : '';
     if (deny) return deny;
@@ -963,11 +1012,17 @@ function sessionScope(tool, input) {
 
       // `npm run build` covers only that script, not every `npm run …` (npm/pnpm/yarn/bun run and
       // run-script)
+      //
+      // A first argument that is a flag (`git -C app status`, `rm -f tmp.txt`) would leave only the
+      // program as the key, covering `git push --force` or `rm -rf` for every agent (app-3 #9):
+      // such a part is remembered as exactly that command.
       const prefix =
-        program +
-        (word(sub)
-          ? ' ' + sub + (/^run(-script)?$/i.test(sub) && word(script) ? ' ' + script : '')
-          : '');
+        sub && sub.startsWith('-')
+          ? part.split(/\s+/).join(' ')
+          : program +
+            (word(sub)
+              ? ' ' + sub + (/^run(-script)?$/i.test(sub) && word(script) ? ' ' + script : '')
+              : '');
       if (!prefixes.includes(prefix)) prefixes.push(prefix);
     }
     return prefixes.length
@@ -1018,6 +1073,11 @@ function askPermission(paneId, h, res) {
     // Store "allow for session" in the global cache so all agents/panes respect it for the rest of
     // this Technically Not session
     if (decision === 'session' && scope) for (const k of scope.keys) globalAllowed.set(k, true);
+
+    // A denied edit gives back the file lock its call took (when the request names the call; else
+    // its PostToolUseFailure does).
+    if (decision === 'deny' && LOCK_TOOLS.has(tool) && h.tool_use_id)
+      editEnded(paneId, h.tool_use_id, false);
     if (decision !== 'gone' && !res.writableEnded)
       reply(
         decision === 'once' || decision === 'session'
@@ -1194,10 +1254,13 @@ function onMcp(paneId, msg, signal) {
     return graph
       .call(paneId, msg.params?.name, msg.params?.arguments || {}, signal)
       .then(reply, error =>
-        reply({
-          content: [{ type: 'text', text: 'Technically Not error: ' + error.message }],
-          isError: true,
-        })
+        reply(
+          errors.toolFail(
+            'Technically Not error: ' + error.message,
+            'internal',
+            'call the tool again; if it fails again, tell the user'
+          )
+        )
       );
   if (msg.id === undefined) return null; // a notification: nothing to answer
   return { jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: 'Method not found' } };
@@ -1340,11 +1403,17 @@ function handle(req, res) {
             (ev === 'PostToolUse' || ev === 'PostToolUseFailure') &&
             LOCK_TOOLS.has(msg.tool_name)
           ) {
-            // the edit is on disk: the watcher's report of it is the holder's own change
+            // the edit is on disk: the watcher's report of it is the holder's own change. A failed
+            // or denied edit gives back the lock its own call took.
             const f = input.file_path || input.notebook_path;
-            const o = typeof f === 'string' && f ? await span.rest(lockOwner(paneId)) : null;
+            const gaveBack = editEnded(paneId, msg.tool_use_id, ev === 'PostToolUse');
+            const o =
+              !gaveBack && typeof f === 'string' && f ? await span.rest(lockOwner(paneId)) : null;
             if (o) locks.editDone(o.project, f, paneId);
-          } else if (ev === 'Stop' || ev === 'StopFailure') locks.shellStop(paneId);
+          } else if (ev === 'Stop' || ev === 'StopFailure') {
+            locks.shellStop(paneId);
+            editsForgotten(paneId);
+          }
         } catch (e) {
           console.warn('[tnai] shell lock tracking failed:', e?.message || e);
         }
@@ -1766,8 +1835,9 @@ async function launchOptions(paneId, agentId, accountDir = '', { lead = false } 
   // Technically Not (askPermission), so it gets a long timeout.
   const theme = (await userTheme(accountDir)) ? {} : { theme: 'auto' };
 
-  // PostToolUseFailure only for Agent/Task: a refused or failed launch never runs, so its
-  // "Starting" card must go (19 'spawn-refused'). Technically Not's read-only / bookkeeping `tnai`
+  // PostToolUseFailure only for Agent/Task and the edit tools: a refused or failed launch never
+  // runs, so its "Starting" card must go (19 'spawn-refused'); a refused or failed edit gives back
+  // the file lock its call took (editEnded). Technically Not's read-only / bookkeeping `tnai`
   // commands (agents, read, context, locks, team, skill list…) are always allowed, so an auto-mode
   // safety check that doesn't answer never blocks agent coordination. Commands that act on other
   // agents or every future session (send, new, close, skill save/remove) ask as usual:
@@ -1800,12 +1870,16 @@ async function launchOptions(paneId, agentId, accountDir = '', { lead = false } 
       UserPromptSubmit: on(),
       PreToolUse: on('*'),
       PostToolUse: on('*'),
-      PostToolUseFailure: on('Agent|Task'),
+      PostToolUseFailure: on('Agent|Task|Edit|MultiEdit|Write|NotebookEdit'),
       PostToolBatch: on(),
       SubagentStart: on(),
       SubagentStop: on(),
       Stop: on(),
       StopFailure: on(),
+
+      // A compact begins (typed, sent by Technically Not, or automatic): the thread shows it runs
+      // until the record's compact line arrives (158).
+      PreCompact: on(),
       PermissionRequest: [{ matcher: '*', hooks: [{ ...hook, timeout: 600 }] }],
     },
   };

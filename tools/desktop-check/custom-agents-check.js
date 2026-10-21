@@ -220,6 +220,43 @@ check(
   );
   check(/"Lee"/.test(opts.appendPrompt || ''), 'identity prompt names the project agent');
 
+  // Other CLIs: OpenCode and Cursor Agent take attached skills (the plugin folder, which is also a
+  // Cursor plugin); Codex has no per-session skills route, so it gets the identity only.
+  for (const base of ['OpenCode', 'Cursor Agent']) {
+    const other = A.create({
+      name: 'Orla ' + base.split(' ')[0],
+      base,
+      role: 'Tester',
+      skillIds: ['tidy-imports'],
+    });
+    const got = await skills.launchOptions(other.id, base, '');
+    const dir = got.pluginDirs?.find(d => d.includes(other.id));
+    check(
+      other.skillIds.join() === 'tidy-imports' &&
+        !!dir &&
+        fs.existsSync(path.join(dir, 'skills', 'tidy-imports', 'SKILL.md')) &&
+        fs.existsSync(path.join(dir, '.cursor-plugin', 'plugin.json')) &&
+        /"Orla/.test(got.appendPrompt || '') &&
+        /tidy-imports/.test(got.appendPrompt || ''),
+      base + ' custom agent: attached skills in its plugin folder, identity prompt given'
+    );
+  }
+  const cody = A.create({
+    name: 'Cody',
+    base: 'Codex',
+    role: 'Tester',
+    skillIds: ['tidy-imports'],
+  });
+  const codyOpts = await skills.launchOptions(cody.id, 'Codex', '');
+  check(
+    !cody.skillIds.length &&
+      !(codyOpts.pluginDirs || []).some(d => d.includes(cody.id)) &&
+      /"Cody"/.test(codyOpts.appendPrompt || '') &&
+      /Tester/.test(codyOpts.appendPrompt || ''),
+    'Codex custom agent: no skills attached, identity prompt given'
+  );
+  for (const a of [cody, ...A.list().filter(a => /^Orla /.test(a.name))]) A.remove(a.id);
+
   // Another project open: its agents are not listed; the first project's file is untouched.
   open = path.join(tmp, 'other');
   fs.mkdirSync(open);

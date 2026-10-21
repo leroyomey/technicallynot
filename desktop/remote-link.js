@@ -17,6 +17,7 @@
 // message.
 const noise = require('./remote-noise.js');
 const keys = require('./remote-keys.js');
+const { phonePairing } = require('./phone-pair.js');
 
 const V = 1;
 const HS_ASK = 0,
@@ -216,12 +217,21 @@ function createLink({
   };
   const runAlive = () => !!run && run.state !== 'ended';
 
+  // A phone pairing under way ("Add a phone", the block "pairing a phone" below).
+  let phoneRun = null;
+  let phoneTimer = null;
+  const phoneAlive = () => !!phoneRun && phoneRun.state !== 'ended' && phoneRun.state !== 'done';
+
   // hear (the app passes it): this computer stays connected while remote is on even with nothing
   // paired, so another computer of the account can ask it to pair. The
   // socket hibernates on the relay like every other.
   const wanted = () =>
     !stopped &&
-    (hear || runAlive() || store.pairings().length > 0 || [...peers.values()].some(p => p.prov));
+    (hear ||
+      runAlive() ||
+      phoneAlive() ||
+      store.pairings().length > 0 ||
+      [...peers.values()].some(p => p.prov));
 
   // ---- the connection ----
   async function open() {
@@ -847,6 +857,9 @@ function createLink({
   }
 
   function onPair(from, body) {
+    // a phone pairing under way takes what is its own first; the rest goes on as before
+    if (phoneAlive() && onPhonePair(from, body)) return;
+
     // not in pairing mode: nothing is answered; a start message is shown to the user as a request
     if (!runAlive()) return pairAsked(from, body);
     if (run.state === 'done') return;
@@ -903,6 +916,150 @@ function createLink({
     }
     pairingChanged();
     return r;
+  }
+
+  // ---- pairing a phone (phone-protocol.md section 3; every rule of the run is in phone-pair.js)
+  // ---- Started only from this computer's own window ("Add a phone" on the Devices page), never by
+  // a remote operation. One run at a time: the code to show, the phone's proof, its handshake, the
+  // six digits typed here, its answer. While it runs, `pair` messages go to it first and one it
+  // does not take goes on to computer pairing as before. Nothing is stored before the run is done;
+  // then the phone is a paired device like a computer, and its sessions start as any other's.
+  const phoneState = () =>
+    phoneRun
+      ? { state: phoneRun.state, reason: phoneRun.reason, peer: phoneRun.peer }
+      : { state: 'idle', reason: null, peer: null };
+  const phoneChanged = () => emit('phonePairing', phoneState());
+
+  function endPhone() {
+    if (phoneTimer) {
+      timers.clear(phoneTimer);
+      phoneTimer = null;
+    }
+    phoneRun = null;
+    phoneChanged();
+    settle();
+  }
+
+  // The run keeps its own clocks; this looks every few seconds while it lives, so the window hears
+  // when the two minutes ran out.
+  function phoneLook() {
+    phoneTimer = null;
+    if (!phoneRun) return;
+    if (!phoneAlive()) {
+      const ended = phoneState();
+      phoneRun = null;
+      emit('phonePairing', ended);
+      settle();
+      return;
+    }
+    phoneTimer = timers.set(phoneLook, 5000);
+  }
+
+  // → { qr } (the code's text, drawn only in the dialog), or { ended, until? }.
+  function phoneStart() {
+    if (phoneRun) {
+      phoneRun.cancel();
+      endPhone();
+    }
+    let shown;
+    try {
+      const id = me();
+      phoneRun = phonePairing({
+        self: { id: self.id, priv: id.priv, pub: id.pub },
+        name: name(),
+        guard,
+        now,
+      });
+      shown = phoneRun.show();
+    } catch {
+      phoneRun = null;
+      return { ended: 'not_ready' };
+    }
+    if (!shown.qr) {
+      phoneRun = null;
+      phoneChanged();
+      return shown;
+    }
+    phoneTimer = timers.set(phoneLook, 5000);
+    phoneChanged();
+    open();
+    return { qr: shown.qr };
+  }
+
+  // A `pair` message while the run lives. → true when it was the run's (taken or ended it).
+  function onPhonePair(from, body) {
+    let msg = null;
+    try {
+      msg = JSON.parse(body.toString('utf8'));
+    } catch {
+      return false;
+    }
+    let r;
+    try {
+      r = phoneRun.receive(msg, from);
+    } catch {
+      return false;
+    }
+    if (r.ignored) return false;
+    for (const m of r.send || []) post(from, 'pair', Buffer.from(JSON.stringify(m)));
+    if (phoneRun && phoneRun.state === 'done') phoneDone();
+    else phoneChanged();
+    return true;
+  }
+
+  // The digits were typed and the phone answered: store it, unless this computer already holds
+  // another key under that id (a scanned entry is replaced only after the user forgot it here).
+  function phoneDone() {
+    const res = phoneRun.result();
+    const held = store.pairing(res.peer);
+    if (held && !held.pub.equals(res.pub)) {
+      phoneRun = null;
+      emit('phonePairing', { state: 'ended', reason: 'already_paired', peer: res.peer });
+      return settle();
+    }
+    const p = peer(res.peer);
+    dropSession(p);
+    try {
+      store.add({
+        id: res.peer,
+        pub: res.pub,
+        pairingId: res.pairingId,
+        name: res.name || 'Phone',
+      });
+    } catch {
+      phoneRun = null;
+      emit('phonePairing', { state: 'ended', reason: 'not_stored', peer: res.peer });
+      return settle();
+    }
+    if (phoneTimer) {
+      timers.clear(phoneTimer);
+      phoneTimer = null;
+    }
+    phoneRun = null;
+    emit('phonePairing', { state: 'done', reason: null, peer: res.peer });
+    emit('paired', res.peer, res.name || 'Phone');
+    settle();
+    renew(res.peer);
+  }
+
+  // The six digits the phone shows, typed at this computer's own keyboard.
+  function phoneEnter(typed) {
+    if (!phoneAlive()) return { ended: 'no_pairing' };
+    let r;
+    try {
+      r = phoneRun.enter(typed);
+    } catch {
+      return { ok: false, error: 'not_ready' };
+    }
+    const to = phoneRun ? phoneRun.peer : null;
+    if (to) for (const m of r.send || []) post(to, 'pair', Buffer.from(JSON.stringify(m)));
+    if (r.ended) {
+      const ended = phoneState();
+      phoneRun = null;
+      emit('phonePairing', ended);
+      settle();
+    } else phoneChanged();
+    return { ok: r.ok === true, left: r.left, until: r.until, invalid: r.invalid, ended: r.ended };
   }
 
   return {
@@ -1004,9 +1161,23 @@ function createLink({
         run.cancel();
         endRun();
       }
+      if (phoneRun) {
+        phoneRun.cancel();
+        endPhone();
+      }
       if (ws) hangUp(1000);
       else set('off');
     },
+    // "Add a phone", from this computer's own window only (the block "pairing a phone" above).
+    phonePair: () => phoneStart(),
+    phoneEnter: typed => phoneEnter(typed),
+    phoneCancel() {
+      if (phoneRun) {
+        phoneRun.cancel();
+        endPhone();
+      }
+    },
+    phoneState: () => phoneState(),
     pair: peerId => begin('a', peerId),
     pairAny: () => begin('b', null),
     cancelPairing() {

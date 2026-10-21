@@ -664,6 +664,26 @@ for (const [pcId, phId] of [
     ph.link.state().connection === 'online' && ph.link.state().sessions.join() === 'pc-1',
     ph.link.state()
   );
+
+  // the own relay throws the phone out (4009) or ends the shared phone key (4010): stopped at once
+  // with that reason, no ticket asked only to be told the same (g18b Info 1)
+  for (const [closeCode, reason] of [
+    [4009, 'device_revoked'],
+    [4010, 'phone_key_retired'],
+  ]) {
+    const asked = w.tickets.filter(t => t.id === 'ph-1').length;
+    w.close('ph-1', closeCode);
+    await w.advance(600000);
+    check(
+      'closed ' + closeCode + ': stopped as ' + reason + ', no more tickets',
+      ph.link.state().connection === 'stopped' &&
+        ph.link.state().reason === reason &&
+        w.tickets.filter(t => t.id === 'ph-1').length === asked,
+      [ph.link.state(), asked, w.tickets.filter(t => t.id === 'ph-1').length]
+    );
+    await ph.link.resume();
+    await w.advance(5000);
+  }
   w.close('ph-1', 4001);
   await w.settle();
   check(

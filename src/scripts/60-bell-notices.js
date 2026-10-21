@@ -70,7 +70,9 @@
   // the output.
   if (native.cliUpdates) {
     let shown = new Set(),
-      last = [];
+      last = [],
+      shownBroken = new Set(),
+      lastBroken = [];
     const updating = new Set();
     const ANSI =
         /\x1b\[[0-?]*[ -\/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b[=>78]/g,
@@ -92,7 +94,7 @@
             (window.tnaiPlatform.win ? ': Windows can’t replace a CLI that is running.' : '.')
         );
       updating.add(u.id);
-      onCli({ updates: last });
+      onCli({ updates: last, broken: lastBroken });
 
       // subscribed before the panel opens, so PowerShell's first prompt is never missed
       const tails = new Map();
@@ -109,6 +111,17 @@
       const end = async code => {
         off();
         updating.delete(u.id);
+
+        // Over the time limit the install may still be replacing the CLI's files: its panels
+        // stay stopped instead of starting on half a CLI (audit app-5 #11).
+        if (code === 'timeout') {
+          window.toast?.(
+            u.id +
+              ' is still updating after 15 minutes. Its panels stay stopped: start them again when the update in the Terminal panel has finished.'
+          );
+          onCli({ updates: last, broken: lastBroken });
+          return;
+        }
         for (const s of mine)
           await agents()
             .restart(s.paneId, { resume: true })
@@ -134,13 +147,32 @@
           window.toast?.(
             u.id + ' update ended with exit code ' + code + '. Its output is in the Terminal panel.'
           );
-        await native.cliUpdates
-          .check?.()
-          .then(onCli)
-          .catch(() => onCli({ updates: last }));
+        const after = await native.cliUpdates.check?.().catch(() => null);
+        onCli(after || { updates: last, broken: lastBroken });
+
+        // The update ran, but the CLI no longer starts (a download cut short): said plainly, with
+        // the repair on its bell notice (onCli), never left to look installed.
+        const broken = after?.broken?.find(b => b.id === u.id);
+        if (broken)
+          window.toast?.(
+            u.id +
+              ' does not start after the update: ' +
+              broken.problem +
+              '. Press Reinstall on its bell notice' +
+              (broken.command ? ' (runs ' + broken.command + ').' : '.')
+          );
       };
-      for (const s of mine) await agents().stop(s.paneId);
-      const opened = await agents().open('Terminal');
+
+      // A stop or open that fails ends the update the same way (panels restarted, notice back),
+      // never leaving "is updating…" for good (audit app-5 #11).
+      let opened = null;
+      try {
+        for (const s of mine) await agents().stop(s.paneId);
+        opened = await agents().open('Terminal');
+      } catch (error) {
+        window.toast?.('Could not update ' + u.id + ': ' + (error?.message || error));
+        return end();
+      }
       if (!opened?.ok) {
         window.toast?.('Could not open a thread' + (opened?.error ? ': ' + opened.error : '.'));
         return end();
@@ -158,7 +190,7 @@
       tails.set(paneId, '');
       const code = new Promise(resolve => {
         finished = resolve;
-        setTimeout(() => resolve(undefined), 15 * 60 * 1000);
+        setTimeout(() => resolve('timeout'), 15 * 60 * 1000);
       });
       sent = true;
       agents().send(
@@ -189,6 +221,29 @@
       }
       for (const id of shown) if (!now.has(id)) bell.unnotify('cli:' + id);
       shown = now;
+
+      // CLIs on PATH that do not start (cli-updates.js `broken`): their repair runs the same way as
+      // an update, in a visible panel.
+      lastBroken = s?.broken || [];
+      const nowBroken = new Set();
+      for (const b of lastBroken) {
+        nowBroken.add(b.id);
+        const busy = updating.has(b.id);
+        bell.notify({
+          key: 'cli-broken:' + b.id,
+          source: b.id,
+          tag: 'Update',
+          k: 'update',
+          title: b.id + (busy ? ' is being reinstalled…' : ' install is incomplete'),
+          text: b.id + ' is on this PC, but ' + b.problem + '.',
+          action:
+            busy || !b.command
+              ? null
+              : { label: 'Reinstall', run: () => runUpdate({ ...b, latest: '' }) },
+        });
+      }
+      for (const id of shownBroken) if (!nowBroken.has(id)) bell.unnotify('cli-broken:' + id);
+      shownBroken = nowBroken;
     }
     native.cliUpdates.onState(onCli);
     native.cliUpdates

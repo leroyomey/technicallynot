@@ -60,7 +60,8 @@ const vkOf = code => {
 // Desktop tests (TN_VOICE_FAKE) press keys and the mouse with sendInputEvent, which Windows never
 // sees as held: its key state says "up" and raising the window makes Chromium re-read the real (up)
 // mouse button, both ending the hold at once. Tests leave the OS alone.
-const FAKE_INPUT = !!process.env.TN_VOICE_FAKE;
+// (build-info.js ignores the switch in a release build)
+const FAKE_INPUT = !!require('./build-info').voiceFake();
 
 function createVoiceHold() {
   let held = null; // { win, wasTop, onBlur, watcher, codes, notify }

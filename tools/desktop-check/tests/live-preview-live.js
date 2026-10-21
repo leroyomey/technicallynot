@@ -116,6 +116,22 @@ try {
       ?.querySelector('.lp-go')
   );
   check(!!runBtn, 'dev script listed with Start in the ▶ Run menu');
+
+  // When the page's frame is added and when it gets its address: in the Desktop view nothing is
+  // emulated, so both happen in the same task, with no wait for the emulate round trip (31 embed).
+  let frameAdded = 0,
+    srcGiven = 0;
+  const firstLoad = new MutationObserver(() => {
+    const f = lp.querySelector('.lpp-stage iframe[name^="tnai-lp-"]');
+    if (f && !frameAdded) frameAdded = performance.now();
+    if (f && !srcGiven && f.getAttribute('src')) srcGiven = performance.now();
+  });
+  firstLoad.observe(lp, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ['src'],
+  });
   runBtn?.click();
   const running = await until(
     () => window.TnaiLivePreview.tabs().find(t => t.script === 'dev' && t.state === 'running'),
@@ -123,6 +139,13 @@ try {
   );
   check(!!running, 'server running at ' + running?.url);
   check(await until(() => count('index'), 10000), 'index page loaded');
+  firstLoad.disconnect();
+  const firstGap = Math.round(srcGiven - frameAdded);
+  log.push('info first load: the frame got its address ' + firstGap + ' ms after it was added');
+  check(
+    frameAdded && srcGiven && firstGap === 0,
+    'Desktop view: the frame gets its address at once'
+  );
   await wait(800);
   const stateText = () => lp.querySelector('.lpp-stage .lp-state span')?.textContent || '';
 

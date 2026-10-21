@@ -1722,7 +1722,7 @@ body.tnai-composer-popout > .composer {
     height: 18px;
     font-size: 9.5px;
   }
-  .composer .hints .tnai-route-hint:not(.tnai-far) {
+  .composer .hints .tnai-route-hint:not(.tnai-far):not(.tnai-elsewhere) {
     display: none;
   }
   .composer .hints > .hint:not(.tnai-route-hint):not(:nth-last-child(2)) {

@@ -90,12 +90,15 @@ try {
   const list = threads.slot('list');
   const listBox = list.querySelector('.tnt-threads');
 
-  // The list's children in order: "H:" a heading's words, "R:" a row's panel or remote key.
+  // The list's children in order: "H:" a heading's words, "W:" the line of why another
+  // computer's agents are not listed (119), "R:" a row's panel or remote key.
   const order = () =>
     [...listBox.children].map(node =>
       node.className === 'tnt-proj'
         ? 'H:' + node.firstChild.textContent
-        : 'R:' + (node.dataset.remote ? 'remote ' + node.dataset.remote : node.dataset.pane)
+        : node.classList.contains('tnt-why')
+          ? 'W:' + node.textContent
+          : 'R:' + (node.dataset.remote ? 'remote ' + node.dataset.remote : node.dataset.pane)
     );
   const headingBefore = key => {
     const all = order();
@@ -304,10 +307,6 @@ try {
     ['nothing paired', state([])],
     ['a paired computer with no agents', state([computer('sample-1', 'Sample laptop', [])])],
     [
-      'a paired computer whose agents are not known to be in this project',
-      state([computer('sample-1', 'Sample laptop', [rowsOf[3]])]),
-    ],
-    [
       'a computer that is not connected',
       state([
         { ...computer('sample-1', 'Sample laptop', rowsOf), state: 'offline', session: false },
@@ -325,12 +324,24 @@ try {
     );
   }
 
+  // Agents not known to work in this project: no row, only the group and its line of why.
+  await push(state([computer('sample-1', 'Sample laptop', [rowsOf[3]])]));
+  check(
+    !remoteRows().length &&
+      order()
+        .join(' | ')
+        .endsWith('H:On Sample laptop | W:Open the same git project to see them here.'),
+    'a paired computer whose agents are not known to be in this project: no row, the group says why (' +
+      order().join(' | ') +
+      ')'
+  );
+
   await push(state([computer('sample-1', 'Sample laptop', rowsOf)]));
   const all = order();
   const headAt = all.indexOf('H:On Sample laptop');
   check(
     headAt > all.indexOf('R:' + paneId) &&
-      all.slice(headAt + 1).every(e => e.startsWith('R:remote')),
+      all.slice(headAt + 1).every(e => e.startsWith('R:remote') || e.startsWith('W:')),
     'one group "On Sample laptop" after this computer\'s groups: ' + all.join(' | ')
   );
   const head = [...listBox.querySelectorAll('.tnt-proj')].find(node =>

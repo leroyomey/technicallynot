@@ -249,6 +249,16 @@ async function submit(
     if (waiting && (await waiting)) return { ok: true, state: 'sent' };
     if (!waiting) await sleep(1200);
 
+    // A slash command (/model, /resume, /clear …) starts no task, so nothing confirms it the way a
+    // prompt is confirmed. A CLI that redrew its screen after our Enter took it, and one more Enter
+    // would answer whatever it opened: /model's menu picked its first option and closed at once.
+    // (learned 2026-10-21, 161-cli-menu-screen.js)
+    const command = /^\/[\w:-]+(\s|$)/.test(body.trim());
+    if (command && same() && (running(paneId)?.lastOutputAt || 0) > enterAt) {
+      did.stop = 'command';
+      return { ok: true, state: 'sent' };
+    }
+
     // One more Enter, only when nobody typed meanwhile and no permission question waits (Enter
     // would answer it). An Enter on an empty input does nothing.
     const touched = (typedAt.get(paneId) || 0) > enterAt;

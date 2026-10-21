@@ -634,6 +634,16 @@
     return near.length === 1 ? near[0].paneId : '';
   }
 
+  // Page text (an error, a picked element's selector and words, the page's address) put into the
+  // composer: one line, no backticks, at most `max` characters. Main folds it already
+  // (preview-emulation.js `clip`); this holds for anything that reaches here another way.
+  const pageText = (v, max = 200) =>
+    String(v ?? '')
+      .replace(/`/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, max);
+
   function toComposer(text, tab) {
     const prompt = document.getElementById('prompt');
     if (!prompt) return false;
@@ -659,11 +669,11 @@
     if (!d.cancelled && tab && d.selector)
       toComposer(
         'In the page shown in Live preview (' +
-          (tab.view || tab.url) +
+          pageText(tab.view || tab.url, 500) +
           '), this element: `' +
-          d.selector +
+          pageText(d.selector, 300) +
           '`' +
-          (d.text ? ' ("' + d.text + '")' : '') +
+          (d.text ? ' ("' + pageText(d.text, 80) + '")' : '') +
           '\nChange: ',
         tab
       );
@@ -951,9 +961,16 @@
       if (f.dataset.src !== src) {
         f.dataset.src = src;
         delete f.dataset.loaded;
-        emulate(f).then(() => {
-          if (f.dataset.src === src && f.getAttribute('src') !== src) f.src = src;
-        });
+
+        // A new frame shown as Desktop has nothing to emulate (its name is new, so main holds no
+        // preset for it): it gets its address at once instead of after the emulate round trip.
+        const first = !('emu' in f.dataset);
+        const done = emulate(f);
+        if (first && f.dataset.emu === '') f.src = src;
+        else
+          done.then(() => {
+            if (f.dataset.src === src && f.getAttribute('src') !== src) f.src = src;
+          });
       }
       return f;
     }
@@ -1098,11 +1115,11 @@
     const errWhere = e =>
       e.url
         ? ' (' +
-          (e.url.split('/').pop().split('?')[0] || e.url) +
+          pageText(e.url.split('/').pop().split('?')[0] || e.url, 500) +
           (e.line ? ':' + e.line : '') +
           ')'
         : '';
-    const errLine = e => e.text + errWhere(e) + (e.n > 1 ? ' ×' + e.n : '');
+    const errLine = e => pageText(e.text) + errWhere(e) + (e.n > 1 ? ' ×' + e.n : '');
 
     function paintExtras(tab, f) {
       if (pickBtn) {
@@ -1142,7 +1159,7 @@
       ask.onclick = () =>
         toComposer(
           'The page shown in Live preview (' +
-            (tab.view || tab.url) +
+            pageText(tab.view || tab.url, 500) +
             ') reports ' +
             (total === 1 ? 'this error' : 'these errors') +
             ':\n' +

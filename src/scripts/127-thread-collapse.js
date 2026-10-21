@@ -63,6 +63,7 @@
     'skills-mode',
     'settings-mode',
     'devices-mode',
+    'board-mode',
     'preview-mode',
     'code-mode',
   ];

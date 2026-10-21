@@ -9,8 +9,11 @@
 // options of its question do what they did on the old page; an agent that takes nothing from here
 // has no button; a press on a thread of this computer, and "go to this agent", bring that thread
 // back; the press works from another page; an agent that left says so; and the layout never gets
-// the class `agents-mode`. Pictures: thread-remote-wren, -moss, -light, -small.
-// Returns {ok, log}.
+// the class `agents-mode`. Late join: the conversation section (read only, its one button
+// Show earlier), the "On" group's line of why agents are not listed, and "Keep on" on Devices.
+// Pictures: thread-remote-wren, -moss, -light, -small,
+// thread-remote-talk-(1440|1024|tablet)-(dark|light), thread-remote-why-(dark|light),
+// devices-keep-on-(1440|1024|tablet)-(dark|light). Returns {ok, log}.
 const log = [];
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 let ok = true;
@@ -79,6 +82,10 @@ const mainSlot = () => threads.slot('main');
 const listSlot = () => threads.slot('list');
 const host = () => mainSlot()?.querySelector(':scope > .tnh-view');
 const ownView = () => mainSlot()?.querySelector(':scope > .tnt-view');
+
+// The live screen's section. The conversation (152) stands above it in the same parts, so it is
+// told apart by its own section class.
+const LIVE = '.ap-term-sec:not(.ap-talk-sec)';
 const far = () => {
   const box = host()?.querySelector('.ap-far');
   return box && onScreen(box) ? box : null;
@@ -88,8 +95,12 @@ const button = text =>
   [...(far()?.querySelectorAll('.ap-actions button') || [])].find(
     one => onScreen(one) && one.textContent === text
   ) || null;
+
+// The thread's "..." (164) stands in the head while its agent is listed, also for one that takes
+// nothing from here (its rows are greyed with their reason); it leaves with the agent.
+const moreShown = () => onScreen(far()?.querySelector('.ap-actions .tnr-more'));
 const shownButtons = () =>
-  [...(far()?.querySelectorAll('.ap-actions button') || [])]
+  [...(far()?.querySelectorAll('.ap-actions button:not(.tnr-more)') || [])]
     .filter(onScreen)
     .map(one => one.textContent);
 const facts = () =>
@@ -349,7 +360,7 @@ try {
       ],
     },
   });
-  const screen = await until(() => far()?.querySelector('.ap-term > .dv-screen'), 4000);
+  const screen = await until(() => far()?.querySelector(LIVE + ' .ap-term > .dv-screen'), 4000);
   check(
     !!screen &&
       /wren is working/.test(screen.textContent) &&
@@ -358,7 +369,7 @@ try {
     'its picture is drawn into the box as text: nothing of it is an element or runs'
   );
   {
-    const term = rect(far().querySelector('.ap-term'));
+    const term = rect(far().querySelector(LIVE + ' .ap-term'));
     const box = rect(host());
     check(
       term.left >= box.left && term.right <= box.right && term.bottom <= box.bottom + 0.5,
@@ -491,7 +502,7 @@ try {
   check(
     farName() === 'Typed by hand' &&
       !shownButtons().length &&
-      /takes nothing from this computer/.test(far().querySelector('.ap-term').textContent),
+      /takes nothing from this computer/.test(far().querySelector(LIVE + ' .ap-term').textContent),
     'an agent that takes nothing from here has no button, and the box says why'
   );
 
@@ -545,14 +556,171 @@ try {
   await main('size', 1440, 900);
   await frame();
 
+  // ---- late join: its conversation, read only, and the line of why agents are not listed ----
+  // A held conversation (made up, as the main process would hand it to `remote:log`) with a
+  // report that asks a decision, a question and a helper's start: the section shows it marked as
+  // that computer's, with "Show earlier" as its one button, and the pictures are taken in Dark and
+  // Light at 1440, 1024 and a tablet size.
+  {
+    const held = {
+      state: 'held',
+      more: true,
+      full: false,
+      older: false,
+      rev: 1,
+      at: nowMs,
+      entries: [
+        { k: 'you', text: 'Fix the login page', at: nowMs - 9000 },
+        {
+          k: 'say',
+          text: 'Done.\n\nTechnically Not report\n- Did: fixed it\n- Decide: Ship it? | 1. Yes | 2. No',
+          at: nowMs - 8000,
+        },
+        { k: 'act', verb: 'Edited', what: 'src/login.js', at: nowMs - 7000 },
+        { k: 'act', verb: 'Started a sub-agent', what: 'look around', at: nowMs - 6000 },
+        {
+          k: 'ask',
+          questions: [{ q: 'Which file?', options: ['a.js', 'b.js'] }],
+          at: nowMs - 5000,
+        },
+        { k: 'worked', ms: 65000, at: nowMs - 4000 },
+      ],
+    };
+    await main('logStub', held);
+    const talkRows = farAgents.map(a =>
+      a.id === 'p1' ? { ...a, talk: true, rev: 1, log: { rev: 1, at: nowMs, state: 'held' } } : a
+    );
+    await push(state({}, talkRows));
+    await pressRow('Wren');
+    const section = () => host()?.querySelector('.ap-talk-sec');
+    const drawn = await until(
+      () =>
+        section() && !section().hidden && section().querySelectorAll('.tnt-talk-list > *').length,
+      5000
+    );
+    check(
+      !!drawn &&
+        /As Sample laptop reported it/.test(
+          section().querySelector('.ap-term-tools em').textContent
+        ),
+      'late join: the conversation is drawn above the live picture, marked as that computer’s'
+    );
+    const buttons = [...section().querySelectorAll('button')].filter(onScreen);
+    check(
+      buttons.length === 1 && buttons[0].textContent.trim() === 'Show earlier',
+      'late join: its only button is Show earlier (' +
+        buttons.map(b => b.textContent).join(', ') +
+        ')'
+    );
+    check(
+      !section().querySelector('a[href], img, .tnt-decide-options, .tnt-ask-option, .tnt-helper'),
+      'late join: no link, picture, decision, option or helper button in it'
+    );
+    const asksBefore = await main('logAsks');
+    buttons[0].click();
+    check(
+      !!(await until(async () => (await main('logAsks')) > asksBefore, 3000)),
+      'late join: Show earlier asks once'
+    );
+    for (const [width, height, label] of [
+      [1440, 900, '1440'],
+      [1024, 768, '1024'],
+      [820, 1180, 'tablet'],
+    ]) {
+      await main('size', width, height);
+      for (const look of ['dark', 'light']) {
+        window.TnaiTheme?.set?.(look);
+        await wait(400);
+        const slot = rect(mainSlot());
+        check(
+          rect(section()).left >= slot.left - 0.5 && rect(section()).right <= slot.right + 0.5,
+          'late join: the section stands inside the main area at ' + label + ' in ' + look
+        );
+        await shot('thread-remote-talk-' + label + '-' + look);
+      }
+    }
+    window.TnaiTheme?.set?.('dark');
+    await main('size', 1440, 900);
+
+    // a computer none of whose agents work in this project: its group and the line why
+    await push(
+      state(
+        { elsewhere: 2 },
+        farAgents.map(a => ({ ...a, sure: false }))
+      )
+    );
+    const why = await until(() => listSlot()?.querySelector('.tnt-why'), 4000);
+    check(
+      !!why && /2 agents in other projects\..*Open the same git project/.test(why.textContent),
+      'late join: the "On" group says why its agents are not listed: ' +
+        (why?.textContent || 'none')
+    );
+    for (const look of ['dark', 'light']) {
+      window.TnaiTheme?.set?.(look);
+      await wait(400);
+      await shot('thread-remote-why-' + look);
+    }
+    window.TnaiTheme?.set?.('dark');
+
+    // the Devices card of a pairing whose first switch was on before the new sentence
+    // The page reads the service's own state when it opens (off in this profile), so the made-up
+    // one is pushed again once it is open, as the service pushes a change.
+    window.TnaiRoute?.('devices');
+    await until(() => document.querySelector('#devicesPage .dv-off, #devicesPage .dv-card'), 4000);
+    await push(state({ reads: false }));
+    const keep = await until(
+      () =>
+        [...document.querySelectorAll('#devicesPage .dv-muted button')].find(
+          b => b.textContent.trim() === 'Keep on'
+        ),
+      5000
+    );
+    check(
+      !!keep,
+      'late join: "Keep on" stands in the first switch’s line: ' +
+        (document.getElementById('devicesPage')?.textContent || 'no page').slice(0, 700) +
+        ' / layout ' +
+        document.querySelector('.layout')?.className
+    );
+    for (const [width, height, label] of [
+      [1440, 900, '1440'],
+      [1024, 768, '1024'],
+      [820, 1180, 'tablet'],
+    ]) {
+      await main('size', width, height);
+      for (const look of ['dark', 'light']) {
+        window.TnaiTheme?.set?.(look);
+        await wait(400);
+        await shot('devices-keep-on-' + label + '-' + look);
+      }
+    }
+    window.TnaiTheme?.set?.('dark');
+    await main('size', 1440, 900);
+    threads.open();
+    await until(() => threads.visible(), 4000);
+    await push(state({}));
+    await main('logStub', null);
+  }
+
   // ---- the agent leaves ----
+  // The late join part above ended with no agent of that computer listed: Moss is shown again
+  // first.
+  await pressRow('Moss');
+  await until(() => farName() === 'Moss', 5000);
   await push(state({}, farAgents.slice(0, 1)));
   check(
     !!(await until(
       () => /Moss on Sample laptop is no longer listed here\./.test(host().textContent),
       4000
-    )) && !shownButtons().length,
-    'an agent that left the list says so in the main area, and has no button'
+    )) &&
+      !shownButtons().length &&
+      !moreShown(),
+    'an agent that left the list says so in the main area, and has no button: ' +
+      (host()?.textContent || 'no view').slice(0, 300) +
+      ' / buttons ' +
+      shownButtons().join(', ') +
+      ' / more ' +
+      moreShown()
   );
   await pressRow('Wren');
   check(

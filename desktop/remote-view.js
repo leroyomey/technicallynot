@@ -565,6 +565,10 @@ function createViews({
     v.pending = null;
     v.s++;
     frameAt = m;
+
+    // Typing (remote-type.js): when each picture left, so a key pressed on an older one is known.
+    v.times.push([v.s, m]);
+    if (v.times.length > 40) v.times.shift();
     let ok = true;
     parts.forEach((z, i) => {
       if (ok) {
@@ -649,6 +653,10 @@ function createViews({
       until: 0,
       fullAt: -Infinity,
       s: 0,
+      // typing (remote-type.js): [[picture number, when it left]], and when the screen last
+      // began to differ from the last picture
+      times: [],
+      dirtyAt: 0,
       last: null,
       pending: null,
       full: true,
@@ -692,6 +700,9 @@ function createViews({
         if (raw == null) end(v, 'gone', true);
         return;
       }
+
+      // Typing (remote-type.js): when a changed screen began to wait for its picture.
+      if (!v.pending) v.dirtyAt = mono();
       v.pending = shaped;
       pump(v);
     },
@@ -751,6 +762,27 @@ function createViews({
           ]
         : [],
     left: peerId => minutesLeft(peerId),
+    // Typing (remote-type.js): that computer's running view as the typing checks read it, or
+    // null. dirty: a screen that differs from the last picture waits to be sent.
+    typingState(peerId) {
+      const v = view;
+      if (!v || v.peerId !== peerId || v.state !== 'on' || stopped || broken(v)) return null;
+      const dirty =
+        !!v.pending &&
+        (!v.last ||
+          v.pending.cols !== v.last.cols ||
+          v.pending.rows !== v.last.rows ||
+          v.pending.lines.some((l, y) => l.sig !== v.last.lines[y].sig));
+      return {
+        v: v.v,
+        panelId: v.panelId,
+        ticket: v.ticket,
+        s: v.s,
+        dirty,
+        dirtyAt: v.dirtyAt,
+        times: v.times.map(x => [x[0], x[1]]),
+      };
+    },
     // The app is closing: no timer stays and nothing more is sent. The list line of a running view
     // stays without a length.
     quit() {
@@ -1027,6 +1059,19 @@ function createWatcher({
       }
     },
     model,
+    // Typing (remote-type.js): the open view as the typing side reads it: which view, and the
+    // number and time of the newest picture drawn. Never the picture itself.
+    seen: () =>
+      w
+        ? {
+            peer: w.peer,
+            agent: w.agent,
+            v: w.v,
+            state: w.state,
+            s: w.lastS,
+            at: w.pic ? w.pic.at : 0,
+          }
+        : null,
     quit() {
       unwait();
       w = null;

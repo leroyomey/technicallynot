@@ -35,6 +35,7 @@
     'agents-mode',
     'devices-mode',
     'preview-mode',
+    'board-mode',
   ];
 
   const layout = document.querySelector('.layout');
@@ -98,6 +99,7 @@
       go: () => window.TnaiSettings?.open('usage'),
     },
     { label: 'All threads', icon: 'square-terminal', go: () => window.TnaiRoute?.('terminal') },
+    { label: 'Board', icon: 'columns-3', go: () => window.TnaiRoute?.('board') },
     { label: 'Terminal', icon: 'terminal', go: () => window.TnaiOwnTerminal?.open() },
     { label: 'Live preview', icon: 'monitor-play', go: () => window.TnaiLivePreviewPage?.open() },
     { label: 'Skills', icon: 'sparkles', go: () => window.TnaiRoute?.('skills') },

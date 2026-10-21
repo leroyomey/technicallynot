@@ -16,13 +16,21 @@
 'use strict';
 const { app, screen, BrowserWindow } = require('electron');
 
-// The monitor tests open on: the smallest one, as testWindowPlace in desktop/main.js picks it, so
-// a test never lies over the screen in use. Nothing with one monitor.
+// The monitor tests open on, as testWindowPlace in desktop/main.js picks it: never the main
+// (primary) monitor, where the user works; among the others the smallest (user, 2026-10-21,
+// twice: tests on "the second monitor", not "my main monitor"; on this PC the 3440 × 1440 screen).
+// Not by the mouse pointer: the user moves it between screens. Nothing with one monitor.
+let picked = null;
+
 function testMonitor() {
   const displays = screen.getAllDisplays();
   if (displays.length < 2) return null;
+  if (picked && displays.some(display => display.id === picked.id)) return picked;
+  const main = screen.getPrimaryDisplay().id;
+  const others = displays.filter(display => display.id !== main);
   const area = display => display.workArea.width * display.workArea.height;
-  return displays.reduce((least, display) => (area(display) < area(least) ? display : least));
+  picked = others.reduce((least, display) => (area(display) < area(least) ? display : least));
+  return picked;
 }
 
 // Where a window of a test belongs: a little in from the corner of the test monitor. The name is

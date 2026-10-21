@@ -1,0 +1,57 @@
+/* Technically Not · 50-text-selection.css — moving around the app never selects its controls, and
+   a text selection stays in the area it started in (src/scripts/169-text-selection.js; user
+   screenshot 2026-10-21: a drag from the conversation ran on through the side column's text and
+   file list). Words worth copying stay selectable: the conversation, code, the file view, the
+   prompt box and every terminal. */
+
+/* The app's controls are not text: the thread list, a thread's top row, the side column's tabs
+   and head, menus, buttons, chips, the row under the prompt box. */
+html.tnt-open
+  :is(
+    .tnt-list,
+    .tnt-head,
+    .tnt-sidebox-head,
+    .tnt-sidebox-tabs,
+    .tnt-menu,
+    button,
+    [role='tab'],
+    [role='menuitem'],
+    footer.composer .hints,
+    .top
+  ) {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* While a selection is made, it stays in the area it began in: every other area of the window
+   takes no part (169 marks the area at the press). */
+html.tnt-open[data-sel-from] :is(.tnt-slot, .tat-card, footer.composer):not([data-sel-here]) {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* All threads (html.tnt-open is off there, tnt-on is on every page): a selection begun in a card
+   stays in that card. The page around the cards and Live preview take no part either, or a drag
+   would run through the next card to reach them. */
+html.tnt-on[data-sel-from='card'] .layout.tat-on {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+html.tnt-on[data-sel-from='card'] .layout.tat-on .tat-card[data-sel-here] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* The cards' buttons are not text either. */
+html.tnt-on .layout.tat-on .tat-card :is(button, [role='tab'], [role='menuitem']) {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Inside the open thread, the conversation and the CLI screen keep their own selections apart. */
+html.tnt-open[data-sel-from='talk'] .tnt-view :is(.tnt-term, .tnt-asks),
+html.tnt-open[data-sel-from='term'] .tnt-view :is(.tnt-talk, .tnt-asks) {
+  -webkit-user-select: none;
+  user-select: none;
+}

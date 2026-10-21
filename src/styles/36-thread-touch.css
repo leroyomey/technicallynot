@@ -132,7 +132,7 @@
     min-height: 44px;
   }
 
-  /* "Last report" and "Latest" at the bottom of a conversation. */
+  /* "Latest" at the bottom of a conversation. */
   html.tnt-on:not(#tnt):not(#pg) .tnt-jump-btn:not(#lp) {
     height: 44px;
   }

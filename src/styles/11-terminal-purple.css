@@ -1040,6 +1040,39 @@ html[data-theme='dark']:not(#pg)
   background: var(--pg-accent-soft);
   color: var(--pg-text);
 }
+/* Typing from another computer (115, desktop/remote-type.js): "Typed from (name)" over a terminal
+   view another computer types into, for a minute after its last key. The watching chip's look on
+   a solid fill, so it reads over the terminal's text; it takes no pointer and fades in and out. */
+:root:not(#pg) .tnai-rt-mark {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  z-index: 5;
+  padding: 2px 8px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 7px;
+  background: var(--pg-panel-solid);
+  color: var(--pg-text-2);
+  font: 500 10.5px var(--pg-mono);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: tnai-rt-in 200ms var(--pg-ease);
+  transition: opacity 200ms var(--pg-ease);
+}
+:root:not(#pg) .tnai-rt-mark[data-off] {
+  opacity: 0;
+}
+@keyframes tnai-rt-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root:not(#pg) .tnai-rt-mark {
+    animation: none;
+    transition: none;
+  }
+}
 :root:not(#pg) .tnai-bg-pop {
   position: fixed;
   z-index: 60;

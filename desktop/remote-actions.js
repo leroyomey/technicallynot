@@ -100,6 +100,8 @@ function createRemoteActions({
   folderKey = async () => '',
   parentsOf = () => [],
   wait = ms => new Promise(resolve => setTimeout(resolve, ms)),
+  // inPanel(cli, conversationId) → true while that conversation runs in a panel here (item 44)
+  inPanel = () => true,
 }) {
   // What a panel runs at this moment, asked from the terminal service and the roster and never from
   // the kept agent list (change 3). remote-control.js gives a ticket, and takes an operation, only
@@ -266,7 +268,9 @@ function createRemoteActions({
   // above); elsewhere it is refused. The same holds for a conversation of such a panel that is
   // resumed in another panel, after this computer's user closed the first: that panel becomes one
   // of them (lifecycle.remoteResumed), so the agent still counts as started from another computer.
-  // Nothing a paired computer sends asks for a resume: a marked start (1) never carries one.
+  // A marked start carries a resume only for a Resume another computer asked for (item 44,
+  // `resume` below): exactly the conversation of that request, only for a CLI on the two lists
+  // above, at "Ask first" and held on the resume itself.
   // 3. A sub-agent whose lead is such a panel: never above "Ask first", decided here and not by
   // what the window remembers.
   function startOptions(options) {
@@ -279,18 +283,30 @@ function createRemoteActions({
         typeof options.agent === 'string' &&
         STARTABLE.includes(options.agent) &&
         (options.mode === undefined || options.mode === 'run') &&
-        !options.resumeId &&
         !options.customAgentId &&
         !options.subagentOf &&
         !options.login;
-      const kept = fresh
-        ? lifecycle.remoteTake(options.remote, options.paneId, options.agent)
-        : false;
+
+      // A Resume from another computer (item 44) carries the conversation it asked for: the mark is
+      // taken only for exactly that one (agent-lifecycle.js remoteTake), and only for a CLI whose
+      // resumed conversation can be held to "Ask first" (the flag of the resume itself, or the
+      // level sent again on a resume).
+      const resumeId =
+        typeof options.resumeId === 'string' && options.resumeId ? options.resumeId : '';
+      const holdable =
+        !resumeId ||
+        ASK_ON_RESUME.includes(options.agent) ||
+        LEVEL_ON_RESUME.includes(options.agent);
+      const kept =
+        fresh && holdable
+          ? lifecycle.remoteTake(options.remote, options.paneId, options.agent, resumeId)
+          : false;
       if (!kept)
         return { error: 'This start was asked from another computer and is no longer wanted.' };
       const { remote, ...rest } = options;
+      const held = resumeId && ASK_ON_RESUME.includes(options.agent) ? { askOnResume: true } : null;
       return {
-        options: { ...rest, mode: 'run', access: 'ask', ownedByUser: true },
+        options: { ...rest, mode: 'run', access: 'ask', ownedByUser: true, ...held },
         remote: { from: typeof kept.from === 'string' ? kept.from : '', guard: kept.guard },
       };
     }
@@ -316,6 +332,24 @@ function createRemoteActions({
         };
       return options.access === 'ask' ? { options } : { options: { ...options, access: 'ask' } };
     }
+
+    // The record of which conversations were started from another computer could not be read
+    // (agent-lifecycle.js marksLost): a conversation it cannot place may be one of them, so it is
+    // not resumed without its hold.
+    const lostAt =
+      panel &&
+      typeof options.resumeId === 'string' &&
+      options.resumeId !== '' &&
+      typeof lifecycle.remoteMarksLost === 'function'
+        ? lifecycle.remoteMarksLost()
+        : 0;
+    if (lostAt && !(lifecycle.remoteKnown?.(options.agent, options.resumeId) === true))
+      return {
+        error:
+          'Technically Not could not read its record of which conversations were started from your other computer, so for 30 days after ' +
+          new Date(lostAt).toLocaleDateString() +
+          ' it does not resume a conversation it cannot place: start a new conversation in this thread.',
+      };
     if (agentRun && options.subagentOf) {
       let line = [];
       try {
@@ -333,6 +367,19 @@ function createRemoteActions({
         // Claude Code resume, and the CLI restored the conversation's own mode or a settings
         // `defaultMode`). `plan` stays the asked level; its resumed conversation is held too, at
         // "Ask first" (the registry's one held level), never unheld.
+        // A revived sub-agent of a CLI that takes no level on a resume would run at the CLI's own
+        // default: it is refused, as its lead would be.
+        if (
+          options.resumeId &&
+          !ASK_ON_RESUME.includes(options.agent) &&
+          !LEVEL_ON_RESUME.includes(options.agent)
+        )
+          return {
+            error:
+              'This sub-agent works for an agent started from your other computer, so it always runs at "Ask first". ' +
+              options.agent +
+              ' cannot be held to that when a conversation is resumed, so it was not resumed.',
+          };
         const capped = options.access === 'ask' || options.access === 'plan',
           held = !!options.resumeId && ASK_ON_RESUME.includes(options.agent);
         if (capped && !held) return { options };
@@ -385,12 +432,16 @@ function createRemoteActions({
   // turn of every write of it. Not taken: the panel is stopped. From the message only the CLI's
   // name from the fixed list and the text reach this; no model, effort, name or folder is passed
   // on.
-  async function start({ cli, text, from, guard }) {
+  // resumeId (item 44): the conversation a Resume continues; '' for a fresh agent.
+  async function start({ cli, text, from, guard, resumeId = '' }) {
     if (typeof guard !== 'function') return 'refused';
     if (!STARTABLE.includes(cli)) return 'refused';
     let r = null;
     try {
-      r = await lifecycle.spawnRemote(cli, { from: String(from || ''), guard });
+      // a fresh start names the CLI and nothing else; a Resume adds its conversation
+      const asked = [cli, { from: String(from || ''), guard }];
+      if (resumeId) asked.push(resumeId);
+      r = await lifecycle.spawnRemote(...asked);
     } catch {
       /* not started */
     }
@@ -510,13 +561,57 @@ function createRemoteActions({
     return r && r.ok === true ? 'done' : 'failed';
   }
 
+  // A Resume another computer asked for (item 44): a past conversation of this computer, named by
+  // this computer's own record (remote-control.js doResume found it by the handle), continued in a
+  // new panel through the same path as a start, held at "Ask first". Refused while that
+  // conversation already runs in a thread here, and for a CLI that cannot be held on a resume.
+  async function resume({ cli, id, from, guard }) {
+    if (typeof id !== 'string' || !/^[A-Za-z0-9._-]{1,128}$/.test(id)) return 'refused';
+    if (!ASK_ON_RESUME.includes(cli) && !LEVEL_ON_RESUME.includes(cli)) return 'refused';
+    let running = true;
+    try {
+      running = inPanel(cli, id) !== false;
+    } catch {
+      running = true;
+    }
+    if (running) return 'refused';
+    return start({ cli, text: '', from, guard, resumeId: id });
+  }
+
+  // ---- typing from another computer (remote-type.js, plan item 41) ----
+  // The keys of one batch, written once, in the turn of the guard. Only into a panel that runs an
+  // agent the app started or one of the app's plain terminals (Your terminal, a PowerShell thread);
+  // never into a sign-in run or a panel with no process. The write goes through the same
+  // `ptys.write` as a key typed here, so the app counts it as "someone typed" (a prompt that waits
+  // to be written sees it).
+  function type({ panelId, data, guard }) {
+    const a = agentNow(panelId);
+    const target =
+      !!a && a.running === true && a.mode === 'run' && (appStarted(a) || a.cli === 'Terminal');
+    if (!target || typeof data !== 'string' || data === '' || guard() !== true) return 'refused';
+
+    // Review 23, L7: a prompt is between its paste and its Enter in that input (or that is not
+    // known): these keys would go out as part of it
+    let open = true;
+    try {
+      open = attention.deliveryOpen(panelId) !== false;
+    } catch {
+      open = true;
+    }
+    if (open) return 'changed';
+    ptys.write(panelId, data);
+    return 'done';
+  }
+
   return {
     agentNow,
+    type,
     prompt,
     say,
     interrupt,
     stop,
     start,
+    resume,
     chooseAnswer,
     startOptions,
     mayStart,

@@ -5,6 +5,8 @@
  * pushed as `cli-updates:state` (the bell shows them, 60). The bell's Update runs the command in a
  * Terminal panel (60-bell-notices.js). Only CLIs with an `npm` package and `update` command in
  * agent-registry.js RELEASES are checked; Cursor Agent has no npm version Technically Not can read.
+ * The same check proves each of those CLIs still starts (`broken`: on PATH, but its `--version`
+ * shows an install that did not finish), so a cut-short update is said plainly with its repair.
  */
 'use strict';
 const agents = require('./agent-registry');
@@ -31,7 +33,7 @@ const newer = (a, b) => {
   return false;
 };
 
-let state = { checkedAt: 0, updates: [] },
+let state = { checkedAt: 0, updates: [], broken: [] },
   send = () => {},
   timer = null,
   running = null;
@@ -45,8 +47,14 @@ async function latest(pkg) {
   return String((await res.json()).version || '');
 }
 
+// One CLI: { id, installed, latest, command } when a newer release exists, { id, broken, problem,
+// command } when the CLI is on PATH but does not start (an update or install cut short: its
+// `command` is then the repair), else null.
 async function checkOne(cli) {
-  const installed = semver(await agents.version(cli.id).catch(() => ''));
+  const health = await agents.health(cli.id).catch(() => null);
+  if (health?.problem)
+    return { id: cli.id, broken: true, problem: health.problem, command: health.repair };
+  const installed = semver(health?.version || '');
   if (installed.length !== 3) return null; // not installed, or no readable version
   const next = await latest(cli.pkg).catch(() => '');
   const want = semver(next);
@@ -58,7 +66,12 @@ async function checkOne(cli) {
 function check() {
   running ||= Promise.all(CLIS.map(checkOne))
     .then(list => {
-      state = { checkedAt: Date.now(), updates: list.filter(Boolean) };
+      const found = list.filter(Boolean);
+      state = {
+        checkedAt: Date.now(),
+        updates: found.filter(item => !item.broken),
+        broken: found.filter(item => item.broken),
+      };
       send(state);
       return state;
     })

@@ -69,7 +69,7 @@ function ask(message, keep = false) {
                 ? 15000
                 : message.op === 'intervene'
                   ? 25000
-                  : message.op === 'shot'
+                  : message.op === 'shot' || message.op === 'pr'
                     ? 30000
                     : 5000
     );
@@ -250,7 +250,7 @@ const USAGE = [
   '  tnai send --later NAME message...   the message can wait: a working agent gets it when its task ends',
   '  tnai send NAME -             the message from a pipe, for text with <, > or double quotes (Windows cmd.exe breaks those as arguments):',
   '                               \'text with <x> and "quotes"\' | tnai send NAME -   (tnai intervene NAME - and tnai ask NAME - too)',
-  '  tnai new claude|codex|opencode|cursor task...   start a fresh agent in a new panel (it can have its own sub-agents) and give it the task; use your own CLI unless the user named another',
+  '  tnai new claude|codex|opencode|cursor task...   start a fresh agent in a new panel (it can have its own sub-agents) and give it the task (a lone - reads the task from a pipe); use your own CLI unless the user named another',
   '    --model NAME --effort LEVEL   (before the task) start it on that model / effort when the user asked for one, e.g. --model "Opus 5.5" --effort high',
   '    --name NAME                (before the task) only when the user named the new agent: that exact name, e.g. --name "bug reporter"',
   '  tnai intervene NAME message...   urgent only: stop a working agent where it is and hand it the message now (tnai send waits behind its task);',
@@ -290,6 +290,7 @@ const USAGE = [
   '  tnai preview close [URL]                  close the Live preview tab(s) you opened (all of yours, or the one at URL), e.g. once you stop its server',
   '  tnai show FILE.html [phone|tablet|desktop]   show one HTML file of this project in Live preview without a server (a chart, a table, a mock-up); it must hold everything itself: no other file, no network',
   '  tnai shot preview [URL] [phone|tablet|desktop]   save a PNG of that localhost page (default: the Live preview tab you opened, else the active one) and print its path, to look at the UI you built',
+  "  tnai pr [watch [NUMBER] | unwatch]   watch your thread's pull request (your branch's, or #NUMBER): Technically Not asks GitHub every 3 minutes and tells you when checks finish, a check fails or a comment comes in; unwatch stops it; no word shows what is watched",
   "  tnai skill save PATH [--distinct]   save a folder with SKILL.md (or a SKILL.md file; needs name + description frontmatter) to Technically Not's skill library, on for every session from the start (the user can switch it off);\n" +
     '                               refused when it covers the same topic as a library skill (merge into that one), unless --distinct',
   '  tnai skill match TEXT        which skills Technically Not would name for a sentence the user might say (test that a skill you wrote is picked up)',
@@ -356,18 +357,19 @@ async function runTests(words) {
     process.stderr.write(
       'tnai: no test setup found here (package.json "test" script, pytest, cargo, go, gradle, maven, dotnet or a Makefile test target). Run tnai test COMMAND.\n'
     );
+    failLine('not_found', "tnai test COMMAND (the command that runs this project's tests)");
     return 2;
   }
   let reply, socket;
   try {
     ({ reply, socket } = await ask({ op: 'test', cwd: process.cwd() }, true));
   } catch (error) {
-    process.stderr.write('tnai: ' + error.message + '.\n');
+    printNoAnswer(error);
     return 1;
   }
   if (!reply.ok) {
     socket?.destroy();
-    process.stderr.write('tnai: ' + (reply.error || 'refused') + '\n');
+    printFailure(reply);
     return 1;
   }
   socket.on('error', () => {});
@@ -538,6 +540,30 @@ function pipedText() {
   });
 }
 
+// The last line of every failure, for the agent to act on: "code: CODE · try: HINT".
+// agent-errors.js holds the list of codes; this file is copied out and runs alone, so it cannot
+// load that file and writes the same shape here.
+function failLine(code, hint) {
+  process.stderr.write('code: ' + code + (hint ? ' · try: ' + hint : '') + '\n');
+}
+
+// A failed answer from Technically Not: its sentence, then its code line.
+function printFailure(reply) {
+  process.stderr.write('tnai: ' + (reply.error || 'refused') + '\n');
+  failLine(reply.code || 'refused', reply.hint);
+}
+
+// No answer at all: not started by Technically Not, or it did not answer in time.
+function printNoAnswer(error) {
+  process.stderr.write('tnai: ' + error.message + '.\n');
+  if (/not started by Technically Not/.test(error.message)) failLine('refused', START_HINT);
+  else failLine('unreachable', AGAIN_HINT);
+}
+const START_HINT =
+  'run it in a terminal Technically Not started (a thread, its CLI screen or Your terminal)';
+const AGAIN_HINT =
+  'run the same command again in a few seconds; if it fails again, tell the user Technically Not is not answering';
+
 async function tnai() {
   const [sub = '', ...rest] = args;
   if (!sub || /^(help|-h|--help)$/.test(sub)) {
@@ -548,6 +574,7 @@ async function tnai() {
     process.stderr.write(
       'tnai: this shell was not started by Technically Not, so it cannot reach other agents.\n'
     );
+    failLine('refused', START_HINT);
     return 2;
   }
 
@@ -568,6 +595,7 @@ async function tnai() {
           sub +
           ' NAME -\n'
       );
+      failLine('invalid', "'message' | tnai " + sub + ' NAME -');
       return 2;
     }
     rest[1] = text;
@@ -584,6 +612,7 @@ async function tnai() {
         process.stderr.write(
           "tnai: `tnai ask NAME -` reads the question from a pipe: 'question' | tnai ask NAME -\n"
         );
+        failLine('invalid', "'question' | tnai ask NAME -");
         return 2;
       }
       rest.splice(0, rest.length, words[0], ...(wait === null ? [] : ['--wait', wait]), text);
@@ -623,6 +652,20 @@ async function tnai() {
       const [flag, eq] = words.shift().slice(2).split(/=(.*)/s);
       pick[flag] = eq !== undefined ? eq : words.shift() || '';
     }
+
+    // `tnai new CLI [--name …] -`: the task comes through stdin, as for send and ask. Without
+    // this the dash itself became the whole task and the new agent got an empty message.
+    if (words.length === 1 && words[0] === '-') {
+      const piped = await pipedText();
+      if (!piped) {
+        process.stderr.write(
+          "tnai: `tnai new CLI -` reads the task from a pipe: 'task' | tnai new CLI -\n"
+        );
+        failLine('invalid', "'task' | tnai new CLI -");
+        return 2;
+      }
+      words.splice(0, 1, piped);
+    }
     message = { op: 'new', agent: rest[0], text: words.join(' '), ...pick };
   } else if (sub === 'read' && rest.length >= 1)
     message = { op: 'read', from: rest[0], lines: Number(rest[1]) || 40 };
@@ -648,6 +691,7 @@ async function tnai() {
       (opts.successor && (!opts.self || names.length))
     ) {
       process.stderr.write(USAGE + '\n');
+      failLine('invalid', 'the usage above');
       return 2;
     }
     message = { op: 'close', names, words, ...opts };
@@ -671,6 +715,7 @@ async function tnai() {
     if (to && words.length) message = { op: 'ask', to, text: words.join(' '), wait };
     else {
       process.stderr.write(USAGE + '\n');
+      failLine('invalid', 'the usage above');
       return 2;
     }
   } else if (sub === 'server' && (!rest.length || rest[0] === 'list') && rest.length <= 1)
@@ -708,6 +753,7 @@ async function tnai() {
       };
     else {
       process.stderr.write(USAGE + '\n');
+      failLine('invalid', 'the usage above');
       return 2;
     }
   } else if (sub === 'wait' && rest.every(a => /^[\w-]+$/.test(a))) {
@@ -746,10 +792,20 @@ async function tnai() {
       other = words.filter(w => w !== dev);
     if (other.length > 1) {
       process.stderr.write(USAGE + '\n');
+      failLine('invalid', 'the usage above');
       return 2;
     }
     message = { op: 'shot', url: other[0] || '', device: dev.toLowerCase() };
-  } else if (sub === 'skill' && rest[0] === 'list') message = { op: 'skill', action: 'list' };
+  } else if (sub === 'pr' && !rest.length) message = { op: 'pr', action: '' };
+  else if (sub === 'pr' && rest[0] === 'unwatch' && rest.length === 1)
+    message = { op: 'pr', action: 'unwatch' };
+  else if (sub === 'pr' && rest[0] === 'watch' && rest.length <= 2 && /^#?\d*$/.test(rest[1] || ''))
+    message = {
+      op: 'pr',
+      action: 'watch',
+      number: Number(String(rest[1] || '').replace('#', '')) || 0,
+    };
+  else if (sub === 'skill' && rest[0] === 'list') message = { op: 'skill', action: 'list' };
   else if (
     sub === 'skill' &&
     rest[0] === 'save' &&
@@ -772,17 +828,18 @@ async function tnai() {
     message = { op: 'skill', action: 'remove', name: rest[1] };
   else {
     process.stderr.write(USAGE + '\n');
+    failLine('invalid', 'the usage above');
     return 2;
   }
   let reply;
   try {
     ({ reply } = await ask({ ...message, cwd: process.cwd() }));
   } catch (error) {
-    process.stderr.write('tnai: ' + error.message + '.\n');
+    printNoAnswer(error);
     return 1;
   }
   if (!reply.ok) {
-    process.stderr.write('tnai: ' + (reply.error || 'refused') + '\n');
+    printFailure(reply);
     return 1;
   }
   if (sub === 'agents') {

@@ -13,6 +13,8 @@
 //   GET  /remote/presence  same three headers → which devices are connected
 //   POST /remote/forget?d=…  same three headers → that device's record is removed (not while it
 //                            is connected)
+//   POST /remote/revoke?d=…[&undo=1]  same three headers, signed with the secret itself → that
+//                            device is thrown out and refused from then on (or let in again)
 import { RelayHub } from './hub.js';
 import { b64url, fromB64url, hmacHex, json, safeEqual } from './util.js';
 
@@ -138,28 +140,52 @@ async function proven(request, env, what) {
   // ticket, find the meeting point's name or prove anything to another relay.
   // Both are worked out before either is compared, so the time taken does not say which
   // kind of device is asking.
+  //
+  // A computer of this build keeps neither: it keeps the key of its own device id
+  // (deviceKeyOf below), made from the secret when the user typed it in, and that key proves this
+  // one id and nothing else. A settings file taken from one computer is then one device on the
+  // relay, not all of them. A phone of this build does the same with its own id, so a lost phone
+  // is one device too and can be thrown out alone (revoke).
   const bySecret = await hmacHex(secret, text);
   const byPhoneKey = await hmacHex(await hmacHex(secret, 'phone-key:' + host), text);
-  const fromComputer = safeEqual(proof, bySecret);
+  const byDeviceKey = await hmacHex(await deviceKeyOf(secret, device, host), text);
+  const fromSecret = safeEqual(proof, bySecret);
 
-  // The phone key speaks for phones only: every phone's id begins "ph-". So a script that got
-  // onto the phone page and has that key sign cannot ask for a ticket under a computer's id,
-  // which would cancel that computer's own ticket and let the script connect in its place.
+  // The shared phone key of older phone pages speaks for phones only: every phone's id begins
+  // "ph-". So a script that got onto the phone page and has that key sign cannot ask for a ticket
+  // under a computer's id, which would cancel that computer's own ticket and let the script
+  // connect in its place. The meeting point stops taking it once a phone moved to its own key
+  // (hub.js ask, "pk").
   const fromPhone = safeEqual(proof, byPhoneKey) && device.startsWith(PHONE_ID_START);
-  if (!fromComputer && !fromPhone) throw new Refused(401, 'invalid_proof');
+
+  // A device key speaks for its own id only.
+  const fromDevice = safeEqual(proof, byDeviceKey);
+  if (!fromSecret && !fromPhone && !fromDevice) throw new Refused(401, 'invalid_proof');
 
   // after the hash: only a holder of the secret learns how far its clock is off
   if (Math.abs(Date.now() - time) > PROOF_WINDOW * 1000) throw new Refused(401, 'clock_off');
-  return { device, time };
+  return { device, time, by: fromSecret ? 'secret' : fromDevice ? 'device' : 'phone' };
 }
+
+// The key one device keeps for its own id. The app works out the same text
+// (desktop/own-relay.js deviceKeyOf) when the user types the secret in, and keeps only the result.
+// A phone's key also names this relay's host, as the old shared phone key did: the phone page
+// keeps it where a script on the page could have it sign, and what it signs is then good at this
+// one relay only (phone/src/own-relay.mjs makes the same key). Which formula is used depends on
+// the id the caller sent, so the time taken says nothing the caller did not already know.
+const deviceKeyOf = (secret, device, host) =>
+  device.startsWith(PHONE_ID_START)
+    ? hmacHex(secret, 'phone-key:' + host + ':' + device)
+    : hmacHex(secret, 'device-key:' + device);
 
 // The meeting point refuses a proof it has seen, a device that asks too often and a new device id
 // when it knows too many. `issued` (a ticket's random part) is remembered there as the one ticket
-// this device may use.
-async function ask(env, device, time, issued = '') {
+// this device may use. `by` is the kind of key that signed the proof (proven): the meeting point
+// stops taking the shared phone key once a phone moved to its own.
+async function ask(env, device, time, issued = '', by = '') {
   const hub = await hubOf(env);
   return hub.fetch(
-    new Request(`https://hub/ask?d=${encodeURIComponent(device)}&p=${time}&i=${issued}`)
+    new Request(`https://hub/ask?d=${encodeURIComponent(device)}&p=${time}&i=${issued}&b=${by}`)
   );
 }
 
@@ -296,9 +322,9 @@ async function readTicket(env, ticket) {
 }
 
 async function ticket(request, env) {
-  const { device, time } = await proven(request, env, 'ticket');
+  const { device, time, by } = await proven(request, env, 'ticket');
   const r = randomPart();
-  const asked = await ask(env, device, time, r);
+  const asked = await ask(env, device, time, r, by);
   if (asked.status !== 200) return asked;
 
   // the meeting point's yes carries the key to sign with; it goes into memory, not to the device
@@ -338,17 +364,18 @@ async function connect(request, env) {
 }
 
 async function presence(request, env) {
-  const { device, time } = await proven(request, env, 'presence');
+  const { device, time, by } = await proven(request, env, 'presence');
 
   // counted and single use like a ticket's proof
-  const asked = await ask(env, device, time);
+  const asked = await ask(env, device, time, '', by);
   if (asked.status !== 200) return asked;
   return (await hubOf(env)).fetch(new Request('https://hub/presence'));
 }
 
 // A device the user no longer wants listed (an old computer, a test device) is removed. Only a
-// computer may ask, never the phone key, and the device to remove is part of the proof, so a proof
-// removes that one device and no other. A connected device is refused (hub.js drop).
+// computer may ask, never a phone (with either kind of phone key), and the device to remove is part
+// of the proof, so a proof removes that one device and no other. A connected device is refused
+// (hub.js drop).
 async function forget(request, env) {
   const gone = new URL(request.url).searchParams.get('d') || '';
   if (!DEVICE.test(gone)) throw new Refused(400, 'invalid_device');
@@ -361,38 +388,106 @@ async function forget(request, env) {
   return (await hubOf(env)).fetch(new Request('https://hub/drop?d=' + encodeURIComponent(gone)));
 }
 
+// One device is thrown out without a new secret (a computer that was lost or stolen), or let in
+// again with &undo=1. Only the secret itself may ask: a device key or the phone key is what a
+// stolen device holds, so it must not be able to throw out the others. The device in the headers
+// is any id (the tool uses its own); it gets no record. The meeting point keeps the newest such
+// proof's time, so a copied call is refused like any other proof seen twice. A phone id throws
+// out that phone and ends the shared phone key of older phone pages (hub.js revoke): the lost
+// phone may hold that key, which would sign for a new phone id at once.
+async function revoke(request, env) {
+  const params = new URL(request.url).searchParams,
+    gone = params.get('d') || '',
+    undo = params.get('undo') === '1';
+  if (!DEVICE.test(gone)) throw new Refused(400, 'invalid_device');
+  const { time, by } = await proven(request, env, (undo ? 'unrevoke:' : 'revoke:') + gone);
+  if (by !== 'secret') throw new Refused(403, 'not_allowed');
+  return (await hubOf(env)).fetch(
+    new Request(
+      `https://hub/revoke?d=${encodeURIComponent(gone)}&p=${time}${undo ? '&undo=1' : ''}`
+    )
+  );
+}
+
 const ROUTES = {
   'POST /remote/ticket': ticket,
   'GET /remote/connect': connect,
   'GET /remote/presence': presence,
   'POST /remote/forget': forget,
+  'POST /remote/revoke': revoke,
 };
 
 // The phone app is a web page on another address, and a browser lets a page read an answer from
-// elsewhere only when that answer says so. The two plain calls say so to any page: no cookie or
-// sign-in of the browser is involved, and what decides is the proof, which a page without the
-// secret cannot make (it gets "invalid_proof" like anyone). The WebSocket call is not under this
-// rule and is left alone.
-const OPEN_TO_PAGES = new Set(['/remote/ticket', '/remote/presence']);
+// elsewhere only when that answer says so. The relay says so to the phone app's own address only
+// (PHONE_ORIGINS in wrangler.toml), never to any page ("*"), and never with cookies or
+// credentials: what decides is still the proof. The two plain calls and the front answer ("/",
+// which the phone page reads to tell "deploy the relay again" from "check the secret") are open
+// to it. The WebSocket call takes no such question, but a browser names its page in `Origin`
+// there too, so a socket from any other page is refused (the apps send no `Origin`).
+const OPEN_TO_PAGES = new Set(['/', '/remote/ticket', '/remote/presence']);
 const PAGE_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'X-Relay-Device, X-Relay-Time, X-Relay-Proof',
   'Access-Control-Max-Age': '600',
 };
 
-// The same answer with the line that lets a page read it. A new Response: the one that came back
-// from the meeting point cannot be changed.
-function readable(res) {
+// One exact page address: https with a host, or plain http to this PC for a local try. A path,
+// a wildcard or "null" never matches.
+const ORIGIN = /^(https:\/\/[a-z0-9.-]+|http:\/\/(localhost|127\.0\.0\.1|\[::1\]))(:\d{1,5})?$/;
+
+// The PHONE_ORIGINS value whose ignored entries were last counted in the log: once per setting,
+// not on every call.
+let originsWarnedFor = null;
+
+// The page addresses allowed to read the relay's answers, from PHONE_ORIGINS (comma list). A
+// browser leaves out https's own port and sends no slash, so `:443` and a closing `/` are taken
+// off an entry; an entry that still is no page address can never match and is dropped, and the
+// log says how many (never which: the log holds no address).
+function phoneOrigins(env) {
+  const setting = String(env.PHONE_ORIGINS || '');
+  const entries = setting
+    .split(',')
+    .map(entry => entry.trim())
+    .filter(Boolean);
+  const kept = entries
+    .map(entry =>
+      entry
+        .toLowerCase()
+        .replace(/\/$/, '')
+        .replace(/^(https:\/\/[^/]+):443$/, '$1')
+    )
+    .filter(entry => ORIGIN.test(entry));
+  if (kept.length < entries.length && originsWarnedFor !== setting) {
+    originsWarnedFor = setting;
+    console.warn('PHONE_ORIGINS: ' + (entries.length - kept.length) + ' entries ignored');
+  }
+  return kept;
+}
+
+// The calling page's address when it is allowed, else null (no page, or another page).
+function allowedOrigin(request, env) {
+  const origin = request.headers.get('Origin');
+  if (!origin) return null;
+  return phoneOrigins(env).includes(origin.toLowerCase()) ? origin : null;
+}
+
+// The same answer with the lines that let the phone page read it. A new Response: the one that
+// came back from the meeting point cannot be changed. `Vary`: a cache must not hand one page's
+// answer to another.
+function readable(res, origin) {
   const headers = new Headers(res.headers);
-  headers.set('Access-Control-Allow-Origin', '*');
+  headers.append('Vary', 'Origin');
+  if (origin) headers.set('Access-Control-Allow-Origin', origin);
   return new Response(res.body, { status: res.status, headers });
 }
 
 async function answer(request, env, url) {
   try {
+    // `keys: 1`: this relay takes per-device keys. An app whose key was refused reads it to
+    // tell "deploy the relay again" from "check the secret" (desktop/own-relay.js relayTooOld).
+    // `phone_keys: 1`: it also takes a phone's own key (phone/src/own-relay.mjs relayTooOld).
     if (request.method === 'GET' && url.pathname === '/')
-      return json(200, { relay: 'technically-not', v: 1 });
+      return json(200, { relay: 'technically-not', v: 1, keys: 1, phone_keys: 1 });
     const route = ROUTES[request.method + ' ' + url.pathname];
     if (!route) throw new Refused(404, 'not_found');
     return await route(request, env);
@@ -408,11 +503,21 @@ async function answer(request, env, url) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (!OPEN_TO_PAGES.has(url.pathname)) return answer(request, env, url);
+    const origin = allowedOrigin(request, env);
+    if (!OPEN_TO_PAGES.has(url.pathname)) {
+      // a page that is not the phone app's never opens a connection
+      if (request.headers.get('Origin') && !origin)
+        return json(403, { error: 'origin_not_allowed' });
+      return answer(request, env, url);
+    }
 
-    // a browser's question before the real call: which headers and methods are allowed
-    if (request.method === 'OPTIONS')
-      return new Response(null, { status: 204, headers: PAGE_HEADERS });
-    return readable(await answer(request, env, url));
+    // A browser's question before the real call: which headers and methods are allowed. Only
+    // the phone app's page is told; another page gets no allowance, and its browser stops there.
+    if (request.method === 'OPTIONS') {
+      const headers = { Vary: 'Origin' };
+      if (origin) Object.assign(headers, PAGE_HEADERS, { 'Access-Control-Allow-Origin': origin });
+      return new Response(null, { status: 204, headers });
+    }
+    return readable(await answer(request, env, url), origin);
   },
 };

@@ -118,7 +118,18 @@ const kv = () =>
       dt.nextElementSibling?.textContent || '',
     ])
   );
-const term = () => shownFar()?.querySelector('.ap-term') || null;
+
+// The live screen's box. The conversation (152) stands above it in the same parts, so it is
+// told apart by its own section class.
+const LIVE = '.ap-term-sec:not(.ap-talk-sec)';
+const term = () => shownFar()?.querySelector(LIVE + ' .ap-term') || null;
+
+// The thread's "..." (164) stands in the head while its agent is listed, also for one that takes
+// nothing from here (its rows are greyed with their reason); it leaves with the agent.
+const moreShown = () => {
+  const more = shownFar()?.querySelector('.ap-actions .tnr-more');
+  return !!more && !more.hidden && more.getClientRects().length > 0;
+};
 const hintEl = () => document.querySelector('.composer .tnai-route-hint'),
   hint = () => {
     const t = hintEl()?.textContent || '';
@@ -370,7 +381,7 @@ check(
       'ap-term',
       'ap-side',
     ].every(c => f.querySelector('.' + c)) &&
-    f.querySelector('.ap-term-bar span').textContent === 'LIVE SCREEN' &&
+    f.querySelector(LIVE + ' .ap-term-bar span').textContent === 'LIVE SCREEN' &&
     inside(f, mainSlot()),
   "the detail is built from the page's own parts: head, actions, the live terminal box, the side sections"
 );
@@ -599,7 +610,7 @@ check(
 
 // ---- what cannot be watched says why; only the buttons with a path are offered ----
 const offered = () =>
-  [...(shownFar()?.querySelectorAll('.ap-actions button') || [])]
+  [...(shownFar()?.querySelectorAll('.ap-actions button:not(.tnr-more)') || [])]
     .filter(b => !b.hidden)
     .map(b => b.textContent.trim())
     .join();
@@ -1022,6 +1033,7 @@ check(
   ) &&
     shownFar().querySelector('h2').textContent === 'Moss' &&
     offered() === '' &&
+    !moreShown() &&
     !btn('Watch again') &&
     !btn('Keep watching') &&
     !term().querySelector('.dv-screen') &&
@@ -1056,7 +1068,8 @@ btn('Stop').focus();
       !!(await until(() => /another agent took its place/.test(term()?.textContent || ''))) &&
       !shownFar().contains(document.activeElement) &&
       !term().querySelector('.dv-screen') &&
-      offered() === '',
+      offered() === '' &&
+      !moreShown(),
     'review 16, 2.9: the keyboard was on Stop when another agent took the row: the focus is off the box, the picture is gone, no button is left'
   );
 }
@@ -1076,6 +1089,7 @@ check(
   )) &&
     !!(await until(() => farRows().length === 2, 3000)) &&
     offered() === '' &&
+    !moreShown() &&
     (!own() || own().hidden) &&
     window.TnaiRemoteAgents.selected() === '',
   "review 16, 2.5: the selected agent left the list: the box says so and has no button; this computer's own detail is not put in its place: " +
@@ -1277,7 +1291,7 @@ check(
         .join() === '1,2' &&
       pk()[1].title === '<i>SQLite</i>' &&
       pk().every(b => b.classList.contains('ap-font')) &&
-      inside(pk()[0], shownFar().querySelector('.ap-term-bar')) &&
+      inside(pk()[0], shownFar().querySelector(LIVE + ' .ap-term-bar')) &&
       !shownFar().querySelector('.ap-picks i'),
     "an agent whose question came with its options shows one small numbered button for each in the terminal box's bar, in that bar's own button style"
   );

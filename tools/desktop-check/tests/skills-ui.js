@@ -1,7 +1,7 @@
 // Technically Not tools · desktop-check/tests/skills-ui.js — Skills page (replaces Context):
 // grouped library, drag a skill onto a custom agent, Apply menu, live "in use" from agent output on
-// the page and on Overview cards, clears on idle. No prompt is sent to any agent. Returns {ok,
-// log}.
+// the page, clears on idle; the hidden old grid of 11 builds no cards. No prompt is sent to any
+// agent. Returns {ok, log}.
 const log = [],
   wait = ms => new Promise(r => setTimeout(r, ms));
 let ok = true;
@@ -402,56 +402,18 @@ check(
 );
 await shot('skills-page');
 
+// (The old Overview cards of 11 that showed skill chips and took skill drops are no longer built
+// while their grid is off screen, which it always is in the thread design.)
 window.TnaiThreads.open();
-const chip = await until(
-  () =>
-    document.querySelector('.tnai-card[data-pane="' + paneId + '"] .c-skill[data-state="in-use"]'),
-  3000
-);
-check(!!chip && /test-skill/.test(chip.textContent), 'Overview card shows the in-use skill chip');
-
-// Overview cards refuse skill drops for plain sessions.
-const card = document.querySelector('.tnai-card[data-pane="' + paneId + '"]');
-card.dispatchEvent(
-  new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt })
-);
+await wait(300);
 check(
-  card.classList.contains('tnai-drop-no') && /custom agents/i.test(card.title),
-  'plain session card refuses skill drop with a reason'
+  !document.querySelector('.tnai-card[data-pane="' + paneId + '"]'),
+  'the hidden old grid builds no card for the agent'
 );
-card.dispatchEvent(new DragEvent('dragleave', { bubbles: true, dataTransfer: dt }));
 
-// Deploy the custom agent (Claude Code starts with its skill; nothing is sent) to show attached
-// chips.
+// Deploy the custom agent (Claude Code starts with its skill; nothing is sent).
 const deployed = await window.TnaiCustomAgents.deploy(agent.id);
 check(!!deployed?.ok, 'custom agent deployed');
-if (deployed?.ok) {
-  window.TnaiThreads.open();
-  const attached = await until(
-    () =>
-      document.querySelector(
-        '.tnai-card[data-pane="' + deployed.paneId + '"] .c-skill[data-state="attached"]'
-      ),
-    8000
-  );
-  check(
-    !!attached &&
-      /test-skill/.test(attached.textContent) &&
-      !!attached.querySelector('button[data-act="skill-detach"]'),
-    'custom agent card shows attached skill with remove button'
-  );
-  check(
-    !!document.querySelector(
-      '.tnai-card[data-pane="' + deployed.paneId + '"] [data-act="skill-add"]'
-    ),
-    'custom agent card has ＋ Skill'
-  );
-  document
-    .querySelector('.tnai-card[data-pane="' + deployed.paneId + '"]')
-    .scrollIntoView({ block: 'center' });
-  await wait(300);
-  await shot('overview-skills');
-}
 
 t0 = Date.now();
 check(

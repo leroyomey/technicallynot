@@ -166,6 +166,21 @@ const SHIM = path.join(__dirname, '..', '..', 'desktop', 'agent-shim.js');
       "the user's own skill of the same name" && !marked('mine'),
     "the user's own skill of the same name is left untouched"
   );
+
+  // A change to a side file alone refreshes the copy (not only a SKILL.md change), and a Cursor
+  // Agent start keeps the copies too (it loads ~/.agents/skills).
+  write(path.join(userData, 'skills', 'deploy-steps', 'notes.txt'), 'side file changed');
+  await skills.launchOptions('', 'Cursor Agent', '');
+  check(
+    fs.readFileSync(path.join(homeDir, 'deploy-steps', 'notes.txt'), 'utf8') ===
+      'side file changed' && marked('deploy-steps'),
+    'a side-file change refreshes the marked copy at the next Cursor Agent start'
+  );
+  skills.setEverywhere('deploy-steps', false);
+  fs.rmSync(path.join(homeDir, 'deploy-steps'), { recursive: true, force: true });
+  skills.setEverywhere('deploy-steps', true);
+  await skills.launchOptions('', 'Cursor Agent', '');
+  check(marked('deploy-steps'), 'a Cursor Agent start adds the marked copies');
   skills.setEverywhere('deploy-steps', false);
   check(
     !fs.existsSync(path.join(homeDir, 'deploy-steps')) &&

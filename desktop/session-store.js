@@ -250,13 +250,24 @@ const codexMeta = (buf, n, cwd, taken) => {
 
 function init() {
   dir = app.getPath('userData');
+  const file = path.join(dir, 'sessions.json');
   try {
-    const list = JSON.parse(fs.readFileSync(path.join(dir, 'sessions.json'), 'utf8'));
+    const list = JSON.parse(fs.readFileSync(file, 'utf8'));
     records = new Map(
       (Array.isArray(list) ? list : []).filter(r => r && r.paneId).map(r => [r.paneId, r])
     );
-  } catch {
+  } catch (error) {
     records = new Map();
+
+    // A file that is there but does not read or parse is moved aside, never overwritten by the
+    // first save, so the saved sessions can still be recovered by hand (audit app-5 #8).
+    if (error?.code !== 'ENOENT') {
+      const aside = path.join(dir, 'sessions.broken-' + Date.now() + '.json');
+      try {
+        fs.renameSync(file, aside);
+        console.warn('[sessions] sessions.json could not be read; moved to ' + aside);
+      } catch {}
+    }
   }
   sweepTemps();
 }

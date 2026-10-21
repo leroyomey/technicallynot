@@ -200,8 +200,14 @@
           waitedOn.slice(0, 2).map(nameOf).join(', ') +
           (waitedOn.length > 2 ? ' +' + (waitedOn.length - 2) : '')
         : '';
-    const tone = needs || limited ? 'needs' : waitingOn ? 'agents' : TONE[status] || 'idle';
+
+    // A built-in command the CLI runs, a compact above all (158): what the row says while it runs.
+    const busy =
+      running && !limited && !needs ? safe(() => window.TnaiCliBusy?.get?.(id), null) : null;
+    const tone =
+      needs || limited ? 'needs' : busy ? 'work' : waitingOn ? 'agents' : TONE[status] || 'idle';
     return {
+      busy,
       talk,
       team: mates.map(nameOf).join(', '),
       browser: browser ? (browser.waiting ? 'thinking' : 'in use') : '',
@@ -215,15 +221,19 @@
       // The panel's own status word (10): the conversation's live line tells "working in
       // background" and "waiting on agents" apart from a reply that runs.
       status,
-      label: limited ? 'Usage limit reached' : waitingOn || label,
+      label: limited ? 'Usage limit reached' : busy ? busy.words : waitingOn || label,
       now: limited
         ? 'Usage limit reached'
-        : cut
-          ? 'Interrupted by ' + cut.by
-          : waitingOn && !flagged
-            ? waitingOn
-            : [doing, count].filter(Boolean).join(' · '),
-      inferred: !limited && !cut && !!digest && !flagged && !!digest.inferred,
+        : busy
+          ? busy.words + ' · ' + busy.clock
+          : cut
+            ? 'Interrupted by ' + cut.by
+            : waitingOn && !flagged
+              ? waitingOn
+              : [doing, count].filter(Boolean).join(' · '),
+      inferred: busy
+        ? busy.inferred
+        : !limited && !cut && !!digest && !flagged && !!digest.inferred,
       task: digest?.task || '',
       needs,
       project: session.cwd ? projectOf(session, projects) : workspaceProject(id, projects),
@@ -509,6 +519,29 @@
     });
   }
 
+  // Why some agents of another computer are not listed (rule: only agents known to work in the
+  // project open here). One muted line, in the list's own note look; the same node while its words
+  // are the same, so the list is not drawn again for it.
+  const readHidden = () => safe(() => window.TnaiRemoteAgents?.notShown?.(), []) || [];
+  const whyLines = new Map();
+
+  function whyLine(item) {
+    const parts = [];
+    if (item.elsewhere)
+      parts.push(
+        item.elsewhere === 1
+          ? '1 agent in another project.'
+          : item.elsewhere.toLocaleString('en-US') + ' agents in other projects.'
+      );
+    if (item.unsure) parts.push('Open the same git project to see them here.');
+    const words = parts.join(' ');
+    const known = whyLines.get(item.id);
+    if (known && known.textContent === words) return known;
+    const node = make('p', 'tnt-lst-note tnt-why', words);
+    whyLines.set(item.id, node);
+    return node;
+  }
+
   function heading(text, count, tip) {
     const head = make('div', 'tnt-proj');
     head.append(make('span', '', text), make('em', '', count));
@@ -544,6 +577,7 @@
       out.push(heading(title, other.length + ' open', tip));
       groupRows(other, picked, false, out, alive);
     }
+    const hidden = readHidden();
     computers.forEach(computer => {
       const count = computer.agents.length;
       out.push(
@@ -556,7 +590,24 @@
         )
       );
       remoteRows(computer, openKey, out, alive);
+      const why = hidden.find(item => item.id === computer.id);
+      if (why) out.push(whyLine(why));
     });
+
+    // A computer none of whose agents can be listed here still gets its group, with the line
+    // that says why: a computer that connected late otherwise shows nothing and nobody can tell.
+    hidden
+      .filter(item => !computers.some(computer => computer.id === item.id))
+      .forEach(item => {
+        out.push(
+          heading(
+            'On ' + item.name,
+            'none here',
+            'Agents on ' + item.name + ' are listed here when they work in this project.'
+          )
+        );
+        out.push(whyLine(item));
+      });
     [...rows.keys()].forEach(key => {
       if (!alive.has(key)) rows.delete(key);
     });
@@ -823,6 +874,9 @@
 
     // One live session as the list reads it (name, tool, tone, label, project), or null.
     thread: paneId => readThreads(openProjects()).find(thread => thread.id === paneId) || null,
+
+    // Every live session as the list reads it (the Board page, 157, places them in columns).
+    all: () => readThreads(openProjects()),
 
     // The threads of the agents this one started in panels of their own (43's graph).
     kids: paneId => readThreads(openProjects()).filter(thread => thread.lead === paneId),

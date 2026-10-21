@@ -528,6 +528,16 @@ label.set-row {
   width: 280px;
 }
 
+/* A prompt box (Settings › Agents › Scheduled prompts, 155): the input look, several lines high. */
+#settingsPage textarea.set-input {
+  width: 100%;
+  height: auto;
+  min-height: 96px;
+  padding: 7px 10px;
+  font: 12.5px/1.5 var(--pg-sans);
+  resize: vertical;
+}
+
 /* Chips: several on/off choices in one row (which CLIs a feature applies to). */
 .set-chips {
   display: flex;

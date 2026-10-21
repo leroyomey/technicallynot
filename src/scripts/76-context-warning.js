@@ -13,6 +13,8 @@
  * budget). Settings › Agents › Agent context (54's group): "Show context size warnings" + both
  * percentages; stored per viewer, only when changed. Unknown size (other CLIs, no usage yet) = no
  * chip, never guessed. Painted on pushed events only (tnai:turn, session changes).
+ * The thread layout never shows the terminal panels: there, 168-context-chip.js reads `level`
+ * (these rules and this setting) for its chip under the prompt box.
  */
 (() => {
   const agents = window.TnaiAgents;

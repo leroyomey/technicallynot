@@ -1677,7 +1677,8 @@
   white-space: nowrap;
   cursor: pointer;
 }
-:root:not(#pg) .lpp-tabrow .lpp-ontop[hidden] {
+/* As strong as the rule above (its :not(#lp) counts as an id), or the docked preview showed "On top". */
+:root:not(#pg) .lpp-tabrow .lpp-ontop[hidden]:not(#lp) {
   display: none;
 }
 :root:not(#pg) .lpp-tabrow .lpp-ontop:not(#lp):hover {
@@ -1703,6 +1704,12 @@
 :root:not(#pg) .lpp-tabrow .lpp-pop:not([aria-label^='Bring']) .lpp-lbl {
   display: none;
 } /* an icon at the far right; "Bring back" keeps its words */
+/* The lone icon centered by flex: laid out as text, the font's baseline set it 1 px low. */
+:root:not(#pg) .lpp-tabrow .lpp-pop:not([aria-label^='Bring']) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 :root:not(#pg) .lpp-chrome .lp-bar {
   flex-wrap: nowrap;
   gap: 6px;

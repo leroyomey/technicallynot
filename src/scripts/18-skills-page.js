@@ -69,10 +69,11 @@
 
   // Which agent CLIs a skill reaches without anyone applying it (the "Reaches" fact in the detail
   // panel). Library skills on for every session: desktop/skill-service.js (Claude Code plugin,
-  // OpenCode skills.paths, marked copies in ~/.agents/skills for Codex and GitHub Copilot). Project
-  // folders: what each CLI loads by itself, measured with tools/agent-cli-check.js (2026-10-01).
-  // Cursor Agent loads none of them.
-  const EVERY_CLIS = 'Claude Code, OpenCode, Codex, GitHub Copilot';
+  // OpenCode skills.paths, marked copies in ~/.agents/skills for Codex, GitHub Copilot and Cursor
+  // Agent). Project folders: what each CLI loads by itself, measured with tools/agent-cli-check.js
+  // (2026-10-01); Cursor Agent from its own docs (cursor.com/docs/context/skills, read 2026-10-15:
+  // .agents, .cursor, .claude and .codex skills), as it has no listing without a model run.
+  const EVERY_CLIS = 'Claude Code, OpenCode, Codex, GitHub Copilot, Cursor Agent';
 
   function reach(k) {
     const p = String(k.path || '').replace(/\\/g, '/');
@@ -81,7 +82,7 @@
         ? {
             text: EVERY_CLIS,
             title:
-              'Loads when a session starts. Codex and GitHub Copilot read a copy in your personal skills folder (~/.agents/skills); a skill of your own with the same name there is used instead. Cursor Agent does not load library skills.',
+              'Loads when a session starts. Codex, GitHub Copilot and Cursor Agent read a copy in your personal skills folder (~/.agents/skills); a skill of your own with the same name there is used instead.',
           }
         : {
             text: 'Only agents you apply it to',
@@ -91,11 +92,11 @@
       return { text: 'Claude Code', title: 'Your own Claude skills folder.' };
     if (k.source !== 'project') return null;
     const own = /\/\.claude\/skills\//.test(p)
-      ? 'Claude Code, OpenCode, GitHub Copilot'
+      ? 'Claude Code, OpenCode, GitHub Copilot, Cursor Agent'
       : /\/\.agents\/skills\//.test(p)
-        ? 'Codex, OpenCode, GitHub Copilot'
+        ? 'Codex, OpenCode, GitHub Copilot, Cursor Agent'
         : /\/\.codex\/skills\//.test(p)
-          ? 'Codex'
+          ? 'Codex, Cursor Agent'
           : '';
     return own
       ? {
@@ -401,11 +402,14 @@
     expanded = new Set();
   const visible = () => layout.classList.contains('skills-mode');
 
+  // The page is drawn only while it is shown: library, agent and skill-activity changes all land
+  // here, and tnai:skills-page-shown draws it once on return. Its tnai:skills-changed event (for
+  // 11, 25 and 101) is sent either way.
   function schedule() {
     if (!frame)
       frame = requestAnimationFrame(() => {
         frame = 0;
-        if (!dragging) render();
+        if (!dragging && visible()) render();
       });
   }
 

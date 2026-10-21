@@ -638,7 +638,8 @@ const threadCount = () => String(Math.max(1, Math.min(8, os.cpus().length)));
 // still alive; a process that merely reused the pid is never touched. Without a guard (plain-node
 // tools, other OSes) only a normal exit stops it.
 function createVoiceService({ dir, onProgress, guard } = {}) {
-  const fake = process.env.TN_VOICE_FAKE;
+  // The tests' fake microphone; build-info.js ignores it in a release build.
+  const fake = require('./build-info').voiceFake();
   const engineDir = WIN ? path.join(dir, 'engine') : BUNDLED_DIR(),
     modelsDir = path.join(dir, 'models');
   const exe = path.join(engineDir, 'whisper-cli' + EXE),

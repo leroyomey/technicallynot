@@ -52,9 +52,12 @@ try {
     check(old?.ok, 'stand-in agent pane opened');
     fake.add(old.paneId);
     await until(() => realSessions().find(x => x.paneId === old.paneId && x.running), 15000);
+
+    // hidden: a pane id the stand-in list leaves out, as if that agent went away
+    let hidden = '';
     G.sessions = () =>
       realSessions()
-        .filter(x => fake.has(x.paneId))
+        .filter(x => fake.has(x.paneId) && x.paneId !== hidden)
         .map(x => ({ ...x, agent: CLI, status: 'waiting', accountId: 'acct-test' }));
     team.startLead = async opts => {
       starts.push(opts);
@@ -173,6 +176,29 @@ try {
     check(
       !!(await until(async () => /coldtask4/.test(await buf(old.paneId)), 8000)) && !shown(),
       'same idle spell: not asked again'
+    );
+
+    // The agents change while the dialog is open (audit app-4 #4): the answer was for a route that
+    // is gone, so nothing is sent, the draft stays, and the next Enter routes anew.
+    await turn(165000, 72);
+    send('echo coldtask4b');
+    const dStale = await until(shown, 3000);
+    hidden = old.paneId;
+    dStale?.querySelector('[data-pick="send"]').click();
+    await wait(600);
+    check(
+      !!dStale &&
+        prompt.value === 'echo coldtask4b' &&
+        !/coldtask4b/.test(await buf(old.paneId)) &&
+        starts.length === 0 &&
+        /agents changed while you chose/.test(document.body.textContent),
+      'agents changed while asked: nothing sent, the draft stays, it says why'
+    );
+    hidden = '';
+    send('echo coldtask4b');
+    check(
+      !!(await until(async () => /coldtask4b/.test(await buf(old.paneId)), 8000)) && !shown(),
+      'the next Enter sends on the current route'
     );
 
     await turn(170000, 75);

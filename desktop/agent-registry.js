@@ -248,13 +248,20 @@ const AGENTS = [
     // plugin also carries Technically Not's MCP server (agent-hooks.js cursorPlugin);
     // --approve-mcps (2026.09.28 `--help`) lets its tools run without Cursor asking, as a lead's
     // tnai_delegate must.
-    rules: o => ({
-      args: [
-        ...(o.rulesPlugin ? ['--plugin-dir', o.rulesPlugin] : []),
-        ...(o.rulesPlugin && o.mcpConfig ? ['--approve-mcps'] : []),
-        ...(o.trust ? ['--trust'] : []),
-      ],
-    }),
+    // A custom agent's attached skills (its plugin folder, skill-service.js buildPlugin) and its
+    // identity (identityFolder) are more local plugins: --plugin-dir can be given several times
+    // (2026.10.01 `--help`).
+    rules: o => {
+      const identity = identityFolder(o.rulesFile, o.appendPrompt);
+      const plugins = [o.rulesPlugin, ...(o.pluginDirs || []), identity?.dir].filter(Boolean);
+      return {
+        args: [
+          ...plugins.flatMap(dir => ['--plugin-dir', dir]),
+          ...(o.rulesPlugin && o.mcpConfig ? ['--approve-mcps'] : []),
+          ...(o.trust ? ['--trust'] : []),
+        ],
+      };
+    },
     // `--resume [chatId]` (cursor-agent 2026.09.28 `--help`); the chat id is the one
     // cursor-store.js found for the pane.
     startArgs: o => (o.resumeId ? ['--resume', o.resumeId] : []),
@@ -289,11 +296,12 @@ const AGENTS = [
     // through the shell).
     rules: o => {
       const url = mcpUrl(o.mcpConfig),
-        steps = url ? openCodeSteps(o.rulesFile) : '';
+        steps = url ? openCodeSteps(o.rulesFile) : '',
+        identity = identityFolder(o.rulesFile, o.appendPrompt);
       return {
         env: {
           OPENCODE_CONFIG_CONTENT: JSON.stringify({
-            instructions: [o.rulesFile],
+            instructions: [o.rulesFile, ...(identity ? [identity.file] : [])],
             experimental: { continue_loop_on_deny: true },
             ...(o.pluginDirs?.length
               ? { skills: { paths: o.pluginDirs.map(dir => require('path').join(dir, 'skills')) } }
@@ -461,8 +469,10 @@ const AGENTS = [
     // and `--allow-tool=tnai` (`copilot help permissions`: an MCP server name allows all its tools)
     // runs its tools without asking. An account whose Copilot policy turns third-party MCP off
     // starts without it ("1 MCP server was blocked by policy: 'tnai'", checked in 1.0.88).
+    // A custom agent's identity: one more instructions folder (identityFolder).
     rules: o => {
-      const dir = copilotRules(o.rulesFile, o.workRules);
+      const dir = copilotRules(o.rulesFile, o.workRules),
+        identity = dir ? identityFolder(o.rulesFile, o.appendPrompt) : null;
       return {
         args: o.mcpConfig
           ? ['--additional-mcp-config', '@' + o.mcpConfig, '--allow-tool=tnai']
@@ -473,6 +483,8 @@ const AGENTS = [
                 COPILOT_CUSTOM_INSTRUCTIONS_DIRS: [
                   process.env.COPILOT_CUSTOM_INSTRUCTIONS_DIRS,
                   dir,
+                  // the variable is a comma-separated list: a comma in the path would split it
+                  identity && !identity.dir.includes(',') ? identity.dir : '',
                 ]
                   .filter(Boolean)
                   .join(','),
@@ -653,10 +665,18 @@ async function run(file, args, timeout = 20000, verbatim = false, env = null, mo
     env: env ? { ...process.env, ...env } : { ...process.env },
     ...(more?.cwd ? { cwd: more.cwd } : {}),
   };
-  const { error, stdout, stderr } = await processStarter.start(file, args, options, {
-    rerun: true,
-  });
-  return { ok: !error, out: stdout + stderr };
+
+  // A start that throws (Windows answers `spawn UNKNOWN` for an .exe that is not a real program,
+  // such as the stub a half-finished Claude Code install leaves) is a failed run, not a crash of
+  // the whole CLI detection.
+  let answer;
+  try {
+    answer = await processStarter.start(file, args, options, { rerun: true });
+  } catch (thrown) {
+    return { ok: false, out: '', timedOut: false, startError: String(thrown?.message || thrown) };
+  }
+  const { error, stdout, stderr } = answer;
+  return { ok: !error, out: stdout + stderr, timedOut: !!error?.killed, startError: '' };
 }
 
 // Gemini CLI 0.61 sign-in from its own files in <GEMINI_CLI_HOME or ~>/.gemini, tokens never read:
@@ -759,6 +779,37 @@ const INSTALL = {
     page: 'https://github.com/github/copilot-cli#readme',
   },
 };
+
+// What a CLI prints when its install did not finish (Technically Not never calls such a CLI
+// installed). Claude Code's npm package keeps a 500-byte stub as
+// bin/claude.exe until its postinstall copies the real program over it; started on Windows that
+// stub gives "is not compatible with the version of Windows" (through cmd.exe) or `spawn UNKNOWN`
+// (directly), on macOS and Linux "claude native binary not installed" (reproduced with 2.1.300 in a
+// scratch npm prefix, 2026-10-15); node-pty, which starts a panel's CLI, throws "Cannot create
+// process, error code: 216". An npm CLI whose download was cut short fails with "Cannot find
+// module".
+const INCOMPLETE =
+  /native binary not installed|not compatible with the version of Windows|not a valid (Win32 )?application|Cannot find module|spawn UNKNOWN|Cannot create process, error code: (193|216)\b/i;
+
+// The command that puts a CLI back together: an npm install again when it came from npm (its
+// command is an npm .cmd shim on Windows), else the provider's own installer (INSTALL). '' when
+// there is none for this system.
+function repairCommand(agent, path) {
+  const npm = RELEASES[agent.id]?.npm || INSTALL[agent.id]?.npm || '';
+  const fromNpm = /\.cmd$/i.test(path || '') || /node_modules/i.test(path || '');
+  if (npm && (fromNpm || INSTALL[agent.id]?.npm)) return 'npm install -g ' + npm;
+  if (process.platform === 'win32') return INSTALL[agent.id]?.win || '';
+  return npm ? 'npm install -g ' + npm : '';
+}
+
+// Whether a CLI's `--version` run proves it starts: '' when it does, else the reason. A run that
+// only timed out (a busy PC) proves nothing either way, so it is not called broken.
+function startProblem(versionRun) {
+  const text = stripAnsi(versionRun.out + ' ' + (versionRun.startError || ''));
+  if (INCOMPLETE.test(text)) return 'its install is incomplete, so it does not start';
+  if (versionRun.startError) return 'it does not start (' + versionRun.startError + ')';
+  return '';
+}
 
 // Node.js by Windows' own package manager (winget ships with Windows 10 1809+ and 11); the second
 // part gives that PowerShell the new PATH, so `npm` works in it right after. Not read from
@@ -1077,6 +1128,52 @@ function openCodeTui(rulesFile) {
   } catch {
     return {};
   }
+}
+
+// A custom agent's identity text (skill-service.js launchOptions appendPrompt; Claude Code takes it
+// as a system-prompt addition) for the CLIs without such a flag: one folder per text beside the
+// rules file, holding it as a plain file (OpenCode's `instructions`), as an always-applied
+// instructions file (GitHub Copilot's COPILOT_CUSTOM_INSTRUCTIONS_DIRS) and as a local plugin with
+// an always-applied rule (Cursor Agent's `--plugin-dir`). Returns { dir, file }, or null without a
+// text. Folders unused for a week go.
+function identityFolder(rulesFile, text) {
+  const fs = require('fs'),
+    P = require('path');
+  const prompt = String(text || '').trim();
+  if (!rulesFile || !prompt) return null;
+  const root = P.join(P.dirname(rulesFile), 'identity'),
+    key = require('crypto').createHash('sha1').update(prompt).digest('hex').slice(0, 10),
+    dir = P.join(root, key);
+  const files = {
+    'identity.md': prompt + '\n',
+    '.github/instructions/tnai-identity.instructions.md':
+      '---\napplyTo: "**"\n---\n\n' + prompt + '\n',
+    '.cursor-plugin/plugin.json': JSON.stringify({ name: 'tnai-identity-' + key }, null, 2),
+    'rules/tnai-identity.mdc':
+      '---\ndescription: Who you are in this Technically Not session\nalwaysApply: true\n---\n\n' +
+      prompt +
+      '\n',
+  };
+  for (const [name, body] of Object.entries(files)) {
+    const file = P.join(dir, name);
+    let old = null;
+    try {
+      old = fs.readFileSync(file, 'utf8');
+    } catch {}
+    if (old === body) continue;
+    fs.mkdirSync(P.dirname(file), { recursive: true });
+    fs.writeFileSync(file, body);
+  }
+
+  // Marks it used now, so the clean-up below keeps it.
+  const now = new Date();
+  fs.utimesSync(dir, now, now);
+  try {
+    for (const old of fs.readdirSync(root))
+      if (old !== key && Date.now() - fs.statSync(P.join(root, old)).mtimeMs > 7 * 864e5)
+        fs.rmSync(P.join(root, old), { recursive: true, force: true });
+  } catch {}
+  return { dir, file: P.join(dir, 'identity.md') };
 }
 
 // GitHub Copilot: the work rules (agent-hooks.js rulesFile) as one always-applied instructions file
@@ -1987,7 +2084,18 @@ async function detect(agent, accountDir) {
     result.note = '`' + agent.command + '` was not found on PATH.';
     return result;
   }
+  result.repair = repairCommand(agent, path);
   const version = await runSpec(launchSpec(path, ['--version']));
+
+  // On PATH is not installed: a CLI whose program does not start is reported as not installed,
+  // with `incomplete` so the app says why and offers its repair (`repair`).
+  const problem = startProblem(version);
+  if (problem) {
+    result.installed = false;
+    result.incomplete = true;
+    result.note = agent.id + ' is on this PC, but ' + problem + '.';
+    return result;
+  }
   result.version = stripAnsi(version.out).split(/\r?\n/).find(Boolean)?.trim() || '';
   if (agent.readStatus) {
     Object.assign(result, await agent.readStatus(accountDir, path));
@@ -2074,6 +2182,22 @@ module.exports = {
         .find(Boolean)
         ?.trim() || ''
     );
+  },
+  // Whether one installed CLI starts (cli-updates.js, after the app ran its update): { path,
+  // version, problem, repair }. Looked up on PATH again, since an update can move the program.
+  // problem '' = it starts (or it is not on PATH at all, which is not this check's question).
+  async health(id) {
+    const agent = AGENTS.find(a => a.id === id);
+    const path = agent ? await resolveCommand(agent.command) : null;
+    if (!path) return { path: '', version: '', problem: '', repair: '' };
+    const run = await runSpec(launchSpec(path, ['--version']));
+    const problem = startProblem(run);
+    return {
+      path,
+      version: problem ? '' : stripAnsi(run.out).split(/\r?\n/).find(Boolean)?.trim() || '',
+      problem,
+      repair: problem ? repairCommand(agent, path) : '',
+    };
   },
   // Login status of one CLI under one account folder (null = the CLI's default home).
   detectAccount: (id, accountDir) => {

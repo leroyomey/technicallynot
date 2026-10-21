@@ -2385,6 +2385,24 @@ process.on('exit', () => {
       })()
     );
   }
+
+  // Typing (remote-type.js) asks for a shorter freshness than the operations' 60 s, never a
+  // longer one.
+  {
+    const w = world();
+    const c = w.control.stamp('A');
+    w.t += 6000;
+    const m = { c, ms: 0 };
+    check(
+      'fresh with a 5 s limit: a message 6 s late is too late, with the 60 s of an operation it is not',
+      w.control.fresh('A', m, 5000) === false && w.control.fresh('A', m) === true
+    );
+    w.t += 60000;
+    check(
+      'a limit longer than 60 s is not taken',
+      w.control.fresh('A', m, 10 * 60000) === false && w.control.fresh('A', m) === false
+    );
+  }
 })()
   .catch(e => {
     failed++;

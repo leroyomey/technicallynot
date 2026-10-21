@@ -11,6 +11,9 @@
     '.repo-rail-tree:not(.repo-real-tree) [data-repo-path]',
     '.repo-rail-tree:not(.repo-real-tree) [data-repo-folder]',
     '#repoFileDetail .button',
+    // a "..." row or button that cannot work for another computer's thread (164 sets data-off)
+    '.tnt-menu-row[data-off]',
+    '.tnr-past-one .tnh-resume[data-off]',
     '.repository-rail:not(:has(.repo-connect[data-state=connected])) #repoRefresh',
     '.repository-rail:not(:has(.repo-connect[data-state=connected])) #repoRailSearch',
   ];

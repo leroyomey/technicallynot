@@ -130,6 +130,10 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
     try {
       data = (await window.TnaiContextState()) || data;
     } catch {}
+
+    // the saved results and marks are read now: a thread's decision buttons follow them (122)
+    markSentEarly();
+    window.dispatchEvent(new CustomEvent('tnai:context-data'));
     const next = data.brief || '';
 
     // a report that does not change the picture does not redraw the Result summary
@@ -391,6 +395,10 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
   // was chosen (122). The answer itself goes to the agent as before. At most CHOICES_MAX, newest
   // kept.
   const CHOICES_KEY = 'tnai.decision-choices.v1';
+
+  // A report's saved result is written after the report itself; the slack allows for the two
+  // clocks' rounding (see findDecision and choiceFor, `since`).
+  const SAME_REPORT_SLACK_MS = 1000;
   const CHOICES_MAX = 300;
   const choiceKey = (paneId, question) => paneId + '\n' + words(question);
 
@@ -420,14 +428,18 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
   }
 
   // The option pressed for a card's question: the same question as written, or the shortened
-  // form a result keeps (pressed on a result card) compared on its first words.
-  function choiceFor(paneId, question) {
+  // form a result keeps (pressed on a result card) compared on its first words. `since`: when the
+  // card's report was written; a choice pressed before that answered an earlier asking of the same
+  // question, not this card.
+  function choiceFor(paneId, question, since = 0) {
     const all = readChoices();
+    const fresh = one => !since || !one.at || one.at >= since - SAME_REPORT_SLACK_MS;
     const exact = all[choiceKey(paneId, question)];
-    if (exact) return exact.label;
+    if (exact && fresh(exact)) return exact.label;
     const near = Object.values(all).find(
       one =>
         one.paneId === paneId &&
+        fresh(one) &&
         (questionMatches(question, one.question) || questionMatches(one.question, question))
     );
     return near?.label || '';
@@ -442,6 +454,11 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
   // draws reports from the tool's own record, which knows no result id). The card shows the
   // question as written; the result keeps it cleaned and clipped, so the two are compared on the
   // result's first words only. → { id, n, done } or null.
+  // `since`: when the card's report was written (its time in the tool's record, 0 when unknown).
+  // An agent can ask the same question again after it was answered; the older result, saved before
+  // this report was written, is not this card's. Without it, a new card took the old result's
+  // "answered" and its buttons stayed off until this report's own result was saved and the card
+  // happened to be painted again (2026-10-15).
   const words = text =>
     String(text || '')
       .toLowerCase()
@@ -452,10 +469,33 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
     return !!start && words(cardText).includes(start);
   };
 
-  function findDecision(paneId, question) {
+  // Answers sent as plain words before the report's own result was saved (decideInThread, pressed
+  // the moment the report was drawn). Once that result is read it is marked answered, so it does
+  // not stay open as a decision the agent waits on. Forgotten after two minutes.
+  const sentEarly = [];
+  const SENT_EARLY_KEEP_MS = 120000;
+
+  function markSentEarly() {
+    for (let at = sentEarly.length - 1; at >= 0; at--) {
+      const early = sentEarly[at];
+      const found = findDecision(early.paneId, early.question, early.since);
+      if (found && !found.done) {
+        const key = markKey(found.id, 'choices', found.n);
+        answered.add(key);
+
+        // by then the mark is back from main, as in `decide`
+        setTimeout(() => answered.delete(key), 5000);
+        native.context.mark(key, 'answered').catch(() => {});
+      }
+      if (found || Date.now() - early.at > SENT_EARLY_KEEP_MS) sentEarly.splice(at, 1);
+    }
+  }
+
+  function findDecision(paneId, question, since = 0) {
     if (!words(question)) return null;
     for (const e of data.entries) {
       if (e.paneId !== paneId) continue;
+      if (since && e.at && e.at < since - SAME_REPORT_SLACK_MS) continue;
       const n = decisionsOf(e).findIndex(c => questionMatches(question, c.question));
       if (n < 0) continue;
       const key = markKey(e.id, 'choices', n);
@@ -468,9 +508,9 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
   // hands the work to, or else to the asking agent, held while it works. Only when nobody can take
   // it (the agent is stopped, or the option asks for the user's own words) does it go into the
   // prompt box. A decision with no saved result still gets its answer, as the same words.
-  function decideInThread(paneId, question, index, label) {
+  function decideInThread(paneId, question, index, label, since = 0) {
     window.TnaiLiveTasks?.setTarget?.(paneId);
-    const found = findDecision(paneId, question);
+    const found = findDecision(paneId, question, since);
     if (found && found.done) return false;
     const routing = window.TnaiDecisionRouting;
     const markAnswered = () => {
@@ -498,6 +538,7 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
         ? decide(found.id + '#' + found.n, index, 'send')
         : routing.sendPlain(paneId, question, label);
       if (sent) {
+        if (!found && since) sentEarly.push({ paneId, question, since, at: Date.now() });
         rememberChoice(paneId, question, label);
         return true;
       }
@@ -569,31 +610,10 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
         window.dispatchEvent(new CustomEvent('tnai:live-activity'));
         return true;
       }
-      const parts = [...kept].sort((a, b) => a[0] - b[0]);
-
-      // An agent still at work gets the answer when its task ends, like a prompt from the box: the
-      // app holds it, and its thread shows it as waiting (71, 122).
-      const answer = parts.map(p => p[1].text).join(' ');
-      const shown = 'Decision: ' + parts.map(p => p[1].label).join(' · ');
-      if (!window.TnaiAgents.send(s.paneId, answer, { userText: shown, holdIfBusy: true })) {
+      if (!sendKept(id, e, s, kept)) {
         kept.delete(n);
-        say(e.name + ' stopped before the choice could be sent.');
         return false;
       }
-      held.delete(id);
-      parts.forEach(([j, part]) => rememberChoice(e.paneId, all[j]?.question, part.label));
-      window.TnaiLiveTasks?.record?.(
-        s.paneId,
-        'Decision: ' + parts.map(p => p[1].label).join(' · '),
-        s.name + ' (' + s.agent + ')'
-      );
-      say('Sent to ' + e.name + ': ' + parts.map(p => p[1].label).join(' · '));
-      const keys = parts.map(p => markKey(id, 'choices', p[0]));
-      keys.forEach(k => answered.add(k));
-
-      // by then the marks are back from main (an Undo there opens one again)
-      setTimeout(() => keys.forEach(k => answered.delete(k)), 5000);
-      native.context.mark(keys.length > 1 ? keys : key, 'answered').catch(() => {});
       return true;
     }
     if (!toComposer(id, o.label, o.own ? 'reply' : 'choices', c.question)) return false;
@@ -602,6 +622,73 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
     setTimeout(() => answered.delete(key), 5000);
     native.context.mark(key, 'answered').catch(() => {});
     return true;
+  }
+
+  // Sends the answers kept for a report (decide above) as one message. Decisions of that report
+  // with no answer are named as skipped, so the agent knows they are still open; they stay open on
+  // the card. → true when the app took the message.
+  function sendKept(id, e, s, kept) {
+    const say = m => {
+      try {
+        toast(m);
+      } catch {}
+    };
+    const all = decisionsOf(e);
+    const parts = [...kept].sort((a, b) => a[0] - b[0]);
+    const skipped = all
+      .map((c, j) => ({ c, j }))
+      .filter(({ j }) => !kept.has(j) && !marked(markKey(id, 'choices', j)));
+    const skipNote = skipped.length
+      ? ' Not answered yet, keep these open: ' +
+        skipped.map(({ c }) => '"' + c.question + '"').join(', ') +
+        '.'
+      : '';
+
+    // An agent still at work gets the answer when its task ends, like a prompt from the box: the
+    // app holds it, and its thread shows it as waiting (71, 122).
+    const answer = parts.map(p => p[1].text).join(' ') + skipNote;
+    const labels = parts.map(p => p[1].label).join(' · ');
+    const shown =
+      'Decision: ' + labels + (skipped.length ? ' · ' + skipped.length + ' skipped' : '');
+    if (!window.TnaiAgents.send(s.paneId, answer, { userText: shown, holdIfBusy: true })) {
+      say(e.name + ' stopped before the choice could be sent.');
+      return false;
+    }
+    held.delete(id);
+    parts.forEach(([j, part]) => rememberChoice(e.paneId, all[j]?.question, part.label));
+    window.TnaiLiveTasks?.record?.(s.paneId, shown, s.name + ' (' + s.agent + ')');
+    say(
+      'Sent to ' +
+        e.name +
+        ': ' +
+        labels +
+        (skipped.length ? ' · ' + skipped.length + ' left open' : '')
+    );
+    const keys = parts.map(p => markKey(id, 'choices', p[0]));
+    keys.forEach(k => answered.add(k));
+
+    // by then the marks are back from main (an Undo there opens one again)
+    setTimeout(() => keys.forEach(k => answered.delete(k)), 5000);
+    native.context.mark(keys.length > 1 ? keys : keys[0], 'answered').catch(() => {});
+    return true;
+  }
+
+  // How many answers are kept, unsent, for a thread's report (122's "Send N answers").
+  function keptCount(paneId, question, since = 0) {
+    const found = findDecision(paneId, question, since);
+    return found ? held.get(found.id)?.size || 0 : 0;
+  }
+
+  // "Send N answers": the kept answers go now, and the decisions not answered stay open.
+  function sendKeptNow(paneId, question, since = 0) {
+    const found = findDecision(paneId, question, since);
+    const kept = found && held.get(found.id);
+    const e = found && data.entries.find(x => x.id === found.id);
+    const s = e && sessionOf(e);
+    if (!kept?.size || !s?.running) return false;
+    const sent = sendKept(found.id, e, s, kept);
+    if (sent) window.dispatchEvent(new CustomEvent('tnai:live-activity'));
+    return sent;
   }
 
   // ---------- Live updates ----------
@@ -639,6 +726,8 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
     findDecision,
     choiceFor,
     decideInThread,
+    keptCount,
+    sendKeptNow,
     decisionsOf,
     openChoice,
   };

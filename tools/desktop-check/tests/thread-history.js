@@ -676,6 +676,88 @@ try {
     !said.some(text => /not resumed|could not|failed/i.test(text)),
     'nothing was reported as failed along the way: ' + JSON.stringify(said)
   );
+
+  // ---- a resume whose start fails leaves no panel behind ----
+  const panelIds = () =>
+    [...document.querySelectorAll('.terminal-pane[data-pane-id]')].map(pane => pane.dataset.paneId);
+  const panelsBefore = panelIds().join();
+  const failStarts0 = (await main('got')).starts.length;
+  await main('startsFail', true);
+  await past.resume(rows[1].key);
+  await main('startsFail', false);
+  check(
+    (await main('got')).starts.length === failStarts0 + 1 &&
+      said.some(text => /^Not resumed: made-up start failure/.test(text)),
+    'a resume whose start fails says so: ' + JSON.stringify(said.at(-1))
+  );
+  check(
+    !!(await until(() => panelIds().join() === panelsBefore, 4000)),
+    'and the panel opened for it is closed again: before ' +
+      panelsBefore +
+      ', after ' +
+      panelIds().join()
+  );
+
+  // ---- a revive whose start fails (composer or `tnai send` to a closed agent) leaves no panel
+  // ----
+  const reviveStarts0 = (await main('got')).starts.length;
+  await main('startsFail', true);
+  const revived = await main('revive', {
+    instanceId: 'test-closed-agent',
+    name: 'Closedtest',
+    agent: rows[3].cli,
+    contextId: rows[3].id,
+  });
+  await main('startsFail', false);
+  check(
+    (await main('got')).starts.length === reviveStarts0 + 1 &&
+      /made-up start failure/.test(revived?.error || ''),
+    'a revive whose start fails answers with the error: ' + JSON.stringify(revived)
+  );
+  check(
+    !!(await until(() => panelIds().join() === panelsBefore, 4000)),
+    'and the panel the revive opened is closed again: before ' +
+      panelsBefore +
+      ', after ' +
+      panelIds().join()
+  );
+
+  // ---- the Access pill of a panel held at "Ask first" (another computer started it) ----
+  const accessSel = document.querySelector('.composer .tnai-pick[data-pick="access"] select');
+  const accessKey = 'tnai.access.v1';
+  const accessSaved = localStorage.getItem(accessKey);
+  await until(() => accessSel && !accessSel.disabled);
+  accessSel.value = 'edits';
+  accessSel.dispatchEvent(new Event('change'));
+  await main('holdIds', [rows[2].id]);
+  const heldKnown = new Set(agents.sessions().map(session => session.paneId));
+  await past.resume(rows[2].key);
+  const heldPanel = await until(
+    () =>
+      agents
+        .sessions()
+        .find(session => !heldKnown.has(session.paneId) && session.sessionId === rows[2].id),
+    10000
+  );
+  window.TnaiLiveTasks.setTarget(heldPanel?.paneId);
+  await wait(200);
+  check(
+    !!heldPanel &&
+      accessSel.value === 'ask' &&
+      window.TnaiLaunchPrefs.paneAccess(heldPanel.paneId) === 'ask' &&
+      /another computer/.test(accessSel.title),
+    'on a panel held at "Ask first" the Access pill shows Ask first, not the project\'s level: ' +
+      JSON.stringify({ value: accessSel?.value, title: accessSel?.title })
+  );
+  window.TnaiLiveTasks.setTarget(null);
+  await wait(200);
+  check(
+    accessSel.value === 'edits',
+    "with no agent picked it shows the project's level again: " + accessSel.value
+  );
+  await main('holdIds', []);
+  if (accessSaved === null) localStorage.removeItem(accessKey);
+  else localStorage.setItem(accessKey, accessSaved);
   check(!sawOldPage, 'the layout never had the class agents-mode');
 } catch (error) {
   check(false, 'the test threw: ' + (error?.stack || error));

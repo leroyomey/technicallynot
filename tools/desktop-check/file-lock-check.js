@@ -864,6 +864,36 @@ const changesFor = project =>
     check(!locks.list(P).some(l => /^src\/task-/.test(l.file)), 'task end: nothing left after');
   }
 
+  // `taken`: the call took a free file, so a failed or denied edit may give it back (app-3 #12).
+  {
+    const first = locks.acquire(proj1, 'src/taken.js', { ...A, edit: true });
+    const again = locks.acquire(proj1, 'src/taken.js', { ...A, edit: true });
+    check(first.ok && first.taken === true, 'taken: a free file is taken by this call');
+    check(again.ok && !again.taken, 'taken: a refresh of a held lock is not');
+    locks.releasePane('A');
+  }
+
+  // Case-blind disks: one lock for two spellings on Windows and macOS, two on Linux (app-3 #13).
+  {
+    const real = Object.getOwnPropertyDescriptor(process, 'platform');
+    const lockedTwice = platform => {
+      Object.defineProperty(process, 'platform', { value: platform });
+      delete require.cache[require.resolve('../../desktop/file-locks')];
+      const fresh = require('../../desktop/file-locks');
+      fresh.init(() => {}, {});
+      fresh.acquire(proj1, 'src/Case.js', { ...A, edit: true });
+      return fresh.acquire(proj1, 'src/case.js', { ...B, edit: true }).ok;
+    };
+    try {
+      check(!lockedTwice('darwin'), 'macOS: src/Case.js and src/case.js are one lock');
+      check(!lockedTwice('win32'), 'Windows: src/Case.js and src/case.js are one lock');
+      check(lockedTwice('linux'), 'Linux: src/Case.js and src/case.js are two files');
+    } finally {
+      Object.defineProperty(process, 'platform', real);
+      delete require.cache[require.resolve('../../desktop/file-locks')];
+    }
+  }
+
   console.log(ok ? '\nAll file-lock checks passed.' : '\nSome file-lock checks FAILED.');
   try {
     fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5 });

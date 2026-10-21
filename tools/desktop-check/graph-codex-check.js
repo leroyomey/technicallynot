@@ -220,7 +220,7 @@ const typedTo = paneId =>
   const declined = graph.state().nodes.find(n => n.purpose === 'Trust decline test');
   check(
     r.isError &&
-      /^Not started: The user didn't allow Codex to work in this folder\. Do this part yourself\.$/.test(
+      /^Not started: The user didn't allow Codex to work in this folder\. Do this part yourself\.\ncode: unreachable · try: do this part yourself/.test(
         text(r)
       ) &&
       declined?.status === 'failed' &&

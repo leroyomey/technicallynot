@@ -230,7 +230,7 @@
   // The clip's line pasted as text (no video file on the clipboard: PowerShell could not copy it,
   // or not Windows): the same chip instead of the line in the prompt.
   function addClipLine(line) {
-    const name = /([0-9a-f]{8}-clip[.]webm)[\]]$/.exec(line)?.[1];
+    const name = /([0-9a-f]{8}-clip[.](?:mp4|webm))[\]]$/.exec(line)?.[1];
     if (!name) return false;
     if (items.length >= MAX_COUNT)
       say('Not attached: ' + name + ' (at most ' + MAX_COUNT + ' attachments)');
@@ -882,7 +882,8 @@
     try {
       native.attachments.pasted?.(
         (
-          String(text || '').match(/\[Attached clip: [^\r\n]+\]|[0-9a-f]{8}-clip\.webm/g) || []
+          String(text || '').match(/\[Attached clip: [^\r\n]+\]|[0-9a-f]{8}-clip\.(?:mp4|webm)/g) ||
+          []
         ).join('\n')
       );
     } catch {}

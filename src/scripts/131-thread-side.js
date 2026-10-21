@@ -23,9 +23,11 @@
 // helper, it closes again with the helper. In a narrow window the column takes the thread's place
 // (27) and its close button brings the thread back.
 //
-// `window.TnaiThreadSide` (`open` with 'files', 'details', 'terminal' or 'helpers', `close`,
-// `toggle`, `state`, `showFile(path, row, line)`, `hideFile`, and for 123: `helpers`, `refresh`).
-// Look: src/styles/35-thread-side.css. Test: `thread-side`.
+// `window.TnaiThreadSide` (`open` with 'files', 'details', 'terminal', 'helpers' or 'preview',
+// `close`, `toggle`, `state`, `showFile(path, row, line)`, `hideFile`, for 123: `helpers`,
+// `refresh`, and for 170: `preview(node, show)`, the Live preview tab that is there only while a
+// site an agent started was opened by itself). Look: src/styles/35-thread-side.css. Test:
+// `thread-side`.
 (() => {
   'use strict';
   const layout = document.querySelector('.layout');
@@ -58,8 +60,20 @@
     } catch {}
   };
 
-  const shown = () => kept || helpersOpen;
-  const tab = () => (helpersOpen ? 'helpers' : wanted);
+  // Live preview, opened by itself when an agent started a site (170, its setting): the node 170
+  // hands over, and whether it is shown (not remembered, like a helper).
+  let previewNode = null;
+  let previewOpen = false;
+
+  const shown = () => kept || helpersOpen || previewOpen;
+  const tab = () =>
+    helpersOpen
+      ? 'helpers'
+      : wanted === 'preview' && !previewNode
+        ? 'files'
+        : previewOpen && !kept
+          ? 'preview'
+          : wanted;
   const helperCount = () => {
     try {
       return window.TnaiThreadHelpers?.state().helpers.length || 0;
@@ -81,7 +95,9 @@
     '<button type="button" role="tab" data-tab="details" id="tntSideTabDetails" ' +
     'aria-controls="tntSideDetails">Details</button>' +
     '<button type="button" role="tab" data-tab="terminal" id="tntSideTabTerminal" ' +
-    'aria-controls="tntSideTerminal">Terminal</button></div>' +
+    'aria-controls="tntSideTerminal">Terminal</button>' +
+    '<button type="button" role="tab" data-tab="preview" id="tntSideTabPreview" ' +
+    'aria-controls="tntSidePreview" hidden>Live preview</button></div>' +
     '<button type="button" class="tnt-sidebox-close" aria-label="Close this column" ' +
     'title="Close">' +
     icon('x', 16) +
@@ -94,7 +110,9 @@
     'aria-labelledby="tntSideTabDetails" hidden>' +
     '<p class="tnt-sidedetails-none" hidden>No thread is open.</p></div>' +
     '<div class="tnt-sidebox-part tnt-sideterm" id="tntSideTerminal" role="tabpanel" ' +
-    'aria-labelledby="tntSideTabTerminal" hidden></div>';
+    'aria-labelledby="tntSideTabTerminal" hidden></div>' +
+    '<div class="tnt-sidebox-part tnt-sidepreview" id="tntSidePreview" role="tabpanel" ' +
+    'aria-labelledby="tntSideTabPreview" hidden></div>';
   const tabs = column.querySelector('.tnt-sidebox-tabs');
   const closeButton = column.querySelector('.tnt-sidebox-close');
   const helpersPart = column.querySelector('#tntSideHelpers');
@@ -104,6 +122,8 @@
   const detailsPart = column.querySelector('#tntSideDetails');
   const detailsTab = tabs.querySelector('[data-tab="details"]');
   const detailsNone = detailsPart.querySelector('.tnt-sidedetails-none');
+  const previewPart = column.querySelector('#tntSidePreview');
+  const previewTab = tabs.querySelector('[data-tab="preview"]');
 
   // The button in the thread's top row: the look and the spoken state of 127's two.
   const button = document.createElement('button');
@@ -269,8 +289,16 @@
     filesPart.hidden = now !== 'files';
     terminalPart.hidden = now !== 'terminal';
     detailsPart.hidden = now !== 'details';
+
+    // Live preview is a tab only while a site was opened by itself
+    previewTab.hidden = !previewNode;
+    previewPart.hidden = now !== 'preview';
+    if (previewNode && previewNode.parentNode !== previewPart) previewPart.append(previewNode);
     paintDetails(now === 'details');
     if (now === 'files') bringFiles();
+
+    // 163: while another computer's thread is open, its files take the rail's place here
+    if (now === 'files') window.TnaiRemoteFiles?.place?.(filesPart);
 
     // 136 puts the terminal into its box and starts its session the first time
     if (now === 'terminal') window.TnaiOwnTerminal?.show(terminalPart);
@@ -324,7 +352,10 @@
       window.TnaiThreadHelpers.open();
       return;
     }
-    wanted = which === 'terminal' || which === 'details' ? which : 'files';
+    wanted =
+      which === 'terminal' || which === 'details' || (which === 'preview' && previewNode)
+        ? which
+        : 'files';
     kept = true;
     save();
 
@@ -336,6 +367,7 @@
   function close() {
     const inside = column.contains(document.activeElement);
     kept = false;
+    previewOpen = false;
     save();
     if (helpersOpen) window.TnaiThreadHelpers?.close();
     apply();
@@ -400,6 +432,15 @@
     helpers(panel, wanted) {
       helpersPanel = panel || helpersPanel;
       helpersOpen = !!wanted;
+      apply();
+    },
+
+    // 170 hands over Live preview, opened by itself for a site an agent started: shown as the
+    // column's own tab until the user closes the column or picks another tab.
+    preview(node, show) {
+      previewNode = node || previewNode;
+      previewOpen = !!show && !!previewNode;
+      if (previewOpen) wanted = 'preview';
       apply();
     },
 

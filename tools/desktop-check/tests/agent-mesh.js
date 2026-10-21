@@ -1,14 +1,15 @@
 // Technically Not tools · desktop-check/tests/agent-mesh.js — Agent CLIs typed by hand into plain
 // PowerShell panes (37 + desktop/agent-mesh.js + agent-shim.js), using FAKE `claude` / `codex` CLIs
 // from agent-mesh.main.js (never the real CLIs, no credits): `claude` / `codex` register as live
-// agent sessions of that provider (Overview card, mesh note), get Technically Not's launch
+// agent sessions of that provider (thread list row, mesh state), get Technically Not's launch
 // additions (Claude: --settings/--mcp-config/hint in an --append-system-prompt-file; Codex: hint in
 // developer_instructions of a `-p tnai` profile file; Cursor Agent: work rules as an alwaysApply
 // rule in a --plugin-dir folder), a real console (TTY), Claude hook events reach the pane's team
 // view; `tnai agents` / `tnai send` / `tnai read` work between the two fakes in the project; a fake
 // started outside every open project is not connected and is refused; a bad or missing token is
 // refused; control characters in a message can't break out of the paste; `claude -p` passes through
-// unregistered; quitting the CLI returns the pane to a plain terminal. Returns {ok, log}.
+// unregistered; quitting the CLI returns the pane to a plain terminal. Waits and links among three
+// agents (a ring of questions) are their own test, agent-mesh-three.js. Returns {ok, log}.
 const log = [],
   wait = ms => new Promise(r => setTimeout(r, ms));
 let ok = true;
@@ -94,16 +95,32 @@ check(
   session(A)?.startedByHand && session(A)?.running,
   'session marked started by hand and running'
 );
-window.TnaiRoute('overview');
-const cardA = await until(() => document.querySelector('.tnai-card[data-pane="' + A + '"]'));
+window.TnaiThreads.open();
 
-// the card can be drawn a moment before the session is known as Claude Code's (failed 2 of 3 runs
-// on a busy PC, 2026-10-06)
-await until(() => /Claude Code/.test(cardA?.querySelector('.c-sub')?.textContent || ''), 5000);
+// The old Overview card is gone with the old frame: the thread list names the provider. The row can
+// be drawn a moment before the session is known as Claude Code's.
+const threadOf = paneId => window.TnaiThreadList.thread(paneId);
 check(
-  /Claude Code/.test(cardA?.querySelector('.c-sub')?.textContent || ''),
-  'Overview card labelled with its provider: ' + cardA?.querySelector('.c-sub')?.textContent
+  await until(() => threadOf(A)?.tool === 'Claude Code', 5000),
+  'thread list row names its provider: ' + threadOf(A)?.tool
 );
+
+// The old card's mesh note: the thread layout reads the same waits and links from TnaiMesh (37),
+// so the checks read that state and spell it the way the note did.
+const noteOf = paneId => {
+  const member = (window.TnaiMesh?.state() || []).find(m => m.paneId === paneId);
+  if (!member) return '';
+  const names = ids => ids.map(id => session(id)?.name || 'another agent').join(', ');
+  const parts = [];
+  if (member.waitsOn?.length)
+    parts.push((member.ring ? 'waiting on each other: ' : 'waiting on ') + names(member.waitsOn));
+  if (member.with?.length) parts.push('working with ' + names(member.with));
+  const peers = window.TnaiMesh.peers(paneId);
+  if (!member.project) parts.push('not in an open project');
+  else
+    parts.push(peers > 1 ? peers + ' agents in this project' : 'no other agents in this project');
+  return parts.join(' · ');
+};
 
 // 2. `codex` in a second pane.
 const B = await shell();
@@ -119,11 +136,7 @@ check(
 );
 const nameA = session(A).name,
   nameB = session(B).name;
-const note = await until(() => {
-  const n = document.querySelector('.tnai-card[data-pane="' + A + '"] .tnai-mesh-note');
-  return n && /2 agents/.test(n.textContent) && n;
-});
-check(!!note, 'card note: ' + note?.textContent);
+check(await until(() => /2 agents/.test(noteOf(A))), 'mesh state of A: ' + noteOf(A));
 
 // 3. Claude Code hook events from the hand-started session reach the pane (sub-agent under its
 // card).
@@ -131,9 +144,8 @@ const url = await N.agentEvents.endpoint(A);
 check(!!url?.hook, 'hand-started Claude has its own hook URL');
 if (url?.hook) {
   const post = body =>
-    fetch(url.hook, {
+    window.TnaiTest.request(url.hook, {
       method: 'POST',
-      mode: 'no-cors',
       body: JSON.stringify({ session_id: 's', transcript_path: 't', cwd: 'c', ...body }),
     });
   await post({
@@ -198,10 +210,7 @@ const refused = await until(
 ); // wrapped lines can repeat a character at the break
 if (!refused) log.push('   A tail: ' + (await text(A)).slice(-400).replace(/\s+/g, ' '));
 check(refused, '`tnai close` refuses an agent the user started (hand-launched ' + nameB + ')');
-check(
-  document.querySelector('.terminal-pane[data-pane-id="' + B + '"]'),
-  '…and its pane stays open'
-);
+check(!!threadOf(B), '…and its thread stays open');
 type(A, 'tnai close NoSuchAgent');
 check(await has(A, 'No agent "NoSuchAgent"'), '`tnai close` of an unknown name is refused');
 const history = await N.agentEvents.history();
@@ -211,11 +220,9 @@ check(
   'relayed message is an activity event on both agents'
 );
 
-// 4c. Waits and links (desktop/agent-links.js): a question shows "waiting on NAME" on the asker's
-// card and in `tnai agents`; the answer ends the wait and shows both as working with each other.
-const noteOf = paneId =>
-  document.querySelector('.tnai-card[data-pane="' + paneId + '"] .tnai-mesh-note')?.textContent ||
-  '';
+// 4c. Waits and links (desktop/agent-links.js): a question shows "waiting on NAME" in the asker's
+// mesh state, on its thread list row and in `tnai agents`; the answer ends the wait and shows both
+// as working with each other.
 type(A, 'tnai send ' + nameB + ' which-file-is-yours?');
 
 // The wait is recorded once the message is delivered, which for a stand-in CLI (it never confirms a
@@ -230,7 +237,14 @@ check(
     ' ms): ' +
     noteOf(A)
 );
-check(!/waiting on/.test(noteOf(B)), "the asked agent's card shows no wait: " + noteOf(B));
+check(!/waiting on/.test(noteOf(B)), 'the asked agent shows no wait: ' + noteOf(B));
+
+// What the user sees: the asker's row in the thread list says it while the agent is not working
+// itself (119).
+check(
+  await until(() => threadOf(A)?.label === 'Waiting on ' + nameB, 10000),
+  "the asker's thread list row: " + threadOf(A)?.label + ' (status ' + threadOf(A)?.status + ')'
+);
 type(A, 'tnai agents');
 check(
   await until(async () => (await text(A)).replace(/\s+/g, '').includes('waitingon' + nameB), 15000),
@@ -242,9 +256,8 @@ type(B, 'tnai send ' + nameA + ' main-js-is-mine');
 // A stand-in Claude Code never says it took a prompt, and an unconfirmed delivery is not counted:
 // say it the way the real CLI does (its prompt hook).
 const hookA = body =>
-  fetch(url.hook, {
+  window.TnaiTest.request(url.hook, {
     method: 'POST',
-    mode: 'no-cors',
     body: JSON.stringify({ session_id: 's', transcript_path: 't', cwd: 'c', ...body }),
   });
 await has(A, 'main-js-is-mine');
@@ -259,14 +272,14 @@ check(
       noteOf(B).startsWith('working with ' + nameA),
     30000
   ),
-  'the answer ends the wait and both cards say who they work with (' +
+  'the answer ends the wait and both say who they work with (' +
     (Date.now() - t0) +
     ' ms): ' +
     noteOf(A) +
     ' | ' +
     noteOf(B)
 );
-check(/2 agents/.test(noteOf(A)), 'the connected count stays on the card');
+check(/2 agents/.test(noteOf(A)), 'the connected count stays');
 await hookA({ hook_event_name: 'Stop' }); // the stand-in's task is over, as before this step
 type(B, 'tnai read ' + nameA + ' 80');
 const readOk = await has(B, 'FAKE-claude start');
@@ -292,84 +305,6 @@ if (!injected)
   );
 check(injected, 'control characters stripped: the message stays one pasted line');
 
-// 4d. Three agents (A Claude, B Codex, F a second Codex) with real `tnai send` lines: a ring of
-// questions, one answer that breaks it, and an agent that exchanged messages both ways with two
-// others.
-const F = await shell();
-type(F, 'codex');
-check(await until(() => session(F)?.agent === 'Codex'), 'third agent (a second codex) registers');
-const nameF = session(F)?.name || '';
-const flat = s => String(s || '').replace(/\s+/g, '');
-const hasFlat = (paneId, needle, ms = 30000) =>
-  until(async () => flat(await text(paneId)).includes(flat(needle)), ms);
-const toA = async text => {
-  await has(A, text, 30000);
-  await hookA({ hook_event_name: 'UserPromptSubmit', prompt: text });
-}; // a stand-in Claude never confirms a prompt: say it via its hook
-type(A, 'tnai send ' + nameB + ' ring-a-asks-b?');
-check(
-  await until(() => noteOf(A).startsWith('waiting on ' + nameB), 30000),
-  'ring 1/3: A waits on B: ' + noteOf(A)
-);
-type(B, 'tnai send ' + nameF + ' ring-b-asks-f?');
-check(
-  await until(() => noteOf(B).startsWith('waiting on ' + nameF), 30000),
-  'ring 2/3: B waits on the third agent: ' + noteOf(B)
-);
-type(F, 'tnai send ' + nameA + ' ring-f-asks-a?');
-await toA('[from Codex · ' + nameF + '] ring-f-asks-a?');
-const ringed = await until(
-  () => [A, B, F].every(p => noteOf(p).startsWith('waiting on each other')),
-  30000
-);
-if (!ringed) log.push('   notes: ' + [A, B, F].map(noteOf).join(' | '));
-check(
-  ringed,
-  'a ring of three questions: every card says "waiting on each other": ' +
-    [A, B, F].map(noteOf).join(' | ')
-);
-check(
-  await hasFlat(F, 'leads back to you'),
-  'the last sender is told in its terminal that the wait leads back to it'
-);
-
-// One answer (B answers A, no question) breaks the ring.
-type(B, 'tnai send ' + nameA + ' ring-b-answers-a');
-await toA('[from Codex · ' + nameB + '] ring-b-answers-a');
-const broken = await until(() => ![A, B, F].some(p => /each other/.test(noteOf(p))), 30000);
-if (!broken) log.push('   notes: ' + [A, B, F].map(noteOf).join(' | '));
-check(
-  broken,
-  'one answer breaks the ring: no card says "each other": ' + [A, B, F].map(noteOf).join(' | ')
-);
-
-// B now also gets an answer from the third agent: B exchanged messages both ways with A and with
-// it.
-type(F, 'tnai send ' + nameB + ' f-answers-b');
-const hub = await until(() => {
-  const n = noteOf(B);
-  return /^working with /.test(n) && n.includes(nameA) && n.includes(nameF) && n;
-}, 30000);
-if (!hub) log.push('   notes: ' + [A, B, F].map(noteOf).join(' | '));
-check(
-  !!hub,
-  'an agent that exchanged messages both ways with two others shows "working with X, Y": ' +
-    noteOf(B)
-);
-
-// before A's Stop: that tells F its question went unanswered, typed into F's input as text that
-// would swallow the quit
-type(F, 'quit');
-
-// its own pending `tnai send` finishes first
-await until(() => session(F)?.agent === 'Terminal', 40000);
-await hookA({ hook_event_name: 'Stop' });
-check(
-  await until(() => /2 agents/.test(noteOf(B)) && !noteOf(B).includes(nameF), 30000),
-  'the third agent left: B counts 2 agents and no longer names it (its link with A stays): ' +
-    noteOf(B)
-);
-
 // 5. A fake started outside every open project: registered, but not connected and refused.
 const D = await shell();
 type(
@@ -383,12 +318,8 @@ check(
   'claude outside the project still registers as a session'
 );
 check(
-  await until(() =>
-    /not in an open project/.test(
-      document.querySelector('.tnai-card[data-pane="' + D + '"] .tnai-mesh-note')?.textContent || ''
-    )
-  ),
-  'its card says it is not connected'
+  await until(() => /not in an open project/.test(noteOf(D))),
+  'its mesh state says it is not connected: ' + noteOf(D)
 );
 type(D, 'tnai send ' + nameA + ' cross-folder-hello');
 check(
@@ -438,15 +369,7 @@ check(
   'the CLI that left is no longer shown as working with the other: ' + noteOf(B)
 );
 check(!(await text(A)).includes('Terminate batch job'), 'no cmd "Terminate batch job" question');
-check(
-  await until(() =>
-    /no other agents/.test(
-      document.querySelector('.tnai-card[data-pane="' + B + '"] .tnai-mesh-note')?.textContent || ''
-    )
-  ),
-  'Codex card now: ' +
-    document.querySelector('.tnai-card[data-pane="' + B + '"] .tnai-mesh-note')?.textContent
-);
+check(await until(() => /no other agents/.test(noteOf(B))), 'Codex mesh state now: ' + noteOf(B));
 
 // 7b. The other CLIs with a shim (here a fake `gemini`): a one-off (`--version`) stays a plain
 // terminal; the CLI itself registers under its own name.
@@ -486,10 +409,8 @@ check(
   await has(E, 'FAKE-cursor-agent rules=true'),
   'Cursor Agent got the work rules (Technically Not report, tnai commands) as an alwaysApply plugin rule'
 );
-window.TnaiRoute('overview');
-await wait(300);
-console.log('TNAI_SHOT:agent-mesh-overview');
-await wait(400);
+window.TnaiThreads.open();
+await TnaiTest.shot('agent-mesh-threads');
 
 // 8b. `tnai rename NAME` (the user asked the agent to rename itself): its panel takes the name; a
 // name another agent has is refused.
@@ -501,9 +422,21 @@ check(
 type(E, 'tnai rename Funds ledger');
 check(await has(E, 'to Funds ledger'), '`tnai rename NAME` answers with the new name');
 check(
-  document.querySelector('.terminal-pane[data-pane-id="' + E + '"] .terminal-pane-title')
-    ?.textContent === 'Funds ledger',
-  '…and the panel shows it'
+  await until(() => threadOf(E)?.name === 'Funds ledger', 5000),
+  '…and its thread shows it: ' + threadOf(E)?.name
+);
+
+// Cursor Agent runs no prompt hook, so the app types the rename notice in as a prompt of its own
+// (main.js tellRenames). A stand-in never confirms a prompt, so that submit waits its full time; a
+// line typed meanwhile would join the notice. Wait until the notice was submitted alone.
+check(
+  await until(async () => {
+    const flat = (await text(E)).replace(/\s+/g, '');
+    return (
+      flat.includes('got:"[fromTechnicallyNot]theuserrenamedyou') && /Noreplyneeded\."/.test(flat)
+    );
+  }, 45000),
+  'the renamed agent is told its new name, as a prompt of its own'
 );
 
 // 9. `tnai close --self` (the user told the agent to close itself): the reply prints, then its
@@ -511,21 +444,22 @@ check(
 // live agent here is refused and nothing closes; a real one takes its messages (agent-lifecycle.js
 // retire).
 type(E, 'tnai close --self --successor NoSuchAgent');
-check(await has(E, 'to hand over to'), '`--successor` naming no live agent is refused');
-check(
-  !!document.querySelector('.terminal-pane[data-pane-id="' + E + '"]'),
-  '…and the panel stays open'
+
+// The refusal is a long line, so it wraps in the panel: match it with the white space taken out.
+const handOverRefused = await until(
+  async () => (await text(E)).replace(/\s+/g, '').includes('tohandoverto'),
+  15000
 );
+if (!handOverRefused) log.push('   E tail: ' + (await text(E)).slice(-500).replace(/\s+/g, ' '));
+check(handOverRefused, '`--successor` naming no live agent is refused');
+check(!!threadOf(E), '…and its thread stays open');
 type(E, 'tnai close --self --successor ' + nameB);
 check(await has(E, 'Closed yourself'), '`tnai close --self` answers before closing');
 check(
   await has(E, 'messages sent to you go to ' + nameB),
   '…and with --successor says who gets its messages from now on'
 );
-check(
-  await until(() => !document.querySelector('.terminal-pane[data-pane-id="' + E + '"]'), 8000),
-  '…and its own panel closes a moment later'
-);
+check(await until(() => !threadOf(E), 8000), '…and its own thread closes a moment later');
 for (const p of [B, D]) type(p, 'quit');
 await wait(300);
 return { ok, log };

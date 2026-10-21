@@ -23,6 +23,18 @@ const asks = require('./agent-ask');
 const servers = require('./dev-servers');
 const tests = require('./test-queue');
 const tasks = require('./agent-tasks');
+const errors = require('./agent-errors');
+
+// The "try" steps (agent-errors.js) that more than one failure here gives.
+const TRY = {
+  agents: 'tnai agents',
+  again:
+    'run the same command again in a few seconds; if it fails again, tell the user Technically Not is not answering',
+  devServer:
+    'start the dev server in the background, then run this again (tnai server list shows the running ones)',
+  short: 'shorten it, or put the details in a file and send its path',
+  send: 'tnai send NAME MESSAGE',
+};
 
 const SHIMS = {
   claude: 'Claude Code',
@@ -569,22 +581,22 @@ function answers(url) {
 async function previewClose(paneId, project, msg) {
   const url = msg.url ? localUrl(clean(msg.url, 2000)) : '';
   if (msg.url && !url)
-    return {
-      ok: false,
-      error:
-        'Live preview shows addresses on this computer only: http://localhost:PORT, 127.0.0.1 or [::1].',
-    };
+    return errors.fail(
+      'invalid',
+      'Live preview shows addresses on this computer only: http://localhost:PORT, 127.0.0.1 or [::1].',
+      'tnai preview close http://localhost:PORT'
+    );
   const id = crypto.randomBytes(8).toString('hex');
   const reply = new Promise(resolve => {
     previews.set(id, resolve);
     setTimeout(() => {
       if (previews.delete(id))
-        resolve({ ok: false, error: "Technically Not's window did not answer." });
+        resolve(errors.fail('unreachable', "Technically Not's window did not answer.", TRY.again));
     }, 6000);
   });
   send('preview:show', { id, close: true, url, project, paneId });
   const r = await reply;
-  if (!r.ok) return { ok: false, error: 'Not closed: ' + r.error };
+  if (!r.ok) return errors.pass({ ...r, error: 'Not closed: ' + r.error }, 'refused');
   return { ok: true, text: "Closed in Technically Not's Live preview: " + r.where + '.' };
 }
 
@@ -592,32 +604,36 @@ async function preview(paneId, project, msg, file = null) {
   if (msg.close === true) return previewClose(paneId, project, msg);
   const url = localUrl(clean(msg.url, 2000));
   if (!url)
-    return {
-      ok: false,
-      error:
-        'Live preview shows addresses on this computer only: http://localhost:PORT, 127.0.0.1 or [::1].',
-    };
+    return errors.fail(
+      'invalid',
+      'Live preview shows addresses on this computer only: http://localhost:PORT, 127.0.0.1 or [::1].',
+      'tnai preview http://localhost:PORT [phone|tablet|desktop]'
+    );
   const asked = label(msg.device).toLowerCase();
   if (asked && asked !== 'auto' && !DEVICES[asked])
-    return { ok: false, error: 'The device view must be phone, tablet, desktop or auto.' };
+    return errors.fail(
+      'invalid',
+      'The device view must be phone, tablet, desktop or auto.',
+      'tnai preview URL phone|tablet|desktop|auto'
+    );
   const pick =
     asked && asked !== 'auto'
       ? { device: asked, why: 'chosen by the agent' }
       : deviceFor(project, msg.cwd);
   if (!(await answers(url)))
-    return {
-      ok: false,
-      error:
-        'Nothing answers at ' +
+    return errors.fail(
+      'unreachable',
+      'Nothing answers at ' +
         url +
         '. Start the dev server first (in the background, so your shell stays free) and run this again.',
-    };
+      TRY.devServer
+    );
   const id = crypto.randomBytes(8).toString('hex');
   const reply = new Promise(resolve => {
     previews.set(id, resolve);
     setTimeout(() => {
       if (previews.delete(id))
-        resolve({ ok: false, error: "Technically Not's window did not answer." });
+        resolve(errors.fail('unreachable', "Technically Not's window did not answer.", TRY.again));
     }, 6000);
   });
 
@@ -636,7 +652,7 @@ async function preview(paneId, project, msg, file = null) {
     // with that agent's panel (31)
   });
   const r = await reply;
-  if (!r.ok) return { ok: false, error: 'Not shown: ' + r.error };
+  if (!r.ok) return errors.pass({ ...r, error: 'Not shown: ' + r.error }, 'refused');
   if (file)
     return {
       ok: true,
@@ -681,16 +697,21 @@ async function preview(paneId, project, msg, file = null) {
 // preview` address. It is not a dev server, so `tnai server list` never names it.
 async function show(paneId, project, msg) {
   if (!deps.showFile && require('./preview-emulation').unwalled())
-    return {
-      ok: false,
-      error:
-        'Not shown: Technically Not could not wall the page off right now (its page tools are detached). Restart Technically Not, or serve the file and use tnai preview URL.',
-    };
+    return errors.fail(
+      'unreachable',
+      'Not shown: Technically Not could not wall the page off right now (its page tools are detached). Restart Technically Not, or serve the file and use tnai preview URL.',
+      'serve the file and run tnai preview http://localhost:PORT'
+    );
   const made = await (deps.showFile || require('./show-file')).add(clean(msg.file, 1000), msg.cwd, [
     project,
     worktrees().forPane(paneId)?.cwd,
   ]);
-  if (!made.ok) return { ok: false, error: 'Not shown: ' + made.error + '.' };
+  if (!made.ok)
+    return errors.pass(
+      { ...made, error: 'Not shown: ' + made.error + '.' },
+      'invalid',
+      'tnai show FILE.html, a file inside this project or your worktree'
+    );
   return preview(paneId, project, { url: made.url, device: msg.device, cwd: msg.cwd }, made);
 }
 
@@ -705,42 +726,51 @@ const lastShot = new Map(); // paneId -> time of its last shot
 async function shot(paneId, project, msg) {
   const url = msg.url ? localUrl(clean(msg.url, 2000)) : '';
   if (msg.url && !url)
-    return {
-      ok: false,
-      error:
-        'Screenshots are of addresses on this computer only: http://localhost:PORT, 127.0.0.1 or [::1].',
-    };
+    return errors.fail(
+      'invalid',
+      'Screenshots are of addresses on this computer only: http://localhost:PORT, 127.0.0.1 or [::1].',
+      'tnai shot preview http://localhost:PORT [phone|tablet|desktop]'
+    );
   const asked = label(msg.device).toLowerCase();
   if (asked && !DEVICES[asked])
-    return { ok: false, error: 'The device view must be phone, tablet or desktop.' };
+    return errors.fail(
+      'invalid',
+      'The device view must be phone, tablet or desktop.',
+      'tnai shot preview [URL] phone|tablet|desktop'
+    );
   const wait = SHOT_GAP_MS - (Date.now() - (lastShot.get(paneId) || 0));
   if (wait > 0)
-    return {
-      ok: false,
-      error:
-        'One screenshot every 2 seconds; wait ' +
+    return errors.fail(
+      'busy',
+      'One screenshot every 2 seconds; wait ' +
         Math.ceil(wait / 1000) +
         ' s and look at the last one first.',
-    };
+      'look at the last screenshot, then run tnai shot preview again'
+    );
   lastShot.set(paneId, Date.now());
   const id = crypto.randomBytes(8).toString('hex');
   const reply = new Promise(resolve => {
     previews.set(id, resolve);
     setTimeout(() => {
       if (previews.delete(id))
-        resolve({ ok: false, error: "Technically Not's window did not answer." });
+        resolve(errors.fail('unreachable', "Technically Not's window did not answer.", TRY.again));
     }, 6000);
   });
   send('preview:show', { id, shot: true, url, device: asked, project, paneId });
   const r = await reply;
   if (!r.ok || !r.shot)
-    return { ok: false, error: 'No screenshot: ' + (r.error || 'the window gave no page') };
+    return errors.pass(
+      { ...r, error: 'No screenshot: ' + (r.error || 'the window gave no page') },
+      'unreachable',
+      'tnai preview http://localhost:PORT first, then tnai shot preview'
+    );
   const s = r.shot;
   if (!(await answers(s.url)))
-    return {
-      ok: false,
-      error: 'Nothing answers at ' + s.url + '. Start the dev server first and run this again.',
-    };
+    return errors.fail(
+      'unreachable',
+      'Nothing answers at ' + s.url + '. Start the dev server first and run this again.',
+      TRY.devServer
+    );
   let got;
   try {
     got = await (deps.shot || require('./preview-shot')).take({
@@ -750,7 +780,7 @@ async function shot(paneId, project, msg) {
       preset: s.preset,
     });
   } catch (error) {
-    return { ok: false, error: 'No screenshot: ' + (error?.message || error) };
+    return errors.fail('internal', 'No screenshot: ' + (error?.message || error), TRY.again);
   }
   lastShot.set(paneId, Date.now());
   return {
@@ -917,6 +947,8 @@ async function find(list, key, project, self) {
   const named = here.filter(m => m.name.toLowerCase() === k);
   if (named.length > 1)
     return {
+      code: 'invalid',
+      hint: 'the same command with the agent id instead of the name (tnai agents shows them)',
       error:
         'Several agents here are named ' +
         label(key) +
@@ -932,6 +964,54 @@ async function find(list, key, project, self) {
   const renamedOne = was && here.find(m => m.paneId === was.paneId);
   return renamedOne ? { ...renamedOne, renamedFrom: was.from } : null;
 }
+
+// `tnai send Maya 2 check the build` reaches "Maya 2", not "Maya" with the text "2 check the
+// build" (app-3 #6). The shell splits an unquoted name into words, so the name is the longest run
+// of leading words (at most NAME_WORDS) that names an agent here, running or closed. A typed name
+// that holds a space was quoted and is taken as typed. When the first word alone names an agent as
+// well, nothing says which one was meant: the command is refused with both names. Returns
+// { to, text }, { error }, or null to leave the command as it is.
+const NAME_WORDS = 5;
+
+async function nameWithSpaces(list, msg, project, self) {
+  if (typeof msg.to !== 'string' || !msg.to || /\s/.test(msg.to)) return null;
+  const known = async name =>
+    !!(await find(list, name, project, self)) || !!deps.lifecycle?.lookup(name, project);
+  let name = msg.to,
+    rest = msg.text,
+    longer = null;
+  for (let words = 1; words < NAME_WORDS; words++) {
+    // the next word, with more text after it on the same line
+    const next = /^[ \t]*(\S+)[ \t]+(?=\S)/.exec(rest);
+    if (!next) break;
+    name += ' ' + next[1];
+    rest = rest.slice(next[0].length);
+    if (await known(name)) longer = { to: name, text: rest };
+  }
+  if (!longer) return null;
+  if (await known(msg.to))
+    return {
+      error:
+        'Two agents here match: ' +
+        label(msg.to) +
+        ' and ' +
+        label(longer.to) +
+        '. Use the agent id instead of the name (tnai agents shows them), or put a name with spaces in quotes.',
+    };
+  return longer;
+}
+
+// Only the first line of an agent's message carries its true sender ("[from NAME] …"). A further
+// line that starts like an app notice or a new task ("[from Technically Not] …", "[TN.ai] New task
+// …") is marked as quoted with "> ", so it cannot read as the app's or a lead's own words
+// (app-3 #7). Control characters are taken out first, as clean() does later, so none can hide such
+// a line.
+const NOTICE_LINE = /\n([ \t]*)(?=\[(?:from |TN\.ai\]|TechnicallyNot\.ai\]))/gi;
+const quoteNoticeLines = text =>
+  String(text)
+    .replace(/\r\n?/g, '\n')
+    .replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, '')
+    .replace(NOTICE_LINE, '\n$1> ');
 
 // ---------- renames ----------
 const sameFolder = (a, b) =>
@@ -1089,11 +1169,11 @@ async function request(paneId, pane, msg, socket) {
     return inChain ? { ok: true, register: false } : launch(paneId, pane, msg, socket);
   const project = await callerProject(paneId, pane, msg.cwd);
   if (!project)
-    return {
-      ok: false,
-      error:
-        'This terminal is not inside an open Technically Not project, so it is not connected to other agents.',
-    };
+    return errors.fail(
+      'refused',
+      'This terminal is not inside an open Technically Not project, so it is not connected to other agents.',
+      'cd into the open project folder, then run the command again'
+    );
 
   // A turn that a message from an agent on another computer started (remote-say.js):
   // an allow list, not a deny list. Only the commands that read work in it: `agents`,
@@ -1110,11 +1190,11 @@ async function request(paneId, pane, msg, socket) {
         !(Array.isArray(msg.args) && msg.args.length))
     )
   )
-    return {
-      ok: false,
-      error:
-        'This task came from an agent on another computer, so this command is not available in it. Answer in your final message: it goes back by itself.',
-    };
+    return errors.fail(
+      'refused',
+      'This task came from an agent on another computer, so this command is not available in it. Answer in your final message: it goes back by itself.',
+      'answer in your final message'
+    );
 
   // `tnai delegate | wait | subagents | assign` (the user may pick any
   // agent as lead): the same agent-graph.js calls as the tnai_* MCP tools, so a lead whose CLI can
@@ -1126,7 +1206,8 @@ async function request(paneId, pane, msg, socket) {
       subagents: 'tnai_subagents',
       assign: 'tnai_assign',
     }[msg.action];
-    if (!tool || !deps.graph) return { ok: false, error: 'Sub-agents are not available here.' };
+    if (!tool || !deps.graph)
+      return errors.fail('refused', 'Sub-agents are not available here.', 'do the work yourself');
     const stop = new AbortController();
     socket.on('close', () => stop.abort()); // Ctrl+C on `tnai wait` ends the wait
     const r = await deps.graph.call(
@@ -1136,7 +1217,9 @@ async function request(paneId, pane, msg, socket) {
       stop.signal
     );
     const text = (r?.content || []).map(c => c.text).join('\n');
-    return r?.isError ? { ok: false, error: text } : { ok: true, text };
+    return r?.isError
+      ? errors.fail(r.code || 'refused', errors.withoutLine(text), r.hint)
+      : { ok: true, text };
   }
 
   // `tnai skill save PATH | list` (skill-service.js): an agent saves a procedure it learned to the
@@ -1144,7 +1227,8 @@ async function request(paneId, pane, msg, socket) {
   // on the same topic (skill-overlap.js) and `tnai skill remove NAME` drops an agent-written one a
   // merge replaced.
   if (msg.op === 'skill') {
-    if (!deps.skills) return { ok: false, error: 'The skill library is not available.' };
+    if (!deps.skills)
+      return errors.fail('unreachable', 'The skill library is not available.', TRY.again);
     if (msg.action === 'list') {
       const one = s =>
         '  ' +
@@ -1176,10 +1260,11 @@ async function request(paneId, pane, msg, socket) {
     if (msg.action === 'match') {
       const text = clean(String(msg.text || ''), 8000).trim();
       if (!text)
-        return {
-          ok: false,
-          error: 'Give the sentence the user would say: `tnai skill match "TEXT"`.',
-        };
+        return errors.fail(
+          'invalid',
+          'Give the sentence the user would say: `tnai skill match "TEXT"`.',
+          'tnai skill match "TEXT"'
+        );
       const found = require('./skill-triggers').match(
         text,
         project,
@@ -1276,7 +1361,11 @@ async function request(paneId, pane, msg, socket) {
               .join('\n'),
         };
       } catch (error) {
-        return { ok: false, error: error.message };
+        return errors.fail(
+          'invalid',
+          error.message,
+          'tnai skill overlaps (no path), or tnai skill list'
+        );
       }
     }
     if (msg.action === 'remove') {
@@ -1298,15 +1387,15 @@ async function request(paneId, pane, msg, socket) {
               : ''),
         };
       } catch (error) {
-        return { ok: false, error: 'Skill not removed: ' + error.message };
+        return errors.fail('not_found', 'Skill not removed: ' + error.message, 'tnai skill list');
       }
     }
     if (msg.action !== 'save')
-      return {
-        ok: false,
-        error:
-          'Use `tnai skill save PATH`, `tnai skill list`, `tnai skill match TEXT`, `tnai skill overlaps [PATH]` or `tnai skill remove NAME`.',
-      };
+      return errors.fail(
+        'invalid',
+        'Use `tnai skill save PATH`, `tnai skill list`, `tnai skill match TEXT`, `tnai skill overlaps [PATH]` or `tnai skill remove NAME`.',
+        'tnai skill list'
+      );
     try {
       const s = deps.skills.saveAgentSkill(clean(String(msg.path || ''), 1000), cwd, project, {
         distinct: !!msg.distinct,
@@ -1331,11 +1420,26 @@ async function request(paneId, pane, msg, socket) {
             : ''),
       };
     } catch (error) {
-      return { ok: false, error: 'Skill not saved: ' + error.message };
+      return errors.fail(
+        'invalid',
+        'Skill not saved: ' + error.message,
+        'fix what it names, then tnai skill save PATH again (a folder with SKILL.md, or the SKILL.md file)'
+      );
     }
   }
   const list = await members();
   const me = list.find(m => m.paneId === paneId);
+
+  // A message to another agent: its name may hold spaces (app-3 #6), and its further lines may
+  // not pass for the app's or a lead's own words (app-3 #7).
+  if (['send', 'ask', 'intervene', 'new'].includes(msg.op) && typeof msg.text === 'string') {
+    if (msg.op !== 'new') {
+      const named = await nameWithSpaces(list, msg, project, paneId);
+      if (named?.error) return errors.fail('invalid', named.error, TRY.agents);
+      if (named) Object.assign(msg, named);
+    }
+    msg.text = quoteNoticeLines(msg.text);
+  }
 
   // `tnai send|ask NAME@COMPUTER …`: an agent on a paired computer.
   // Only this form ever leaves the computer: a bare NAME is
@@ -1419,16 +1523,18 @@ async function request(paneId, pane, msg, socket) {
   if (msg.op === 'rename') {
     const name = label(msg.name).slice(0, 40),
       old = names.get(paneId)?.name || '';
-    if (!name) return { ok: false, error: 'Give the new name: `tnai rename NAME`.' };
+    if (!name)
+      return errors.fail('invalid', 'Give the new name: `tnai rename NAME`.', 'tnai rename NAME');
     if (name === old) return { ok: true, text: 'You are already named ' + name + '.' };
     const taken = [...names].find(
       ([id, n]) => id !== paneId && n.name.toLowerCase() === name.toLowerCase()
     );
     if (taken)
-      return {
-        ok: false,
-        error: 'Another agent is already named ' + taken[1].name + '. Choose a different name.',
-      };
+      return errors.fail(
+        'invalid',
+        'Another agent is already named ' + taken[1].name + '. Choose a different name.',
+        'tnai rename OTHER_NAME (tnai agents shows the names taken)'
+      );
 
     // At most one a minute per agent while a paired computer has full control here
     // (deps.renameLimited): the name is part of the ticket that
@@ -1440,6 +1546,8 @@ async function request(paneId, pane, msg, socket) {
     if (left > 0 && deps.renameLimited?.())
       return {
         ok: false,
+        code: 'busy',
+        hint: 'wait ' + Math.ceil(left / 1000) + ' s, then tnai rename ' + name,
         error:
           'Not renamed: you renamed yourself less than a minute ago. Wait ' +
           Math.ceil(left / 1000) +
@@ -1456,6 +1564,8 @@ async function request(paneId, pane, msg, socket) {
     if (names.get(paneId)?.name !== name)
       return {
         ok: false,
+        code: 'refused',
+        hint: 'tnai rename OTHER_NAME (tnai agents shows the names taken)',
         error:
           'Technically Not did not apply the name ' +
           name +
@@ -1495,10 +1605,13 @@ async function request(paneId, pane, msg, socket) {
     let heir = null;
     if (msg.successor) {
       heir = await find(list, msg.successor, project, paneId);
-      if (heir?.error) return { ok: false, error: heir.error + ' Not closed.' };
+      if (heir?.error)
+        return errors.pass({ ...heir, error: heir.error + ' Not closed.' }, 'invalid', TRY.agents);
       if (!heir)
         return {
           ok: false,
+          code: 'not_found',
+          hint: TRY.agents,
           error:
             'No live agent "' +
             label(msg.successor) +
@@ -1543,7 +1656,11 @@ async function request(paneId, pane, msg, socket) {
         : [msg.to];
     const keys = given.map(label).filter(Boolean).slice(0, 50);
     if (!keys.length && !over)
-      return { ok: false, error: 'Name the agents to close, or use --quiet-over MINUTES.' };
+      return errors.fail(
+        'invalid',
+        'Name the agents to close, or use --quiet-over MINUTES.',
+        'tnai close NAME... or tnai close --quiet-over MINUTES'
+      );
     const now = Date.now();
     const idle = list
       .filter(
@@ -1631,6 +1748,8 @@ async function request(paneId, pane, msg, socket) {
     if (!closed.length)
       return {
         ok: false,
+        code: 'refused',
+        hint: 'close only the agents it names under "Can be closed" (tnai agents shows their state)',
         error:
           (refused.join(' ') || 'No agent here has been quiet ' + over + ' min or more.') +
           ' Can be closed: ' +
@@ -1653,21 +1772,33 @@ async function request(paneId, pane, msg, socket) {
           .replace(/[\s_-]/g, '')
       ];
     if (!agent)
-      return {
-        ok: false,
-        error: 'Unknown agent "' + label(msg.agent) + '". Use claude, codex, opencode or cursor.',
-      };
+      return errors.fail(
+        'invalid',
+        'Unknown agent "' + label(msg.agent) + '". Use claude, codex, opencode or cursor.',
+        'tnai new claude|codex|opencode|cursor TASK'
+      );
 
     // The sub-agent limits hold here too (agent-graph.js refuseNew): never from a sub-agent's
     // panel, and only so many open at once.
     const no = deps.lifecycle?.info?.(paneId)?.subagent
       ? 'Refused: a sub-agent does not start new agents. Do the work yourself, or say in your report what else is needed.'
       : deps.graph?.refuseNew?.(paneId, deps.lifecycle?.startedOpen?.() || 0);
-    if (no) return { ok: false, error: no };
+    if (no)
+      return /^Refused: a sub-agent/.test(no)
+        ? errors.fail('refused', no, 'do the work yourself')
+        : errors.fail(
+            'full',
+            no,
+            'tnai agents, then tnai send NAME to reuse one or tnai close NAME'
+          );
     const text = clean(msg.text, TEXT_MAX + 1).trim();
-    if (!text) return { ok: false, error: 'Nothing to send.' };
+    if (!text) return errors.fail('invalid', 'Nothing to send.', TRY.send);
     if (text.length > TEXT_MAX)
-      return { ok: false, error: 'Message too long (at most ' + TEXT_MAX + ' characters).' };
+      return errors.fail(
+        'invalid',
+        'Message too long (at most ' + TEXT_MAX + ' characters).',
+        TRY.short
+      );
 
     // --model / --effort: only names from that CLI's own list (model-pick.js); anything else is
     // refused here, before a panel opens.
@@ -1676,7 +1807,12 @@ async function request(paneId, pane, msg, socket) {
       clean(msg.model, 120),
       clean(msg.effort, 40)
     );
-    if (pick.error) return { ok: false, error: pick.error };
+    if (pick.error)
+      return errors.fail(
+        'invalid',
+        pick.error,
+        'run it again with a model and effort from that list, or without --model and --effort'
+      );
     const from = (me ? me.provider : 'Terminal') + ' · ' + label(names.get(paneId)?.name || paneId);
 
     // --name: the user's own name for it, shown as is
@@ -1708,7 +1844,7 @@ async function request(paneId, pane, msg, socket) {
     const secs = asks.seconds(msg.wait),
       myName = label(names.get(paneId)?.name || paneId);
     const live = await find(list, msg.to, project, paneId);
-    if (live?.error) return { ok: false, error: live.error };
+    if (live?.error) return errors.pass(live, 'invalid', TRY.agents);
     const hit = live ? null : deps.lifecycle?.lookup(msg.to, project);
     const heir = hit ? deps.lifecycle.successorOf?.(hit.instanceId) : null;
     const target = {
@@ -1731,15 +1867,15 @@ async function request(paneId, pane, msg, socket) {
       qText = clean(msg.text, TEXT_MAX + 1).trim();
     if (!qText) {
       asks.cancel(paneId, socket);
-      return { ok: false, error: 'Nothing to send.' };
+      return errors.fail('invalid', 'Nothing to send.', 'tnai ask NAME QUESTION');
     }
     if (qText.length > TEXT_MAX - note.length) {
       asks.cancel(paneId, socket);
-      return {
-        ok: false,
-        error:
-          'Message too long (at most ' + (TEXT_MAX - note.length) + ' characters for a question).',
-      };
+      return errors.fail(
+        'invalid',
+        'Message too long (at most ' + (TEXT_MAX - note.length) + ' characters for a question).',
+        TRY.short
+      );
     }
     const sent = await request(
       paneId,
@@ -1774,18 +1910,22 @@ async function request(paneId, pane, msg, socket) {
   // the same agent within INTERVENE_GAP_MS, and interrupting yourself.
   if (msg.op === 'intervene') {
     const text = clean(msg.text, TEXT_MAX + 1).trim();
-    if (!text) return { ok: false, error: 'Nothing to send.' };
+    if (!text) return errors.fail('invalid', 'Nothing to send.', TRY.send);
     if (text.length > TEXT_MAX)
-      return { ok: false, error: 'Message too long (at most ' + TEXT_MAX + ' characters).' };
+      return errors.fail(
+        'invalid',
+        'Message too long (at most ' + TEXT_MAX + ' characters).',
+        TRY.short
+      );
     const target = await find(list, msg.to, project, paneId);
-    if (target?.error) return { ok: false, error: target.error };
+    if (target?.error) return errors.pass(target, 'invalid', TRY.agents);
     if (
       target?.paneId === paneId ||
       (!target &&
         String(msg.to).toLowerCase() === label(names.get(paneId)?.name || '').toLowerCase()) ||
       msg.to === paneId
     )
-      return { ok: false, error: 'That is you.' };
+      return errors.fail('invalid', 'That is you.', 'tnai agents, then the name of another agent');
     const plain = async why => {
       const r = await request(paneId, pane, { op: 'send', to: msg.to, text }, socket);
       return r.ok
@@ -1818,6 +1958,8 @@ async function request(paneId, pane, msg, socket) {
     if (gap > 0)
       return {
         ok: false,
+        code: 'busy',
+        hint: 'tnai send ' + target.name + ' MESSAGE (it waits behind its current task)',
         error:
           target.name +
           ' was interrupted by an agent less than ' +
@@ -1897,6 +2039,8 @@ async function request(paneId, pane, msg, socket) {
         if (!r.ok)
           return {
             ok: false,
+            code: 'unreachable',
+            hint: 'tnai send ' + target.name + ' MESSAGE',
             error:
               target.name +
               ' did not get the message (' +
@@ -1937,6 +2081,8 @@ async function request(paneId, pane, msg, socket) {
         });
       return {
         ok: false,
+        code: 'unreachable',
+        hint: 'tnai send ' + target.name + ' MESSAGE',
         error:
           target.name +
           ' was interrupted, but the message was not delivered (' +
@@ -1966,13 +2112,17 @@ async function request(paneId, pane, msg, socket) {
   }
   if (msg.op === 'send') {
     const text = clean(msg.text, TEXT_MAX + 1).trim();
-    if (!text) return { ok: false, error: 'Nothing to send.' };
+    if (!text) return errors.fail('invalid', 'Nothing to send.', TRY.send);
     if (text.length > TEXT_MAX)
-      return { ok: false, error: 'Message too long (at most ' + TEXT_MAX + ' characters).' };
+      return errors.fail(
+        'invalid',
+        'Message too long (at most ' + TEXT_MAX + ' characters).',
+        TRY.short
+      );
     let target = await find(list, msg.to, project, paneId),
       retired = '',
       hit = null;
-    if (target?.error) return { ok: false, error: target.error };
+    if (target?.error) return errors.pass(target, 'invalid', TRY.agents);
     let from = (me ? me.provider : 'Terminal') + ' · ' + label(names.get(paneId)?.name || paneId);
     if (!target) {
       hit = deps.lifecycle?.lookup(msg.to, project);
@@ -2032,6 +2182,8 @@ async function request(paneId, pane, msg, socket) {
       }
       return {
         ok: false,
+        code: 'not_found',
+        hint: TRY.agents,
         error:
           'No agent "' +
           label(msg.to) +
@@ -2180,10 +2332,11 @@ async function request(paneId, pane, msg, socket) {
     }
     if (!r.ok) {
       if (mine) deps.graph.sentByParent(paneId, target.paneId, false);
-      return {
-        ok: false,
-        error: 'Not delivered to ' + target.name + ' (' + target.provider + '): ' + r.error,
-      };
+      return errors.fail(
+        'unreachable',
+        'Not delivered to ' + target.name + ' (' + target.provider + '): ' + r.error,
+        'tnai agents shows its state; then tnai send ' + target.name + ' MESSAGE again'
+      );
     }
     deps.hooks.note(target.paneId, { kind: 'mesh-in', from, text });
     if (me)
@@ -2199,10 +2352,12 @@ async function request(paneId, pane, msg, socket) {
   }
   if (msg.op === 'read') {
     const target = await find(list, msg.from, project, paneId);
-    if (target?.error) return { ok: false, error: target.error };
+    if (target?.error) return errors.pass(target, 'invalid', TRY.agents);
     if (!target)
       return {
         ok: false,
+        code: 'not_found',
+        hint: TRY.agents,
         error:
           'No agent "' +
           label(msg.from) +
@@ -2244,27 +2399,36 @@ async function request(paneId, pane, msg, socket) {
     if (msg.action === 'list') return servers.list(project, how);
     const url = msg.url ? localUrl(clean(msg.url, 2000)) : '';
     if (msg.url && !url)
-      return {
-        ok: false,
-        error:
-          'Dev servers are addresses on this computer only: http://localhost:PORT, 127.0.0.1 or [::1].',
-      };
+      return errors.fail(
+        'invalid',
+        'Dev servers are addresses on this computer only: http://localhost:PORT, 127.0.0.1 or [::1].',
+        'tnai server claim http://localhost:PORT'
+      );
     if (msg.action === 'claim')
       return url
         ? servers.claim(project, paneId, myName, url, how)
-        : { ok: false, error: 'Which address? tnai server claim http://localhost:PORT' };
+        : errors.fail(
+            'invalid',
+            'Which address? tnai server claim http://localhost:PORT',
+            'tnai server claim http://localhost:PORT'
+          );
     if (msg.action === 'release') return servers.release(project, paneId, url);
-    return { ok: false, error: 'Use tnai server list | claim URL | release [URL].' };
+    return errors.fail(
+      'invalid',
+      'Use tnai server list | claim URL | release [URL].',
+      'tnai server list'
+    );
   }
 
   // `tnai test` (test-queue.js): the shim runs the tests once this answers; the open connection
   // holds the turn until the run ends.
   if (msg.op === 'test') {
-    if (!socket) return { ok: false, error: 'No connection to hold the test turn.' };
+    if (!socket)
+      return errors.fail('internal', 'No connection to hold the test turn.', 'tnai test again');
     const got = await tests.turn(paneId, myName, project, socket);
     return got
       ? { ok: true, hold: true, waited: got.waited, after: got.after }
-      : { ok: false, error: 'Stopped while waiting for the test turn.' };
+      : errors.fail('busy', 'Stopped while waiting for the test turn.', 'tnai test again');
   }
 
   // `tnai tasks ...` (agent-tasks.js): the project's shared to-do board.
@@ -2283,11 +2447,20 @@ async function request(paneId, pane, msg, socket) {
   if (msg.op === 'show') return show(paneId, project, msg);
   if (msg.op === 'shot') return shot(paneId, project, msg);
 
+  // `tnai pr [watch [NUMBER] | unwatch]` (pr-watch.js): the caller's own thread's pull request.
+  if (msg.op === 'pr') {
+    if (!deps.prWatch)
+      return errors.fail('unreachable', 'Pull request watching is not available.', TRY.again);
+    const action = ['watch', 'unwatch'].includes(msg.action) ? msg.action : '';
+    const result = await deps.prWatch.command(paneId, action, Number(msg.number) || 0);
+    return result.ok ? result : errors.fail('refused', result.error, 'gh pr view');
+  }
+
   // Shared project context (agent-context.js): finished work of the agents in this project.
   // File locks (file-locks.js): `tnai lock FILE...` before editing (Claude Code locks by itself
   // through its edit hook), `tnai unlock [FILE...]`, `tnai locks`.
   if (msg.op === 'lock' || msg.op === 'unlock' || msg.op === 'locks') {
-    if (!deps.locks) return { ok: false, error: 'File locks are not available.' };
+    if (!deps.locks) return errors.fail('unreachable', 'File locks are not available.', TRY.again);
     const base = typeof msg.cwd === 'string' && path.isAbsolute(msg.cwd) ? msg.cwd : project;
     const files = (Array.isArray(msg.files) ? msg.files : [])
       .slice(0, 50)
@@ -2335,6 +2508,7 @@ async function request(paneId, pane, msg, socket) {
       provider: (await members()).find(m => m.paneId === paneId)?.provider || '',
     };
     const got = [],
+      holders = [],
       refused = [],
       outside = [],
       folders = [];
@@ -2357,7 +2531,10 @@ async function request(paneId, pane, msg, socket) {
       }
       const r = deps.locks.acquire(project, f, me);
       if (r.ok) got.push(deps.locks.rel(project, f));
-      else refused.push(r.text);
+      else {
+        refused.push(r.text);
+        if (r.holder?.name && !holders.includes(r.holder.name)) holders.push(r.holder.name);
+      }
     }
     const text =
       (got.length ? 'Locked: ' + got.join(', ') + '. `tnai unlock` when done.\n' : '') +
@@ -2367,7 +2544,19 @@ async function request(paneId, pane, msg, socket) {
         ? 'A folder (not locked, lock the files in it): ' + folders.join(', ') + '\n'
         : '');
     const failed = refused.length || (folders.length && !got.length);
-    return failed ? { ok: false, error: text.trim() } : { ok: true, text: text.trim() };
+    if (!failed) return { ok: true, text: text.trim() };
+
+    // A file held by another agent: who holds it, and the message that splits the work. Only
+    // folders given: the files in them are what can be locked.
+    return refused.length
+      ? errors.fail(
+          'locked',
+          text.trim(),
+          'tnai locks, then ' +
+            holders.map(h => 'tnai send ' + h + ' MESSAGE').join(' or ') +
+            ' to split the files'
+        )
+      : errors.fail('invalid', text.trim(), 'tnai lock FILE, for each file inside the folder');
   }
 
   // Team mode (agent-teams.js): `tnai team` shows the caller's team. Only the user changes teams:
@@ -2375,7 +2564,7 @@ async function request(paneId, pane, msg, socket) {
   // when typed in a plain terminal panel, never from an agent session (its shell commands use its
   // token).
   if (msg.op === 'team') {
-    if (!deps.teams) return { ok: false, error: 'Teams are not available.' };
+    if (!deps.teams) return errors.fail('unreachable', 'Teams are not available.', TRY.again);
     const list = await members(),
       here = list.filter(m => m.project === project),
       nameOf = p => here.find(m => m.paneId === p)?.name || names.get(p)?.name || p;
@@ -2406,6 +2595,8 @@ async function request(paneId, pane, msg, socket) {
     if (list.some(m => m.paneId === paneId))
       return {
         ok: false,
+        code: 'refused',
+        hint: 'ask the user to set the team',
         error:
           'Only the user sets teams (a thread’s "..." menu > Team, or `tnai team` typed in their own terminal). Agents cannot change them.',
       };
@@ -2416,6 +2607,8 @@ async function request(paneId, pane, msg, socket) {
       if (!t)
         return {
           ok: false,
+          code: 'not_found',
+          hint: TRY.agents,
           error:
             'No agent "' +
             label(w) +
@@ -2423,7 +2616,7 @@ async function request(paneId, pane, msg, socket) {
             others(list, project, paneId) +
             '.',
         };
-      if (t.error) return { ok: false, error: t.error };
+      if (t.error) return errors.pass(t, 'invalid', TRY.agents);
       if (!found.includes(t.paneId)) found.push(t.paneId);
     }
     if (off) {
@@ -2436,7 +2629,11 @@ async function request(paneId, pane, msg, socket) {
       };
     }
     if (found.length < 2)
-      return { ok: false, error: 'A team needs at least two agents: tnai team NAME NAME...' };
+      return errors.fail(
+        'invalid',
+        'A team needs at least two agents: tnai team NAME NAME...',
+        'tnai team NAME NAME'
+      );
     deps.teams.set(found[0], found.slice(1));
     return {
       ok: true,
@@ -2460,7 +2657,7 @@ async function request(paneId, pane, msg, socket) {
       } catch {}
     return out;
   }
-  return { ok: false, error: 'Unknown request.' };
+  return errors.fail('invalid', 'Unknown request.', 'tnai (no words) prints how to use it');
 }
 
 // One JSON line in, one JSON line out; a registered launch keeps its connection open until the CLI
@@ -2495,17 +2692,21 @@ function onSocket(socket) {
     const pane = paneId && panes.get(paneId);
     let reply;
     if (!pane || !['127.0.0.1', '::ffff:127.0.0.1'].includes(socket.remoteAddress))
-      reply = {
-        ok: false,
-        error: 'Refused: only terminals started by Technically Not can use the agent mesh.',
-      };
+      reply = errors.fail(
+        'refused',
+        'Refused: only terminals started by Technically Not can use the agent mesh.',
+        'run it in a terminal Technically Not started (a thread, its CLI screen or Your terminal)'
+      );
     else {
       try {
         reply = await request(paneId, pane, msg, socket);
       } catch (error) {
-        reply = { ok: false, error: error.message };
+        reply = errors.fail('internal', error.message, TRY.again);
       }
     }
+
+    // Every failure leaves with a code (agent-errors.js), also one handed on from another file.
+    reply = errors.ensure(reply);
     if (socket.destroyed) return;
     socket.write(JSON.stringify(reply) + '\n');
     if (!(msg?.op === 'launch' && reply.register) && !(msg?.op === 'test' && reply.hold))
@@ -2687,6 +2888,24 @@ module.exports = {
         : { ok: false, error: label(r?.error) || 'refused' }
     );
     return true;
+  },
+
+  // Another computer's view of this one's Live preview (remote-preview.js, plan item 43): the
+  // address and viewport of the tab shown now in the project open here, asked of the window the
+  // way `tnai shot preview` asks it (nothing changes on screen). null when no tab shows a page or
+  // nothing answers at its address.
+  async activePreview(project) {
+    const id = crypto.randomBytes(8).toString('hex');
+    const reply = new Promise(resolve => {
+      previews.set(id, resolve);
+      setTimeout(() => {
+        if (previews.delete(id)) resolve({ ok: false });
+      }, 6000);
+    });
+    send('preview:show', { id, shot: true, url: '', device: '', project, paneId: '' });
+    const r = await reply;
+    if (!r || !r.ok || !r.shot || !(await answers(r.shot.url))) return null;
+    return r.shot;
   },
   stop() {
     if (server) server.close();

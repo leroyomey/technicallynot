@@ -46,4 +46,10 @@ const releaseByCode = fromAsar || baked;
 const selfTestName = release ? '' : process.env.TNAI_SELFTEST || '';
 const selfTest = selfTestName !== '';
 
-module.exports = { release, releaseByCode, fromAsar, selfTest, selfTestName };
+// The desktop tests' fake microphone (the environment variable TN_VOICE_FAKE: a test beep and a
+// fixed transcript instead of the user's voice). Read here and nowhere else for the same reason:
+// an installed app with it set would record the beep instead of the user (audit app-1 #7). Read at
+// each call, because a voice check changes it between its cases.
+const voiceFake = () => (release ? '' : process.env.TN_VOICE_FAKE || '');
+
+module.exports = { release, releaseByCode, fromAsar, selfTest, selfTestName, voiceFake };

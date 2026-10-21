@@ -23,12 +23,19 @@ module.exports = win => {
   let excerpts = {};
   let fail = false;
 
+  // startFails: the next starts are refused, as main refuses one it cannot make. heldIds: the
+  // conversations main holds at "Ask first" (another computer started them), answered with `held`.
+  let startFails = false;
+  let heldIds = [];
+
   // Every start is written down and answered as started; no process is made.
   function recordStarts() {
     let pid = 930000;
     ipcMain.removeHandler('pty:start');
     ipcMain.handle('pty:start', (_event, options) => {
       got.starts.push(JSON.parse(JSON.stringify(options || {})));
+      if (startFails)
+        return { ok: false, error: { message: 'made-up start failure.', code: 'refused' } };
       return {
         ok: true,
         value: {
@@ -38,6 +45,7 @@ module.exports = win => {
           sessionId: options.resumeId || '',
           resumable: !!options.resumeId,
           cwd: '',
+          held: heldIds.includes(options.resumeId),
         },
       };
     });
@@ -101,6 +109,32 @@ module.exports = win => {
     failing(on) {
       fail = on === true;
       return true;
+    },
+    startsFail(on) {
+      startFails = on === true;
+      return true;
+    },
+    holdIds(ids) {
+      heldIds = Array.isArray(ids) ? ids : [];
+      return true;
+    },
+
+    // Asks the window to revive an agent, as main does for the composer and `tnai send` to a
+    // closed agent, and answers with what the window sent back. The window's answer channel is
+    // taken over for the rest of this test run (nothing else in this test revives).
+    revive(request) {
+      return new Promise(resolve => {
+        const requestId = 'test-revive-' + Date.now();
+        const timer = setTimeout(() => resolve({ error: 'no answer in 20 s' }), 20000);
+        ipcMain.removeHandler('lifecycle:revived');
+        ipcMain.handle('lifecycle:revived', (_event, id, result) => {
+          if (id !== requestId) return false;
+          clearTimeout(timer);
+          resolve(result || {});
+          return true;
+        });
+        win.webContents.send('lifecycle:revive', { ...request, requestId });
+      });
     },
     got: () => got,
   };

@@ -148,7 +148,17 @@ function report(sessionId, channel, payload) {
     if (s && to && !to.isDestroyed()) to.send(channel, { name: s.name, ...payload });
   } catch {}
 }
-const clip = (v, n) => String(v ?? '').slice(0, n);
+
+// Every string a page reports goes through here. The page writes it, and "Ask agent to fix" and
+// "Click to ask" put it in the composer as the user's words: one line (a page's own line breaks
+// could start a new instruction there) and no backticks (they could close the code quote the
+// composer puts a selector in); error text is cut to 200 characters by its callers.
+const clip = (v, n) =>
+  String(v ?? '')
+    .replace(/`/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, n);
 const argText = a =>
   a?.value !== undefined
     ? typeof a.value === 'string'
@@ -168,7 +178,7 @@ function onFrameEvent(sessionId, method, p) {
       first && d.text && !first.includes(d.text) ? d.text + ' ' + first : first || d.text;
     report(sessionId, 'preview:error', {
       kind: 'exception',
-      text: clip(text, 500),
+      text: clip(text, 200),
       url: clip(d.url, 500),
       line: Number(d.lineNumber) + 1 || 0,
     });
@@ -177,7 +187,7 @@ function onFrameEvent(sessionId, method, p) {
     const top = p.stackTrace?.callFrames?.[0] || {};
     report(sessionId, 'preview:error', {
       kind: 'console',
-      text: clip((p.args || []).map(argText).join(' '), 500),
+      text: clip((p.args || []).map(argText).join(' '), 200),
       url: clip(top.url, 500),
       line: Number(top.lineNumber) + 1 || 0,
     });
@@ -190,7 +200,7 @@ function onFrameEvent(sessionId, method, p) {
     if (/directive 'webrtc'/.test(String(e.text || ''))) return;
     report(sessionId, 'preview:error', {
       kind: e.source === 'network' ? 'network' : 'log',
-      text: clip(e.text, 500),
+      text: clip(e.text, 200),
       url: clip(e.url, 500),
       line: Number(e.lineNumber) + 1 || 0,
     });

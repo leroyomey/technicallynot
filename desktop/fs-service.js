@@ -94,9 +94,13 @@ async function removeProject(target) {
 // or made by an agent, must not reach files outside it).
 const outside = () =>
   Object.assign(new Error('Path is outside the project folder.'), { code: 'SecurityError' });
+
+// Letter case is ignored only on Windows, as in same() above: on a case-sensitive disk (Linux, a
+// case-sensitive Mac volume) /home/u/App is another folder than /home/u/app (audit app-1 #9).
 const within = (full, base) => {
-  const f = full.toLowerCase(),
-    b = base.toLowerCase();
+  const fold = text => (process.platform === 'win32' ? text.toLowerCase() : text);
+  const f = fold(full),
+    b = fold(base);
   return f === b || f.startsWith(b.endsWith(path.sep) ? b : b + path.sep);
 };
 
@@ -409,6 +413,14 @@ module.exports = {
     // project); renaming over the link itself would replace the link with a plain file.
     const full = real(inside(rel, lane)),
       temp = full + '.tnai-' + process.pid + '-' + Date.now() + '.tmp';
+
+    // The project folder itself, or any folder in it, is not a file to save over. Refused before
+    // the temp file is made: for the project folder that temp file would land beside the project,
+    // outside it (audit app-1 #8).
+    if (await isDir(full))
+      throw Object.assign(new Error('That is a folder, not a file.'), {
+        code: 'TypeMismatchError',
+      });
     await fs.writeFile(temp, Buffer.from(bytes));
     for (let attempt = 0; ; attempt++) {
       try {

@@ -32,8 +32,8 @@ app.setPath('userData', path.join(profile, 'user-data'));
 
 // A test never writes into the user's real Codex home or ~/.agents/skills, whichever launcher
 // started it (check.ps1 sets neither): Codex's profile file (agent-registry.js codexProfile) and
-// the skill copies (skill-service.js syncHomeSkills) go into this run's profile. Learned
-// 2026-10-06: a test left the real profile's live-steps hook pointing at a deleted temp folder.
+// the skill copies (skill-service.js syncHomeSkills) go into this run's profile. Otherwise a test
+// can leave the real profile's live-steps hook pointing at a deleted temp folder.
 // real-* tests send a real prompt and keep the real Codex sign-in.
 if (!process.env.CODEX_HOME && !/^real-/.test(process.env.TNAI_SELFTEST))
   process.env.CODEX_HOME = path.join(profile, 'codex-home');
@@ -148,6 +148,11 @@ const byHand = !!process.env.TNAI_CHECK_BY_HAND;
 // - `await TnaiTest.openAllThreads()` opens the All threads page as the three-dots menu does and
 //   answers true once it shows the threads.
 // - `TnaiTest.sawTerminalPage()` is true when the old Terminal page was on screen in this test.
+// - `await TnaiTest.request(url, { method, body, headers })` sends an HTTP request from the main
+//   process and answers `{ ok, status, text, error }` (status 0 when nothing answered). A test
+//   uses it in place of `fetch`: the app's policy (index.html, `connect-src` none since
+//   2026-10-21) lets the page itself connect nowhere, so a test that stands in for a CLI's hook
+//   or reads a dev server must not do it from the page.
 function pageTestHelper() {
   const SEEN_KEY = 'tnai.test.saw-terminal-page';
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -257,7 +262,30 @@ function pageTestHelper() {
     });
   }
 
-  window.TnaiTest = { open, startThread, openAllThreads, shot, sawTerminalPage: () => seen };
+  // ---------- requests sent by the main process ----------
+  const requests = new Map();
+  let requestCount = 0;
+  window.__tnaiRequestDone = (id, answer) => {
+    requests.get(id)?.(answer);
+    requests.delete(id);
+  };
+
+  function request(url, options = {}) {
+    return new Promise(resolve => {
+      requestCount += 1;
+      requests.set(requestCount, resolve);
+      console.log('TNAI_REQUEST:' + JSON.stringify({ id: requestCount, url, options }));
+    });
+  }
+
+  window.TnaiTest = {
+    open,
+    startThread,
+    openAllThreads,
+    shot,
+    request,
+    sawTerminalPage: () => seen,
+  };
 }
 
 module.exports = win => {
@@ -353,6 +381,52 @@ module.exports = win => {
     if (event.message === 'TNAI_SAW_TERMINAL_PAGE') sawTerminalPage = true;
   });
 
+  // TNAI_CSP_REPORT="<policy>": the window's page also gets that policy in report-only mode (as a
+  // response header, which works for a page opened from disk; a <meta> cannot be report-only).
+  // Nothing is blocked by it; every violation is listed once at the end as a "csp" line, so a
+  // stricter policy can be tried on every page a test walks before it is switched on.
+  // Electron keeps one header listener per session, so during such a run the Live preview's own
+  // header listener (desktop/main.js) is not in place: walk preview frames in a normal run.
+  const cspViolations = new Set();
+  if (process.env.TNAI_CSP_REPORT) {
+    win.webContents.session.webRequest.onHeadersReceived(
+      { urls: ['file://*/*'] },
+      (details, done) => {
+        if (details.resourceType !== 'mainFrame') return done({});
+        const responseHeaders = { ...(details.responseHeaders || {}) };
+        responseHeaders['Content-Security-Policy-Report-Only'] = [process.env.TNAI_CSP_REPORT];
+        done({ responseHeaders });
+      }
+    );
+  }
+
+  // Every run: something the app's own policy (index.html) refused in the app's page fails the
+  // test with a "FAIL the app's policy refused" line, so a change that needs a new kind of source
+  // is caught by any test that reaches it (the policy is strict since 2026-10-21). Only the app's
+  // own page and its pop-outs count: a Live preview or `tnai show` frame has its own policy.
+  const cspRefused = new Set();
+  const noteViolation = (event, ownPage) => {
+    if (!/Content Security Policy/.test(event.message)) return;
+    const text = event.message.split('. ')[0].slice(0, 400);
+    if (/report-only/i.test(event.message)) cspViolations.add(text);
+    else if (ownPage) cspRefused.add(text);
+  };
+  const isOwnPage = (contents, event) =>
+    (!event.frame || event.frame === contents.mainFrame) &&
+    /^(file:|about:blank)/.test(contents.getURL() || 'about:blank');
+  win.webContents.on('console-message', event =>
+    noteViolation(event, isOwnPage(win.webContents, event))
+  );
+
+  // A pop-out (a blank child window the app fills) takes the opener's policy and reports in its
+  // own console.
+  app.on('browser-window-created', (_event, child) => {
+    if (child === win) return;
+    child.webContents.on('console-message', event =>
+      noteViolation(event, isOwnPage(child.webContents, event))
+    );
+  });
+
   // Every test sees the app as a user does: sessions are threads, and the route 'terminal' is
   // the All threads page. (Until 2026-10-13 the runner put most tests on a plain grid of terminal
   // panels, 105's mode `terminals`; no test asks for it any more, and one that puts the old
@@ -415,6 +489,30 @@ module.exports = win => {
         )
         .catch(() => {});
     });
+
+  // `TnaiTest.request` logs `TNAI_REQUEST:{"id":..,"url":..,"options":{..}}`; the request goes out
+  // from here and its answer to window.__tnaiRequestDone(id, answer).
+  win.webContents.on('console-message', async event => {
+    if (!event.message.startsWith('TNAI_REQUEST:')) return;
+    const { id, url, options = {} } = JSON.parse(event.message.slice('TNAI_REQUEST:'.length));
+    let answer;
+    try {
+      const response = await fetch(url, {
+        method: options.method || 'GET',
+        headers: options.headers,
+        body: options.body,
+      });
+      answer = { ok: response.ok, status: response.status, text: await response.text() };
+    } catch (error) {
+      answer = { ok: false, status: 0, text: '', error: error.message };
+    }
+    if (win.isDestroyed()) return;
+    win.webContents
+      .executeJavaScript(
+        'window.__tnaiRequestDone?.(' + JSON.stringify(id) + ',' + JSON.stringify(answer) + ')'
+      )
+      .catch(() => {});
+  });
 
   // A test can log `TNAI_SHOT:<name>` to save a screenshot of the current page; `await
   // TnaiTest.shot(name)` does that and waits until the file is written. A frame is asked for first,
@@ -500,6 +598,15 @@ module.exports = win => {
     // Terminals end before the app does (see openTerminals); the time limit leaves 15 s, so this
     // waits at most 6 s plus 2 s for a direct kill.
     const terminals = await endTerminals(6000);
+    if (process.env.TNAI_CSP_REPORT)
+      lines.push(
+        'note csp report-only: ' + cspViolations.size + ' different violations',
+        ...[...cspViolations].map(text => 'csp  ' + text)
+      );
+    if (cspRefused.size) {
+      lines.push(...[...cspRefused].map(text => "FAIL the app's policy refused: " + text));
+      code = 1;
+    }
     if (minimizedAt.length)
       lines.push('note window minimized during the run at ' + minimizedAt.join(', '));
     lines.push(

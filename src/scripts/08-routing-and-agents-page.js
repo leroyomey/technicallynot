@@ -387,6 +387,8 @@
       skills: ['skills-mode'],
       settings: ['settings-mode'],
       devices: ['devices-mode'],
+      // the Board page (157), opened from the three-dots menu
+      board: ['board-mode'],
     },
     ALL_MODES = [...new Set(Object.values(MODES).flat())];
 
@@ -439,6 +441,7 @@
     else if (view === 'skills') window.dispatchEvent(new CustomEvent('tnai:skills-page-shown'));
     else if (view === 'settings') window.dispatchEvent(new CustomEvent('tnai:settings-page-shown'));
     else if (view === 'devices') window.dispatchEvent(new CustomEvent('tnai:devices-page-shown'));
+    else if (view === 'board') window.dispatchEvent(new CustomEvent('tnai:board-page-shown'));
   }
   window.TnaiRoute = route;
 

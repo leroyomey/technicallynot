@@ -129,7 +129,7 @@ const TRANSCRIPT = [
       content: [
         {
           type: 'text',
-          text: 'Test received.\n\nDone:\n- read the brief\n- ran the tests\n\nWhere we stopped:\n- two tests fail\n\nStill open:\n- the footer\n\nYour turn:\n1. Reload the dev copy.\n\nHeads up: the old build stops working tomorrow.\n\n**1 · the cart total**\n- Outcome: Fixed\n- How we know: the test passes\n\n**2 · the footer**\n- Outcome: Still failing\n- How we know: seen\n\n**3 · the header**\n- Outcome: Partly\n\n**4 · the menu**\n- Outcome: Not started\n\nTechnically Not report\n- Did: answered the test message; checked the morning brief\n- Found: two tests fail\n- Changed: src/cart.js\n- Decided: left the three idle agents open\n- Remains: the footer\n- Untested: the header on a phone\n- Blockers: none of the checks ran\n- Next: fix the two tests\n- Ideas: a test for the footer\n\n- Decide: Which way should the test go? | 1. Left (recommended) | 2. Right',
+          text: 'Test received.\n\nDone:\n- read the brief\n- ran the tests\n\nWhere we stopped:\n- two tests fail\n\nStill open:\n- the footer\n\nYour turn:\n1. Reload the dev copy.\n\nHeads up: the old build stops working tomorrow.\n\n**1 · the cart total**\n- Outcome: Fixed\n- How we know: the test passes\n\n**2 · the footer**\n- Outcome: Still failing\n- How we know: seen\n\n**3 · the header**\n- Outcome: Partly\n\n**4 · the menu**\n- Outcome: Not started\n\nTechnically Not report\n- Did: answered the test message; checked the morning brief\n- Found: two tests fail\n- Changed: src/cart.js\n- Decided: left the three idle agents open\n- Remains: the footer\n- Untested: the header on a phone\n- Blockers: none of the checks ran\n- Next: fix the two tests\n- Ideas: a test for the footer\n\n- Decide: Which way should the test go? | 1. Left (recommended) | 2. Right\n\n- Decide: Which color for the badge? | 1. Blue (recommended) | 2. Green',
         },
       ],
     },
@@ -479,7 +479,9 @@ try {
 
   // A decision stays pressable however old, with nothing saved about it; pressing an option puts
   // the answer into the prompt box for this agent, and the option then shows as the user's choice.
-  const decideAsk = [...list().querySelectorAll('.tnt-decide')].pop();
+  const decideAsk = [...list().querySelectorAll('.tnt-decide')].find(ask =>
+    /Which way/.test(ask.textContent)
+  );
   const optionButtons = decideAsk ? [...decideAsk.querySelectorAll('button')] : [];
   check(
     optionButtons.length === 2 && optionButtons.every(button => !button.disabled),
@@ -502,11 +504,39 @@ try {
   talk.scrollTop = 0;
   await wait(50);
   const readingAt = talk.scrollTop;
+
+  // With one answer kept and the other decision of the report still open, the card offers "Send 1
+  // answer, leave the rest open" (122 paintSendKept). The kept count and the send are stood in
+  // for here: this report has no saved result, so 49 keeps nothing of its own.
+  const context = window.TnaiContext;
+  const realKept = context.keptCount;
+  const realSendKept = context.sendKeptNow;
+  const sentKept = [];
+  context.keptCount = () => 1;
+  context.sendKeptNow = (paneId, question) => {
+    sentKept.push(paneId + ': ' + question);
+    return true;
+  };
   try {
     optionButtons[0]?.click();
     await wait(150);
+    const sendRow = decideAsk?.closest('.tnt-report')?.querySelector('.tnt-decide-send button');
+    check(
+      !!sendRow && /Send 1 answer, leave the rest open/.test(sendRow.textContent),
+      'one decision answered, one open: the card offers "' +
+        (sendRow?.textContent || 'nothing') +
+        '"'
+    );
+    sendRow?.click();
+    await wait(150);
+    check(
+      sentKept.length === 1 && sentKept[0].startsWith(pane + ': '),
+      'pressing it sends the kept answers now (' + sentKept.length + ' sent)'
+    );
   } finally {
     window.TnaiAgents.send = realSend;
+    context.keptCount = realKept;
+    context.sendKeptNow = realSendKept;
   }
   check(
     talk.scrollHeight <= talk.clientHeight + 48 || Math.abs(talk.scrollTop - readingAt) < 4,
@@ -575,30 +605,24 @@ try {
       ' px view)'
   );
 
-  // Getting around: "Last report" and "Latest" float at the bottom right while
-  // the reader is away from where they lead; sending a prompt brings the thread to its newest line;
+  // Getting around: "Latest" floats at the bottom left while
+  // the reader is away from the newest line; sending a prompt brings the thread to its newest line;
   // a prompt waiting for the agent shows at the end of the conversation.
   const frames = () =>
     new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
   const jumpButton = kind => island.querySelector('.tnt-jump-btn[data-jump="' + kind + '"]');
-  const inView = el => {
-    const b = el.getBoundingClientRect(),
-      t = talk.getBoundingClientRect();
-    return b.bottom > t.top && b.top < t.bottom;
-  };
   talk.scrollTop = 0;
   await frames();
   check(
     talk.scrollHeight <= talk.clientHeight + 48 || shown(jumpButton('latest')),
     'scrolled to the top of a long conversation: "Latest" shows'
   );
-  const reportCard = [...list().querySelectorAll('.tnt-report')].pop();
-  if (reportCard && !inView(reportCard)) {
-    check(shown(jumpButton('report')), 'the last report is out of view: "Last report" shows');
-    jumpButton('report').click();
-    await frames();
-    check(inView(reportCard), '"Last report" brings the newest report card into view');
-  }
+
+  // "Last report" was removed (the user found it useless): only "Latest" is left.
+  check(
+    !jumpButton('report') && island.querySelectorAll('.tnt-jump-btn').length === 1,
+    'only "Latest" floats over the conversation; there is no "Last report"'
+  );
   if (shown(jumpButton('latest'))) {
     jumpButton('latest').click();
     await frames();
@@ -740,6 +764,62 @@ try {
   } finally {
     threadList.thread = realThread;
     window.dispatchEvent(new CustomEvent('tnai:threads-painted'));
+  }
+
+  // A code block's copy icon (user, 2026-10-19): in the block's top right corner, inside it; a
+  // press copies the whole block, the long line out of view too; Ctrl+A inside selects only it.
+  const longLine = 'Create a tall portrait image, ' + 'very wide words '.repeat(20) + 'END';
+  await main('appendTranscript', pane, [
+    said(
+      'msg_code_block',
+      'Here is the prompt:\n\n```\n' + longLine + '\nsecond line\n```\n\nDone.'
+    ),
+  ]);
+  const codeBox = await until(() => [...list().querySelectorAll('.tnt-code')].pop(), 8000);
+  const copyButton = codeBox?.querySelector('.tnt-code-copy');
+  check(!!copyButton, 'a code block in a reply has a copy button');
+  if (copyButton) {
+    const boxRect = codeBox.getBoundingClientRect();
+    const buttonRect = copyButton.getBoundingClientRect();
+    check(
+      buttonRect.right <= boxRect.right &&
+        boxRect.right - buttonRect.right <= 8 &&
+        buttonRect.top - boxRect.top <= 8 &&
+        buttonRect.top >= boxRect.top,
+      'the copy button sits in the block’s top right corner, inside it (' +
+        Math.round(boxRect.right - buttonRect.right) +
+        ' px from the right, ' +
+        Math.round(buttonRect.top - boxRect.top) +
+        ' px from the top)'
+    );
+    const realClipboard = navigator.clipboard.writeText;
+    let copied = null;
+    navigator.clipboard.writeText = async text => {
+      copied = text;
+    };
+    try {
+      copyButton.click();
+      await until(() => copied !== null, 2000);
+    } finally {
+      navigator.clipboard.writeText = realClipboard;
+    }
+    check(
+      copied === longLine + '\nsecond line',
+      'a press copies the whole block, the part out of view too'
+    );
+    check(
+      !!(await until(() => codeBox.querySelector('.tnt-code-said[data-on]'), 1000)),
+      'after a press, "Copied" shows'
+    );
+    const pre = codeBox.querySelector('pre');
+    pre.focus();
+    pre.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true }));
+    check(
+      window.getSelection().toString() === longLine + '\nsecond line',
+      'Ctrl+A inside a block selects only that block'
+    );
+    window.getSelection().removeAllRanges();
+    await shot('thread-readable-code-copy');
   }
 
   await window.TnaiTest.openAllThreads();

@@ -249,6 +249,27 @@ async function alert(kind, paneId, detail) {
   return r.ok;
 }
 
+// The one line leaves the PC, so it never carries what may hold a secret (audit app-5 #9): a
+// permission request names only its tool ("Bash", never the command), and long token-like words
+// and the word after "Bearer", "token", "password" and the like are masked.
+function hideSecrets(text) {
+  return String(text ?? '')
+    .replace(
+      /\b(bearer\s+|(?:token|api[_-]?key|key|password|passwd|secret)\s*[:=]\s*)\S+/gi,
+      '$1••••'
+    )
+    .replace(/[\w+/=.-]{24,}/g, word => {
+      const path = /[\\/]/.test(word) && /\.\w{1,6}$/.test(word);
+      return !path && /\d/.test(word) && /[a-z]/i.test(word) ? '••••' : word;
+    });
+}
+
+function needsYouLine(item) {
+  const detail = String(item?.detail || '');
+  if (item?.kind === 'permission') return item.tool || detail.split(':')[0];
+  return hideSecrets(detail);
+}
+
 // ---- Events from main.js ----
 
 let items = new Map(); // "Needs you" item id -> item, from the latest attention:change
@@ -269,7 +290,7 @@ function event(channel, payload) {
         if (!items.has(id) && !pending.has(id)) {
           const t = setTimeout(() => {
             pending.delete(id);
-            if (items.has(id)) alert('needsYou', it.paneId, items.get(id).detail || '');
+            if (items.has(id)) alert('needsYou', it.paneId, needsYouLine(items.get(id)));
           }, SETTLE_MS);
           t.unref?.();
           pending.set(id, t);
@@ -289,7 +310,7 @@ function event(channel, payload) {
       ended.set(payload.paneId, payload.endedAt);
       if (NOT_FINISHED.has(payload.endedBy || '') || Date.now() - payload.endedAt > 2 * 60 * 1000)
         return;
-      alert('finished', payload.paneId, payload.task || '');
+      alert('finished', payload.paneId, hideSecrets(payload.task || ''));
     } else if (
       channel === 'agent:loop' &&
       payload?.on &&
@@ -398,6 +419,8 @@ module.exports = {
             url = null;
           },
           settleMs: SETTLE_MS,
+          hideSecrets,
+          needsYouLine,
         }
       : null,
 };

@@ -921,6 +921,9 @@
   }
 
   async function confirmDiscard() {
+    // A save in flight finishes first, so "Discard" never answers for text that is already being
+    // written to disk (audit app-4 #3).
+    while (current?.saving) await new Promise(resolve => setTimeout(resolve, 50));
     if (!isDirty()) return true;
     const ok = await askDiscard(current.path);
     if (ok) drafts.drop(current.path);
@@ -942,10 +945,14 @@
         return {};
       }
     },
+    // false when the store is full: the caller says so instead of the edit being lost unseen
     write(all) {
       try {
         localStorage.setItem(this.key, JSON.stringify(all));
-      } catch {}
+        return true;
+      } catch {
+        return false;
+      }
     },
     get(path) {
       return this.all()[path] || null;
@@ -964,7 +971,14 @@
       if (isDirty()) {
         const all = this.all();
         all[current.path] = { text: area.value, modified: current.modified, at: Date.now() };
-        this.write(all);
+
+        // Too large to keep (audit app-4 #2): the edit stays unsaved in the box and the user is
+        // told to save it, since a restart would lose it.
+        if (!this.write(all))
+          setMessage(
+            'This edit is too large to keep as a draft. Save the file to keep it.',
+            'error'
+          );
       } else this.drop(current.path);
     },
     save() {
@@ -1526,7 +1540,8 @@
     const file = current,
       area = editor.querySelector('.repo-editor-text:not([readonly])');
     if (!file?.editable || file.saving || !area || !isDirty()) return;
-    const output = file.eol === '\r\n' ? area.value.replace(/\n/g, '\r\n') : area.value;
+    const typed = area.value,
+      output = file.eol === '\r\n' ? typed.replace(/\n/g, '\r\n') : typed;
     file.saving = true;
     setMessage('Saving ' + display(file.path) + '…');
     renderState();
@@ -1573,7 +1588,12 @@
         verifiedAt: Date.now(),
         saving: false,
       });
-      drafts.drop(file.path);
+
+      // Only the draft of what was written goes: text typed during the save (its draft, or the box
+      // when the file is still open) is kept (audit app-4 #3).
+      const draft = drafts.get(file.path),
+        box = current === file ? editor.querySelector('.repo-editor-text:not([readonly])') : null;
+      if (box ? box.value === typed : !draft || draft.text === typed) drafts.drop(file.path);
       if (current === file) {
         renderMeta();
         setMessage(

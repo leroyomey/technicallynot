@@ -455,15 +455,67 @@ function command(seg, depth) {
   return '';
 }
 
+// Commands that print their arguments, so `echo "git stash" | bash` feeds that text to a shell.
+const PRINTERS = new Set(['echo', 'printf', 'print', 'write-output', 'write-host', 'write']);
+
+// Shell options that give the shell its own command line or script instead of standard input.
+const OWN_SCRIPT = /^(?:-c|-\w*c|-command|-encodedcommand|-ec|-e|-file|-f|\/c|\/k|\/r)$/i;
+
+// The command's words after leading `NAME=value` assignments, or [] when there are none.
+function commandWords(seg) {
+  let k = 0;
+  while (k < seg.length && /^\w+=/.test(seg[k].t)) k++;
+  return seg.slice(k);
+}
+
+// True when this command is a shell that reads its commands from standard input: only options,
+// none of which gives it a command line or a script file (`bash`, `sh -s`, `pwsh -Command -`).
+function readsStdin(seg) {
+  const words = commandWords(seg);
+  if (!words.length || !SHELLS.has(base(words[0].t))) return false;
+  const rest = words.slice(1).map(w => w.t);
+  for (let j = 0; j < rest.length; j++) {
+    const word = rest[j];
+    if (word === '-' || word === '-s') continue;
+    if (OWN_SCRIPT.test(word)) {
+      if (rest[j + 1] === '-') {
+        j++;
+        continue;
+      }
+      return false;
+    }
+    if (!word.startsWith('-') && !word.startsWith('/')) return false;
+  }
+  return true;
+}
+
 // The reason to refuse this shell command, or ''.
 function guard(text, depth = 0) {
   if (depth > 4) return '';
   const src = String(text || '');
-  for (const ps of [false, true])
-    for (const seg of parse(src, ps)) {
+  for (const ps of [false, true]) {
+    const segs = parse(src, ps);
+    for (const seg of segs) {
       const r = command(seg, depth);
       if (r) return r;
     }
+
+    // A printed text that a shell in the same command line reads from standard input is a
+    // command line too. Without such a shell it is only text.
+    if (!segs.some(readsStdin)) continue;
+    for (const seg of segs) {
+      const words = commandWords(seg);
+      if (!words.length || !PRINTERS.has(base(words[0].t))) continue;
+      const printed = words
+        .slice(1)
+        .filter(w => w.q || !w.t.startsWith('-'))
+        .map(w => w.t)
+        .join(' ')
+        .replace(/\\n/g, '\n');
+      const r = guard(printed, depth + 1);
+      if (r) return r;
+    }
+  }
   return '';
 }
 

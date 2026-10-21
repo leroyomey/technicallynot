@@ -1,14 +1,17 @@
 /*
  * Technically Not tools · desktop-check/tests/voice-lost-audio.main.js — Main-process side of
- * voice-lost-audio.js: a local server whose one page answers after a wait. The test asks it with a
- * blocking request, which holds the window's thread for that long without using the processor (no
- * busy loop), the way a heavy redraw would. It also counts the window's engine warm-ups.
+ * voice-lost-audio.js: holds the window's thread for a set time without using the processor (no
+ * busy loop), the way a heavy redraw would. The page runs a `debugger;` statement; with the
+ * DevTools debugger attached here, the page stops there and this side lets it go on after the wait.
+ * (Until 2026-10-21 the page held itself with a blocking request to a local page that answered
+ * late; the app's policy lets the page connect nowhere since then.) It also counts the window's
+ * engine warm-ups.
  */
 'use strict';
-const http = require('http');
 module.exports = win => {
-  let server = null;
   let warms = 0;
+  let holdMs = 0;
+  let onPaused = null;
   return {
     // Counts the window's engine warm-ups (voice:warm) instead of starting the engine: a handler on
     // the window's own channel answers before the app's.
@@ -26,29 +29,29 @@ module.exports = win => {
     warms() {
       return warms;
     },
-    async serve() {
-      if (!server) {
-        server = http.createServer((req, res) => {
-          const ms = Math.min(
-            2000,
-            Math.max(0, +new URL(req.url, 'http://x').searchParams.get('ms') || 0)
-          );
+
+    // After this, the page's next `debugger;` statement holds its thread for `ms`.
+    async armHold(ms) {
+      holdMs = Math.min(2000, Math.max(0, Number(ms) || 0));
+      const tools = win.webContents.debugger;
+      if (!tools.isAttached()) tools.attach('1.3');
+      if (!onPaused) {
+        onPaused = (_event, method) => {
+          if (method !== 'Debugger.paused') return;
           setTimeout(() => {
-            res.writeHead(200, {
-              'content-type': 'text/plain',
-              'access-control-allow-origin': '*',
-              'cache-control': 'no-store',
-            });
-            res.end('ok');
-          }, ms);
-        });
-        await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+            if (tools.isAttached()) tools.sendCommand('Debugger.resume').catch(() => {});
+          }, holdMs);
+        };
+        tools.on('message', onPaused);
       }
-      return 'http://127.0.0.1:' + server.address().port + '/';
+      await tools.sendCommand('Debugger.enable');
+      return true;
     },
-    stop() {
-      server?.close();
-      server = null;
+    disarm() {
+      const tools = win.webContents.debugger;
+      if (onPaused) tools.removeListener('message', onPaused);
+      onPaused = null;
+      if (tools.isAttached()) tools.detach();
       return true;
     },
   };

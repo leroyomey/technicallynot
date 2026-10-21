@@ -1850,7 +1850,9 @@ function target() {
       'wiring: an offer and a prompt with files are operations (taken only after admit), and "filed" counts as a reply',
       /const OPS = new Set\(\[[^\]]*'file'[^\]]*'promptf'[^\]]*\]\)/.test(src) &&
         /const REPLIES = new Set\(\[[^\]]*'filed'[^\]]*\]\)/.test(src) &&
-        /if \(\s*controlOn\(from\)[^;]*?\badmit\(from,[^;]*?\bcontrol\.receive\(from, shapeOp\(obj\)/.test(
+        // the place the link admits is kept (it is given back when the rules send nothing), and
+        // only a taken place reaches control.receive
+        /const place =\s*controlOn\(from\)[^;]*?\badmit\(from,[^;]*?;\s*if \(place\) \{\s*const r = control\.receive\(from, shapeOp\(obj\)/.test(
           src
         )
     );

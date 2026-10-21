@@ -6,7 +6,8 @@
 // timer, Stop) shows around the area. The frame is never in the clip: it is drawn outside the area,
 // and its window is hidden from screen capture (setContentProtection; on Linux only the first
 // holds). Stop: the frame's Stop button, the snapshot key (snapshot-service.js) or the time limit.
-// The clip is saved in the attachments folder as <id>-clip.webm plus up to 8 PNG frames in order
+// The clip is saved in the attachments folder as <id>-clip.mp4 (or <id>-clip.webm where the
+// recorder cannot write MP4) plus up to 8 PNG frames in order
 // (agents read pictures, not video); start() resolves { saved, text, video, frames, ms } or {
 // cancelled, error }.
 'use strict';
@@ -93,7 +94,9 @@ const stamp = () => {
 // Writes the clip and its frames next to each other in today's attachments folder; returns their
 // paths.
 function save(out) {
-  const video = bytes(out?.webm, MAX_VIDEO),
+  // `video` with `mp4` since 2026-10-15; `webm` is the older recorder's name for the same bytes.
+  const video = bytes(out?.video || out?.webm, MAX_VIDEO),
+    kind = out?.mp4 === true ? '.mp4' : '.webm',
     frames = (Array.isArray(out?.frames) ? out.frames : [])
       .slice(0, MAX_FRAMES)
       .map(f => bytes(f, MAX_FRAME));
@@ -103,7 +106,7 @@ function save(out) {
     id = crypto.randomBytes(4).toString('hex');
   fs.mkdirSync(folder, { recursive: true });
   const file = name => path.join(folder, id + '-clip' + name);
-  const names = ['.webm', ...frames.map((_f, i) => '-' + (i + 1) + '.png')];
+  const names = [kind, ...frames.map((_f, i) => '-' + (i + 1) + '.png')];
   try {
     [video, ...frames].forEach((data, i) => fs.writeFileSync(file(names[i]), data));
   } catch (error) {
@@ -113,7 +116,7 @@ function save(out) {
       } catch {}
     throw error;
   } // a clip that could not be written whole leaves no part of itself behind
-  return { video: file('.webm'), frames: frames.map((_f, i) => file('-' + (i + 1) + '.png')) };
+  return { video: file(kind), frames: frames.map((_f, i) => file('-' + (i + 1) + '.png')) };
 }
 
 // region: the area in capture pixels of `display` ({ x, y, width, height }, as snapshot-service's

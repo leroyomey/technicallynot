@@ -27,12 +27,27 @@ const MSG_PER_MIN = 120;
 const MAX_MSG = 8192;
 const MAX_SOCKETS = 8; // computers and phones connected at once
 
+// device ids thrown out with the secret (revoke) that are kept refused
+const MAX_REVOKED = 256;
+
 // what computers send each other; the relay's own kinds are hello, presence, err and bye
 const KINDS = new Set(['pair', 'hs', 'msg']);
 
-// Close codes the app reads: 4001 replaced by a newer socket of the same device, 4008 flooding.
+// Close codes the app reads: 4001 replaced by a newer socket of the same device, 4008 flooding,
+// 4009 thrown out with the secret (revoke), 4010 came in under the shared phone key, which is
+// no longer taken (retirePhoneKey).
 
 const isOpen = ws => ws.readyState === 1;
+
+// How the id of every phone begins (index.js PHONE_ID_START).
+const PHONE_ID_START = 'ph-';
+const revokedKey = d => 'x:' + d;
+
+// Older phone pages sign with one shared phone key, which speaks for every phone id. Once a phone
+// proved with its own key, or a phone was thrown out, that key is no longer taken: "pk" is kept
+// and a proof under the shared key is refused as "invalid_proof" (the words an older page already
+// shows: check the secret under Change), with `why` for this build's page.
+const PHONE_KEY_ENDED = 'pk';
 
 // Nothing is kept in memory between calls (the object sleeps between them): the device id and the
 // message count live on the socket's attachment, everything else in storage: "d:<device id>" =
@@ -52,6 +67,7 @@ export class RelayHub {
     if (url.pathname === '/connect') return this.connect(url);
     if (url.pathname === '/presence') return this.presence();
     if (url.pathname === '/drop') return this.drop(url);
+    if (url.pathname === '/revoke') return this.revoke(url);
 
     // asked by the Worker only (index.js ticketKeyOf); no call of a device is passed on to it
     if (url.pathname === '/key') return json(200, { k: await this.ticketKey() });
@@ -120,8 +136,18 @@ export class RelayHub {
   async ask(url) {
     const d = url.searchParams.get('d'),
       p = Number(url.searchParams.get('p')),
-      i = url.searchParams.get('i') || '';
+      i = url.searchParams.get('i') || '',
+      // the kind of key that signed the proof: 'secret', 'device' or 'phone' (index.js proven)
+      by = url.searchParams.get('b') || '';
     if (!d || !Number.isFinite(p)) return json(400, { error: 'invalid_proof' });
+
+    // thrown out by the owner of the secret (revoke below): nothing of it is counted or kept
+    if (await this.isRevoked(d)) return json(403, { error: 'device_revoked' });
+
+    // the shared phone key after a phone moved to its own key, or after a phone was thrown out
+    const phoneKeyEnded = !!(await this.ctx.storage.get(PHONE_KEY_ENDED));
+    if (by === 'phone' && phoneKeyEnded)
+      return json(401, { error: 'invalid_proof', why: 'phone_key_retired' });
     let rec = await this.ctx.storage.get('d:' + d);
     if (!rec) {
       // Full: first forget what is long gone, so a relay whose old computers are no longer used
@@ -133,7 +159,19 @@ export class RelayHub {
     if (p <= (rec.p || 0)) return json(401, { error: 'proof_used', after: rec.p });
     const n = rec.h === hour ? rec.n || 0 : 0;
     if (n >= CALLS_PER_HOUR) return json(429, { error: 'rate_limited' });
-    await this.ctx.storage.put('d:' + d, { ...rec, p, h: hour, n: n + 1, ...(i ? { i } : {}) });
+
+    // A phone proved with its own key: it has moved, so the shared key is no longer taken, and
+    // sockets that came in under it are closed.
+    if (by === 'device' && d.startsWith(PHONE_ID_START) && !phoneKeyEnded) await this.endPhoneKey();
+
+    // `b` remembers which kind of key the issued ticket was asked with (connect marks the socket)
+    await this.ctx.storage.put('d:' + d, {
+      ...rec,
+      p,
+      h: hour,
+      n: n + 1,
+      ...(i ? { i, b: by } : {}),
+    });
 
     // A list read is done here. A ticket is signed by the Worker, which is handed the key with
     // this yes (the Worker reads it and passes on only the ticket).
@@ -153,13 +191,22 @@ export class RelayHub {
     if (r && r === rec.u) return json(401, { error: 'ticket_used' });
     if (!rec.i || r !== rec.i) return json(401, { error: 'invalid_ticket' });
 
+    // A ticket asked for under the shared phone key just before that key ended (a move or a
+    // phone revoke) lives a minute more: it opens nothing, and it is used up so it stays dead.
+    if (rec.b === 'phone' && (await this.ctx.storage.get(PHONE_KEY_ENDED))) {
+      await this.ctx.storage.put('d:' + d, { ...rec, i: '' });
+      return json(401, { error: 'invalid_proof', why: 'phone_key_retired' });
+    }
+
     // The limit first: a refused connect must not close the device's working socket.
     if (this.sockets().filter(ws => this.deviceOf(ws) !== d).length >= MAX_SOCKETS)
       return json(429, { error: 'too_many_devices' });
     for (const old of this.sockets(d)) this.shut(old, 4001, 'replaced'); // one socket per device
     const pair = new WebSocketPair();
     this.ctx.acceptWebSocket(pair[1], [d]);
-    pair[1].serializeAttachment({ d, w: nowSec(), n: 0 });
+
+    // `pk`: this socket came in under the shared phone key (endPhoneKey closes it)
+    pair[1].serializeAttachment({ d, w: nowSec(), n: 0, ...(rec.b === 'phone' ? { pk: 1 } : {}) });
     await this.ctx.storage.put('d:' + d, { ...rec, i: '', u: r, seen: nowSec() });
     this.say(pair[1], { kind: 'hello', device: d, online: this.online().filter(x => x !== d) });
 
@@ -224,11 +271,21 @@ export class RelayHub {
     await this.gone(ws);
   }
 
+  // thrown out with the secret (revoke below)
+  async isRevoked(d) {
+    return !!(await this.ctx.storage.get(revokedKey(d)));
+  }
+
   async gone(ws) {
     const d = this.deviceOf(ws);
 
     // a newer socket of the same device is still here
     if (!d || this.sockets(d).some(o => o !== ws)) return;
+
+    // Thrown out: revoke removed its record and told the others already. The close that answers
+    // revoke's own close must not write "seen" back, or the id is listed again and counts toward
+    // the 32 ids for 90 days.
+    if (await this.isRevoked(d)) return;
     const seen = nowSec(),
       rec = (await this.ctx.storage.get('d:' + d)) || {};
     await this.ctx.storage.put('d:' + d, { ...rec, seen });
@@ -259,6 +316,59 @@ export class RelayHub {
     if (this.online().includes(d)) return json(409, { error: 'online' });
     const had = await this.ctx.storage.delete('d:' + d);
     return json(200, { ok: true, removed: !!had });
+  }
+
+  // One device thrown out at the word of the secret's owner (index.js revoke): "x:<id>" is kept,
+  // its record goes, its socket is closed (4009) and the others are told it is offline. Every
+  // later call of that id is refused in ask(). undo lets it in again. p is the proof's time; only
+  // a newer one than the last revoke proof is taken ("rp"), so a copied call does nothing.
+  //
+  // A phone id throws out that phone alone, and ends the shared phone key of older phone pages
+  // (endPhoneKey): the lost phone may still hold that key, which would sign for a new phone id at
+  // once. Phones that already keep their own key stay; phones still on the shared key must type
+  // the secret again. The answer says `phone_key_ended: true` so the tool can say so. Undo lets
+  // the phone back; the shared key stays ended.
+  async revoke(url) {
+    const d = url.searchParams.get('d'),
+      p = Number(url.searchParams.get('p')),
+      undo = url.searchParams.get('undo') === '1';
+    if (!d || !Number.isFinite(p)) return json(400, { error: 'invalid_proof' });
+    const last = (await this.ctx.storage.get('rp')) || 0;
+    if (p <= last) return json(401, { error: 'proof_used', after: last });
+    await this.ctx.storage.put('rp', p);
+    const phone = d.startsWith(PHONE_ID_START);
+    const mark = revokedKey(d);
+    if (undo) {
+      const had = await this.ctx.storage.delete(mark);
+      return json(200, { ok: true, revoked: false, changed: !!had });
+    }
+    if (!(await this.ctx.storage.get(mark))) {
+      const held = (await this.ctx.storage.list({ prefix: 'x:' })).size;
+      if (held >= MAX_REVOKED) return json(429, { error: 'too_many_revoked' });
+      await this.ctx.storage.put(mark, nowSec());
+    }
+    await this.ctx.storage.delete('d:' + d);
+    const open = this.sockets(d);
+    for (const ws of open) this.shut(ws, 4009, 'revoked');
+    if (open.length)
+      this.tell(d, { kind: 'presence', device: d, online: false, last_seen: nowSec() });
+    if (!phone) return json(200, { ok: true, revoked: true });
+    await this.endPhoneKey();
+    return json(200, { ok: true, revoked: true, phone_key_ended: true });
+  }
+
+  // The shared phone key of older phone pages is no longer taken (PHONE_KEY_ENDED): kept once,
+  // and every socket that came in under it is closed (4010), the others told it is offline.
+  async endPhoneKey() {
+    if (!(await this.ctx.storage.get(PHONE_KEY_ENDED)))
+      await this.ctx.storage.put(PHONE_KEY_ENDED, nowSec());
+    for (const ws of this.sockets()) {
+      const at = ws.deserializeAttachment() || {};
+      if (!at.pk) continue;
+      this.shut(ws, 4010, 'phone_key_retired');
+      if (!this.sockets(at.d).some(o => o !== ws))
+        this.tell(at.d, { kind: 'presence', device: at.d, online: false, last_seen: nowSec() });
+    }
   }
 
   async presence() {

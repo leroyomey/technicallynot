@@ -101,6 +101,12 @@ function fakeBackend({ available = true } = {}) {
       return new Response(JSON.stringify({ error: 'Go to http://evil.example NOW' }), {
         status: 401,
       });
+
+    // a relay deployed before per-device keys: its front answer has no `keys`, a key is refused
+    if (mode === 'old-relay')
+      return new URL(url).pathname === '/'
+        ? new Response(JSON.stringify({ relay: 'technically-not', v: 1 }))
+        : new Response(JSON.stringify({ error: 'invalid_proof' }), { status: 401 });
     if (mode === 'long-ticket') return new Response(JSON.stringify({ ticket: 'x'.repeat(601) }));
     if (mode === 'long-list') {
       // 100 well-shaped ids with odd ones in between: a text, an id too short, one with a space
@@ -831,6 +837,11 @@ function fakeBackend({ available = true } = {}) {
         'id file: a full disk throws and leaves the saved id as it was',
         fullThrew && store.read() === '{"id":"first-id-0001"}\n'
       );
+      check(
+        'id file: and no half-written file is left beside it',
+        !fs.existsSync(file + '.tmp'),
+        fs.readdirSync(dir)
+      );
 
       // through the module: a full disk at the first start gives the reason
       const o = createOwnRelay({
@@ -855,6 +866,19 @@ function fakeBackend({ available = true } = {}) {
     const page = fs.readFileSync(
       path.join(__dirname, '..', 'src', 'scripts', '111-devices-page.js'),
       'utf8'
+    );
+
+    // every refusal that stops the link (STOPS in desktop/own-relay.js) has its sentence
+    const stopsBlock = (/const STOPPED = \{([\s\S]*?)\};/.exec(page) || [])[1] || '';
+    const stops = (/const STOPS = new Set\(\[([^\]]*)\]\)/.exec(
+      fs.readFileSync(path.join(__dirname, '..', 'desktop', 'own-relay.js'), 'utf8')
+    ) || [])[1];
+    const stopCodes = (stops || '').match(/[a-z_]+/g) || [];
+    check(
+      'page: every refusal that stops the link has a sentence (device_revoked included)',
+      stopCodes.includes('device_revoked') &&
+        stopCodes.every(code => new RegExp('\\b' + code + ':\\s*\\n?\\s*[\'"]').test(stopsBlock)),
+      stopCodes
     );
     const block = (/const ID_ERR = \{([\s\S]*?)\};/.exec(page) || [])[1] || '';
     const sentence = key => (new RegExp(key + ':\\s*"([^"]+)"').exec(block) || [])[1] || '';
@@ -1170,6 +1194,210 @@ function fakeBackend({ available = true } = {}) {
       'a relay with no secret says it is not set up',
       unset.status === 503 && unset.code === 'relay_not_set_up',
       unset
+    );
+  }
+
+  // ---- per-device keys (docs/plans/own-relay.md, "Per-device keys"), against the real relay ----
+  {
+    const crypto = require('crypto');
+    env = { RELAY_SECRET: SECRET, RELAY_HUB: shim.createHubNamespace(RelayHub, () => env) };
+    mode = 'relay';
+    t = Date.now();
+    const memoryIds = (id = '') => {
+      const s = {
+        text: id ? JSON.stringify({ id }) : null,
+        read: () => s.text,
+        write: x => (s.text = x),
+      };
+      return s;
+    };
+    const stored = b => JSON.parse(b.decrypt(Buffer.from(b.text, 'base64')).toString('utf8'));
+    const C = '33333333-3333-4333-8333-333333333333',
+      D = '44444444-4444-4444-8444-444444444444';
+
+    // Save: this computer's key is kept, never the secret
+    const keyBackend = fakeBackend();
+    const keyed = createOwnRelay({ backend: keyBackend, fetch, idStore: memoryIds(C) });
+    keyed.set('https://relay.test', SECRET);
+    const entry = stored(keyBackend);
+    const expectedKey = crypto
+      .createHmac('sha256', SECRET)
+      .update('device-key:' + C)
+      .digest('hex');
+    check(
+      'per-device: Save keeps this computer key for its id, and not the secret',
+      entry.key === expectedKey &&
+        entry.id === C &&
+        cleanSecret(entry.secret) === null &&
+        !keyBackend.decrypt(Buffer.from(keyBackend.text, 'base64')).toString().includes(SECRET),
+      Object.keys(entry)
+    );
+    const ticketC = await keyed.ticket(C).catch(e => e);
+    check(
+      'per-device: the key buys a ticket from the real relay',
+      typeof ticketC === 'string',
+      ticketC
+    );
+    check(
+      'per-device: it signs for no other id (nothing is sent)',
+      (await keyed.ticket(D).catch(e => e)).code === 'device_required'
+    );
+
+    // what a stolen key can do at the relay: its own id, no other
+    const signed = async (id, key, what = 'ticket') => {
+      const time = Date.now() + Math.floor(Math.random() * 1000);
+      const proof = crypto
+        .createHmac('sha256', key)
+        .update(`proof:${what}:relay.test:${id}:${time}`)
+        .digest('hex');
+      return worker.fetch(
+        new Request('https://relay.test/remote/ticket', {
+          method: 'POST',
+          headers: { 'X-Relay-Device': id, 'X-Relay-Time': String(time), 'X-Relay-Proof': proof },
+        }),
+        env
+      );
+    };
+    check(
+      "per-device: a stolen key is refused for another computer's id and for a phone id",
+      (await signed(D, entry.key)).status === 401 &&
+        (await signed('ph-0123456789', entry.key)).status === 401
+    );
+
+    // a relay saved by an earlier build (the secret) is moved over at its next read
+    const oldBackend = fakeBackend();
+    createOwnRelay({ backend: oldBackend, fetch }).set('https://relay.test', SECRET);
+    check(
+      'per-device: (stand-in) an earlier save holds the secret',
+      'secret' in stored(oldBackend)
+    );
+    const moved = createOwnRelay({ backend: oldBackend, fetch, idStore: memoryIds(D) });
+    check('per-device: the old save is read as a relay', moved.active() === true);
+    const after = stored(oldBackend);
+    check(
+      'per-device: and saved again as the key of this computer, without the secret',
+      after.id === D && /^[0-9a-f]{64}$/.test(after.key) && cleanSecret(after.secret) === null,
+      Object.keys(after)
+    );
+    t = Date.now() + 5;
+    check(
+      'per-device: the moved relay still buys tickets',
+      typeof (await moved.ticket(D).catch(e => e)) === 'string'
+    );
+
+    // this computer's id cannot be read: the secret is kept, so the next start still works
+    const lockedIds = {
+      read: () => {
+        throw Object.assign(new Error('busy'), { code: 'EBUSY' });
+      },
+      write: () => {},
+    };
+    const lockedBackend = fakeBackend();
+    createOwnRelay({ backend: lockedBackend, fetch, idStore: lockedIds }).set(
+      'https://relay.test',
+      SECRET
+    );
+    check(
+      'per-device: with the id unreadable, Save keeps the secret (a key for this run only would not sign later)',
+      'secret' in stored(lockedBackend) && !('key' in stored(lockedBackend))
+    );
+
+    // a key saved for another id (the id file was replaced) is held, not used
+    const otherIdBackend = fakeBackend();
+    createOwnRelay({ backend: otherIdBackend, fetch, idStore: memoryIds(C) }).set(
+      'https://relay.test',
+      SECRET
+    );
+    const replaced = createOwnRelay({ backend: otherIdBackend, fetch, idStore: memoryIds(D) });
+    const seenBefore = seen.length;
+    check(
+      'per-device: a key for another id is held as a secret no longer taken, and nothing is sent',
+      replaced.get().problem === 'old_secret' &&
+        replaced.active() === false &&
+        replaced.held() === true &&
+        (await replaced.ticket(D).catch(e => e)).code === 'no_relay' &&
+        seen.length === seenBefore,
+      replaced.get()
+    );
+
+    // revoked on the relay (by the secret's owner): the link stops and says why
+    const revokeTime = Date.now() + 10;
+    const revoked = await worker.fetch(
+      new Request('https://relay.test/remote/revoke?d=' + C, {
+        method: 'POST',
+        headers: {
+          'X-Relay-Device': 'relay-owner',
+          'X-Relay-Time': String(revokeTime),
+          'X-Relay-Proof': crypto
+            .createHmac('sha256', SECRET)
+            .update(`proof:revoke:${C}:relay.test:relay-owner:${revokeTime}`)
+            .digest('hex'),
+        },
+      }),
+      env
+    );
+    t = Date.now() + 20;
+    const refused = await keyed.ticket(C).catch(e => e);
+    check(
+      'per-device: a revoked computer is refused, and the link stops on it (403 device_revoked)',
+      revoked.status === 200 && refused.status === 403 && refused.code === 'device_revoked',
+      [revoked.status, refused]
+    );
+
+    // An older build (0.3.73, the last before per-device keys) reads the file this build saves.
+    // It knows only `secret`: it must hold the relay as "secret no longer taken", never read
+    // "no relay" (a signed-in account would then remove every pairing).
+    const { execFileSync } = require('child_process');
+    const os = require('os');
+    let older = null;
+    try {
+      const code = execFileSync('git', ['show', 'v0.3.73:desktop/own-relay.js'], {
+        cwd: path.join(__dirname, '..'),
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const file = path.join(os.tmpdir(), 'tnai-own-relay-0.3.73-' + process.pid + '.js');
+      require('fs').writeFileSync(file, code);
+      older = require(file);
+      require('fs').unlinkSync(file);
+    } catch {
+      console.log('skipped: the 0.3.73 version is not in this copy of git');
+    }
+    if (older) {
+      const oldRead = older.createOwnRelay({ backend: keyBackend, fetch });
+      check(
+        'per-device: 0.3.73 reads a saved key as a relay held for its secret, not as no relay',
+        oldRead.get().problem === 'old_secret' && oldRead.held() === true,
+        oldRead.get()
+      );
+      check(
+        'per-device: and the mark it reads is no secret today either',
+        cleanSecret(stored(keyBackend).secret) === null &&
+          older.cleanSecret(stored(keyBackend).secret) === null
+      );
+    }
+
+    // A key refused by a relay deployed before keys: "deploy it again", not "check the secret"
+    const tooOldBackend = fakeBackend();
+    const tooOld = createOwnRelay({ backend: tooOldBackend, fetch, idStore: memoryIds(C) });
+    tooOld.set('https://relay.test', SECRET);
+    mode = 'old-relay';
+    const oldAnswer = await tooOld.ticket(C).catch(e => e);
+    mode = 'relay';
+    check(
+      'per-device: a relay without keys says relay_too_old, and the link stops (403)',
+      oldAnswer.status === 403 && oldAnswer.code === 'relay_too_old',
+      oldAnswer
+    );
+
+    // a relay that knows keys and refuses this one (another secret) still says invalid_proof
+    env = { RELAY_SECRET: OTHER, RELAY_HUB: shim.createHubNamespace(RelayHub, () => env) };
+    t = Date.now() + 30;
+    const wrongAnswer = await tooOld.ticket(C).catch(e => e);
+    check(
+      'per-device: a relay with keys that refuses the key still says invalid_proof',
+      wrongAnswer.status === 401 && wrongAnswer.code === 'invalid_proof',
+      wrongAnswer
     );
   }
 

@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Technically Not desktop · snapshot-recorder.html — Hidden clip recorder (snapshot-clip.js): takes one display's capture frame by frame, draws the chosen area of each frame onto a canvas at the job's size and hands exactly that picture to the WebM recorder (one recorded frame per captured frame, up to the job's frame rate; no timer decides when a picture is taken), keeps one PNG a second, and answers with the video and up to maxFrames frames spread evenly over the clip. Ends when told (clip:finish) or at maxMs. Where the browser cannot hand frames over one by one, the older way runs: the capture plays in a video element and the canvas is redrawn on a timer. -->
+<!-- Technically Not desktop · snapshot-recorder.html — Hidden clip recorder (snapshot-clip.js): takes one display's capture frame by frame, draws the chosen area of each frame onto a canvas at the job's size and hands exactly that picture to the recorder (MP4 where it can write it, else WebM) (one recorded frame per captured frame, up to the job's frame rate; no timer decides when a picture is taken), keeps one PNG a second, and answers with the video and up to maxFrames frames spread evenly over the clip. Ends when told (clip:finish) or at maxMs. Where the browser cannot hand frames over one by one, the older way runs: the capture plays in a video element and the canvas is redrawn on a timer. -->
 <html>
 <head>
 <meta charset="utf-8">
@@ -25,8 +25,13 @@
       const still = async () => { try { stills.push(await createImageBitmap(canvas)); } catch (e) {} if (stills.length > 2 * job.maxFrames) { stills.filter((_b, i) => i % 2).forEach(b => b.close()); stills = stills.filter((_b, i) => i % 2 === 0); stillStep *= 2; } };
       const png = bitmap => new Promise(done => { const c = document.createElement('canvas'); c.width = bitmap.width; c.height = bitmap.height; c.getContext('2d').drawImage(bitmap, 0, 0); c.toBlob(done, 'image/png'); });
       const stat = { captured: 0, longestMs: 0, lateMs: 1000 / job.fps * 2.5, late: 0, last: null };
-      // VP8 first since 60 frames a second: it is the lighter one to make while recording, and every player of WebM reads it.
-      const type = ['video/webm;codecs=vp8', 'video/webm;codecs=vp9', 'video/webm'].find(t => MediaRecorder.isTypeSupported(t));
+      // MP4 (H.264) first since 2026-10-15: X and other sites take MP4 and refuse WebM. WebM stays the fallback for a recorder that
+      // cannot write MP4; there VP8 comes first since 60 frames a second: it is the lighter one to make while recording.
+      const type = ['video/mp4;codecs=avc1.64002A', 'video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp8', 'video/webm;codecs=vp9', 'video/webm'].find(t => MediaRecorder.isTypeSupported(t));
+      const mp4 = /^video\/mp4/.test(type);
+      // H.264 puts a key frame about every 1.7 s by default, and a clip then pulses at each one (smooth-video-encode skill): an MP4 clip
+      // gets one at the start only. The WebM fallback keeps the recorder's default.
+      const keys = mp4 ? { videoKeyFrameIntervalDuration: 3600000 } : {};
       const bits = job.bits || 2500000, chunks = [];
       // Frame by frame: each picture the screen capture delivers is cropped and recorded once, with its own time. Nothing here runs on a
       // clock, so a busy moment can delay a picture but never repeats or invents one.
@@ -47,7 +52,7 @@
         let lead = first.value; const warmFrom = lead.timestamp;
         while (lead.timestamp - warmFrom < 400000) { const next = await reader.read(); if (next.done) break; lead.close(); lead = next.value; }
         paint(lead); const t0 = lead.timestamp; lead.close();
-        recorder = new MediaRecorder(new MediaStream([made]), { mimeType: type, videoBitsPerSecond: bits });
+        recorder = new MediaRecorder(new MediaStream([made]), { mimeType: type, videoBitsPerSecond: bits, ...keys });
         pump = async () => {
           const head = new VideoFrame(canvas, { timestamp: 0 });
           try { await writer.write(head); } finally { head.close(); }
@@ -68,7 +73,7 @@
         const kx = video.videoWidth / job.screen.width, ky = video.videoHeight / job.screen.height;
         const draw = () => ctx.drawImage(video, r.x * kx, r.y * ky, r.width * kx, r.height * ky, 0, 0, job.width, job.height);
         draw();
-        recorder = new MediaRecorder(canvas.captureStream(job.fps), { mimeType: type, videoBitsPerSecond: bits });
+        recorder = new MediaRecorder(canvas.captureStream(job.fps), { mimeType: type, videoBitsPerSecond: bits, ...keys });
         let ticks = 0;
         timer = setInterval(() => { draw(); if (++ticks % job.fps === 0) still(); }, 1000 / job.fps);
       }
@@ -94,7 +99,7 @@
           for (let i = 0; i < count; i++) picked.push(stills[count === 1 ? stills.length - 1 : Math.round(i * (stills.length - 1) / (count - 1))]);
           const frames = []; for (const bitmap of picked) { const blob = await png(bitmap); if (blob) frames.push(new Uint8Array(await blob.arrayBuffer())); }
           stills.forEach(b => b.close());
-          api.done({ webm: new Uint8Array(await new Blob(chunks, { type }).arrayBuffer()), frames, ms, width: job.width, height: job.height, exact, stats: { captured: stat.captured, longestMs: Math.round(stat.longestMs), late: stat.late, codec: type } });
+          api.done({ video: new Uint8Array(await new Blob(chunks, { type }).arrayBuffer()), mp4, frames, ms, width: job.width, height: job.height, exact, stats: { captured: stat.captured, longestMs: Math.round(stat.longestMs), late: stat.late, codec: type } });
         }
       };
       recorder.start(1000);

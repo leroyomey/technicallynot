@@ -123,22 +123,20 @@ const tally = term => {
   return { twice, missing: words - seen.size, heads, rows: term.buffer.active.length };
 };
 
-// oneRow: a shrink by one row. As in the real log, the redraw then holds one row fewer than the
-// screen did, and xterm took the empty bottom row away, not the top one, so the top row is erased
-// and not printed again until the panel regrows (not part of this fix). There the
-// check is only "nothing twice, at most one row's words gone".
-const clean = (term, label, oneRow) => {
+// A shrink by one to three rows (the rows under Claude Code's input): as in the real log, the
+// redraw then holds one row fewer than the screen, and xterm takes the rows under the cursor away,
+// not the top ones. Before the fix the top rows were erased and not printed again until the panel
+// regrew (24 words missing at 152×30); now they must be in the scrollback.
+const clean = (term, label) => {
   const t = tally(term);
   check(
-    t.twice === 0 && (oneRow ? t.missing <= 30 : t.missing === 0) && t.heads === 1,
+    t.twice === 0 && t.missing === 0 && t.heads === 1,
     label +
       ': every word once, one report heading (' +
       t.twice +
       ' words twice, ' +
       t.missing +
-      ' missing' +
-      (oneRow ? ', the known top row' : '') +
-      ', ' +
+      ' missing, ' +
       t.heads +
       ' headings, ' +
       t.rows +
@@ -150,7 +148,11 @@ const steps = [
   [152, 31, 30],
   [152, 26, 30],
   [152, 31, 30],
-  [152, 30, 29, true],
+  [152, 30, 29],
+  [152, 31, 30],
+  [152, 29, 28],
+  [152, 31, 30],
+  [152, 28, 27],
   [152, 31, 30],
   [102, 15, 33],
   [152, 31, 30],
@@ -180,7 +182,7 @@ try {
     await write(term, first(152));
     await wait(100);
     clean(term, 'B live, first draw at 152×31');
-    for (const [c, r, k, oneRow] of steps) {
+    for (const [c, r, k] of steps) {
       term.resize(c, r);
       await wait(60);
       const data = redraw(c, r, k),
@@ -190,7 +192,7 @@ try {
         await wait(30);
       }
       await wait(200);
-      clean(term, 'B live, after the redraw at ' + c + '×' + r, oneRow);
+      clean(term, 'B live, after the redraw at ' + c + '×' + r);
     }
     const b = term.buffer.active;
     check(
@@ -277,6 +279,68 @@ try {
         t.heads +
         ' headings)'
     );
+  }
+
+  // (G) a redraw that starts in the middle of a row xterm re-wrapped: drawn at 152 columns, made
+  // 100 wide (xterm re-wraps the old rows), then redrawn from a row in the middle of a paragraph.
+  // The old row that holds the redraw's first words also holds older words: before the fix it
+  // stayed whole, with the first words shown twice. Three starting rows.
+  {
+    const at100 = [...rowsAt(100), ...chrome(100)];
+    const counts = [];
+    for (let count = 31; count < at100.length && counts.length < 3; count++)
+      if (at100[at100.length - count].startsWith('    w')) counts.push(count);
+    for (const count of counts) {
+      const { term } = await open();
+      term.resize(152, 31);
+      await write(term, first(152));
+      await wait(60);
+      term.resize(100, 31);
+      await wait(60);
+      await write(term, redraw(100, 31, count));
+      await wait(200);
+      clean(term, 'G redraw from the middle of a row (' + count + ' rows at 100×31)');
+    }
+    check(counts.length === 3, 'G: three starting rows in the middle of a paragraph');
+  }
+
+  // (H) Cursor Agent's answer to a change of width (read from its saved output 2026-10-15): every
+  // row erased from the bottom up (CSI 2K, CSI 1A, a few more than the screen has), then its whole
+  // output printed again from the top row. Live and as saved output.
+  {
+    const cursorRedraw = (cols, rows) =>
+      (E + '[2K' + E + '[1A').repeat(rows + 2) +
+      E +
+      '[2K' +
+      E +
+      '[G' +
+      [...rowsAt(cols), ...chrome(cols)].map(l => l + '\r\n').join('');
+    const { term } = await open();
+    term.resize(120, 30);
+    await write(term, first(120));
+    await wait(60);
+    for (const [c, r] of [
+      [90, 18],
+      [120, 30],
+      [70, 20],
+    ]) {
+      term.resize(c, r);
+      await wait(60);
+      await write(term, cursorRedraw(c, r));
+      await wait(200);
+      clean(term, 'H Cursor Agent live, after its redraw at ' + c + '×' + r);
+    }
+    const { term: saved, replay } = await open();
+    await replay(
+      sizeNote(120, 30) +
+        first(120) +
+        sizeNote(90, 18) +
+        cursorRedraw(90, 18) +
+        sizeNote(120, 30) +
+        cursorRedraw(120, 30)
+    );
+    await wait(300);
+    clean(saved, 'H Cursor Agent replay, after two redraws');
   }
 
   // (E) a table: Claude Code lays a table out again for the new width,

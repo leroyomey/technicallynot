@@ -10,6 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const errors = require('./agent-errors');
 
 const TEXT_MAX = 300,
   OPEN_MAX = 200,
@@ -77,12 +78,14 @@ function run(project, me, args, liveNames) {
   }
   if (action === 'add') {
     const text = rest.join(' ').replace(/\s+/g, ' ').trim().slice(0, TEXT_MAX);
-    if (!text) return { ok: false, error: 'Nothing to add: tnai tasks add TEXT.' };
+    if (!text)
+      return errors.fail('invalid', 'Nothing to add: tnai tasks add TEXT.', 'tnai tasks add TEXT');
     if (data.tasks.filter(t => !t.doneAt).length >= OPEN_MAX)
-      return {
-        ok: false,
-        error: 'This project already has ' + OPEN_MAX + ' open tasks; finish or remove some first.',
-      };
+      return errors.fail(
+        'full',
+        'This project already has ' + OPEN_MAX + ' open tasks; finish or remove some first.',
+        'tnai tasks, then tnai tasks done ID for the finished ones'
+      );
     const t = { id: data.next++, text, addedBy: me.name, at: Date.now() };
     data.tasks.push(t);
     save(project, data);
@@ -90,30 +93,38 @@ function run(project, me, args, liveNames) {
   }
   const t = data.tasks.find(x => x.id === idOf(rest[0]));
   if (!['take', 'release', 'done'].includes(action))
-    return {
-      ok: false,
-      error: 'Use tnai tasks [list] | add TEXT | take ID | release ID | done ID.',
-    };
+    return errors.fail(
+      'invalid',
+      'Use tnai tasks [list] | add TEXT | take ID | release ID | done ID.',
+      'tnai tasks'
+    );
   if (!t)
-    return {
-      ok: false,
-      error: 'No task #' + idOf(rest[0]) + ' here. `tnai tasks` lists the open ones.',
-    };
-  if (t.doneAt) return { ok: false, error: '#' + t.id + ' is already done.' };
+    return errors.fail(
+      'not_found',
+      'No task #' + idOf(rest[0]) + ' here. `tnai tasks` lists the open ones.',
+      'tnai tasks'
+    );
+  if (t.doneAt) return errors.fail('invalid', '#' + t.id + ' is already done.', 'tnai tasks');
   const mine = t.by === me.instance,
     othersLive = t.by && !mine && live.has(t.by);
   if (action === 'take') {
     if (mine) return { ok: true, text: 'You already have #' + t.id + '.' };
     if (othersLive)
-      return {
-        ok: false,
-        error: '#' + t.id + ' is taken by ' + who(t) + '. Pick a free task or ask it.',
-      };
+      return errors.fail(
+        'busy',
+        '#' + t.id + ' is taken by ' + who(t) + '. Pick a free task or ask it.',
+        'tnai tasks, then tnai tasks take ID of a free one'
+      );
     Object.assign(t, { by: me.instance, byName: me.name, takenAt: Date.now() });
     save(project, data);
     return { ok: true, text: 'You have #' + t.id + ': ' + t.text };
   }
-  if (othersLive) return { ok: false, error: '#' + t.id + ' belongs to ' + who(t) + '.' };
+  if (othersLive)
+    return errors.fail(
+      'busy',
+      '#' + t.id + ' belongs to ' + who(t) + '.',
+      'tnai send ' + (live.get(t.by) || t.byName || 'its owner') + ' MESSAGE'
+    );
   if (action === 'release') {
     delete t.by;
     delete t.byName;

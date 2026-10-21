@@ -11,6 +11,7 @@
     "deploy": "npx wrangler deploy",
     "setup-secret": "node tools/setup-secret.mjs",
     "check": "node tools/check.mjs",
-    "clean-up": "node tools/clean-up.mjs"
+    "clean-up": "node tools/clean-up.mjs",
+    "revoke": "node tools/revoke.mjs"
   }
 }

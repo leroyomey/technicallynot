@@ -38,13 +38,19 @@ function load() {
   try {
     raw = fs.readFileSync(file(), 'utf8');
   } catch {
-    return { keys: {}, broken: false };
+    return { keys: Object.create(null), broken: false };
   }
   try {
     const data = JSON.parse(safeStorage.decryptString(Buffer.from(raw, 'base64')));
-    return { keys: data && typeof data === 'object' ? data : {}, broken: false };
+
+    // No prototype: an account id such as `__proto__` finds no key (audit 2026-10-07, app-2 #12).
+    const keys = Object.create(null);
+    if (data && typeof data === 'object')
+      for (const id of Object.keys(data))
+        if (data[id] && typeof data[id] === 'object') keys[id] = data[id];
+    return { keys, broken: false };
   } catch {
-    return { keys: {}, broken: true };
+    return { keys: Object.create(null), broken: true };
   }
 }
 

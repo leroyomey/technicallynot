@@ -3,15 +3,15 @@
 // styles in src/styles/06-settings.css. Accounts: one card per agent CLI, its accounts as tiles
 // with fuel gauges (15 into #tnaiAccountsMount). Usage: the token dashboard (#tnaiUsageMount,
 // filled by 59). They were one section for a while; since 2026-09-29 they are separate again and
-// each id opens its own section. Agents: a sub-nav of five topics (While working, After finishing,
-// Custom agents, Delegation, Context), each with its live state read from its own controls, and one
-// panel per topic; long explanations sit in a "?" tip, related rows under small captions, custom
-// agents as a gallery of cards (17), Delegation limits from 43, Context from 54/76. General: the
-// accent color (32), preferences for open files (live AI change cards, read by 26) and, on Windows,
-// the PowerShell kept ready (10). Keyboard: the shortcut list (32), the snapshot key (62) and the
-// hold-to-talk key (70) in one card (#tnaiKeyboardMount). Remembers the last section per viewer.
-// window.TnaiSettings.open(tab) / get(key) / set(key, value); changes fire `tnai:setting-changed`
-// {key, value}.
+// each id opens its own section. Agents: a sub-nav of six topics (While working, After finishing,
+// Custom agents, Delegation, Context, Scheduled prompts from 155), each with its live state read
+// from its own controls, and one panel per topic; long explanations sit in a "?" tip, related rows
+// under small captions, custom agents as a gallery of cards (17), Delegation limits from 43,
+// Context from 54/76. General: the accent color (32), preferences for open files (live AI change
+// cards, read by 26) and, on Windows, the PowerShell kept ready (10). Keyboard: the shortcut list
+// (32), the snapshot key (62) and the hold-to-talk key (70) in one card (#tnaiKeyboardMount).
+// Remembers the last section per viewer. window.TnaiSettings.open(tab) / get(key) / set(key,
+// value); changes fire `tnai:setting-changed` {key, value}.
 (() => {
   const layout = document.querySelector('.layout');
   if (!layout) return;
@@ -109,6 +109,8 @@
           : note('Custom agents and their sub-agents run in the Technically Not desktop app.')) +
         '</div>' +
         '<div class="sa-pane" data-sa-pane="context" id="agentsColB" role="tabpanel"></div>' +
+        // Scheduled prompts: filled by 155 (desktop/prompt-schedules.js keeps them).
+        '<div class="sa-pane" data-sa-pane="sched" id="agentsSched" role="tabpanel"></div>' +
         '</div></div>',
     },
     // The small sections in one place (there were too many pages with one
@@ -329,6 +331,13 @@
           : on('.tnai-upkeep-set [data-k=on]')
             ? 'Suggests compacting'
             : 'No suggestions',
+    },
+    {
+      id: 'sched',
+      icon: 'clock',
+      title: 'Scheduled prompts',
+      // 155 fires a change on its pane whenever its list changes
+      state: () => window.TnaiPromptSchedules?.state?.() || (desktop ? '—' : 'Desktop app'),
     },
   ];
   const secNav = agentsPanel.querySelector('.sa-nav');

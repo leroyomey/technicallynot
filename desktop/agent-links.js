@@ -1,15 +1,15 @@
 /*
  * Technically Not desktop · agent-links.js — Who waits on whom, and who works together, among
- * agents that message each other. A WAIT is a fact from the `tnai`
- * command: agent A asked B something (`tnai ask`, or a `tnai send` holding a question and no "no
- * reply needed") and B has not answered. A LINK is inferred: two agents that sent each other
- * messages within QUIET_MS. Neither shares file locks or changes the user's teams (agent-teams.js),
- * and both end by themselves: a wait when B answers, when B finishes the task it read the question
- * in (A is told once), when B's panel closes (A is told), or after WAIT_MS; a link when both agents
- * have been at rest for REST_MS, when one starts a new task from the user, when a panel closes, or
- * after QUIET_MS without a message. Panel ids only; in memory only: nothing is saved. One timeout
- * for the next expiry, no polling. Main process only. Check: node
- * tools/desktop-check/links-check.js.
+ * agents that message each other. A WAIT is a fact from the `tnai` command: agent A asked B
+ * something (`tnai ask`, or a `tnai send` holding a question and no "no reply needed") and B has
+ * not answered. A LINK is inferred: two agents that sent each other messages within QUIET_MS.
+ * Neither shares file locks or changes the user's teams (agent-teams.js), and both end by
+ * themselves: a wait when B answers, when B finishes the task it read the question in (A is told
+ * once), when B's panel closes (A is told), when the CLI's own record shows A's or B's conversation
+ * was cleared (Claude Code only so far), or after WAIT_MS; a link when both agents have been at
+ * rest for REST_MS, when one starts a new task from the user, when a panel closes, or after
+ * QUIET_MS without a message. Panel ids only; in memory only: nothing is saved. One timeout for the
+ * next expiry, no polling. Main process only. Check: node tools/desktop-check/links-check.js.
  */
 'use strict';
 
@@ -28,6 +28,7 @@ const said = new Map(); // 'from>to' -> when from last messaged to
 const noticed = new Map();
 const busy = new Set(); // panels whose task is running
 const began = new Map(); // paneId -> when its running task started
+const clearSeen = new Map(); // paneId -> the clearedAt last handled for it
 
 // A CLI confirms a prompt by starting its task, so a delivery is often reported a moment AFTER the
 // task that reads it began: that task counts.
@@ -163,9 +164,13 @@ function delivered(from, to, ok = true) {
 }
 
 // agent-turns.js `agent:turn` (sent many times per task): only a start or an end not seen yet does
-// anything.
+// anything, and a clear not seen yet (`clearedAt`) is handled before the task it came with starts.
 function turn(p) {
   if (!p?.paneId || !p.startedAt) return;
+  if (p.clearedAt && clearSeen.get(p.paneId) !== p.clearedAt) {
+    clearSeen.set(p.paneId, p.clearedAt);
+    cleared(p.paneId);
+  }
   if (!p.endedAt && !busy.has(p.paneId)) return started(p.paneId, p.task || '');
   if (p.endedAt && busy.has(p.paneId))
     return ended(p.paneId, p.endedBy === 'stop' ? '' : p.endedBy || '');
@@ -173,10 +178,11 @@ function turn(p) {
 
 // What Technically Not and other agents type into a panel, after an optional "[TN.ai] ": agent and
 // app messages ("[from …]"), the CLI's own hand-backs, agent-graph.js tasks, follow-ups and reports
-// for sub-agents, the app's renderer notices (context upkeep 54, session skills 101) and slash
-// commands.
+// for sub-agents, the app's renderer notices (context upkeep 54: its compact and hand-off requests
+// and the successor's "[TN.ai handoff: …]"; session skills 101; the automatic next step of 51,
+// "[TN.ai auto-continue …]"; the usage-limit resume of 72) and slash commands.
 const NOT_USER =
-  /^(\[from\b|<task-notification>|<agent-message\b|\[Subagent hand-back\]|Sub-agent\b|(Task|New task|Follow-up|Revived for a related task) from |You are "[^"\n]*", a sub-agent that |Your context is at |The user (attached|took) |\/)/i;
+  /^(\[from\b|\[TN\.ai (handoff|auto-continue)\b|<task-notification>|<agent-message\b|\[Subagent hand-back\]|Sub-agent\b|(Task|New task|Follow-up|Revived for a related task) from |You are "[^"\n]*", a sub-agent that |Your context is at |You asked for \/|Technically Not hands your work |Your usage limit has reset\.|The user (attached|took) |\/)/i;
 
 function started(paneId, task) {
   busy.add(paneId);
@@ -225,10 +231,37 @@ function ended(paneId, reason = '') {
   done(any);
 }
 
+// The panel's conversation was cleared (agent-turns.js `clearedAt`, read from the CLI's own
+// record): the agent no longer knows what it asked or what it was asked. Its own questions stop
+// waiting (nobody to tell), a question to it that was already typed in ends and its asker is told
+// once, and its links end. A question Technically Not still holds for it stays: it arrives in the
+// new conversation.
+function cleared(paneId) {
+  let any = false;
+  for (const [k, w] of waits) {
+    if (w.from === paneId) {
+      waits.delete(k);
+      any = true;
+    } else if (w.to === paneId && w.delivered) {
+      waits.delete(k);
+      any = true;
+      noticed.set(dir(w.from, paneId), now());
+      tell(w.from, 'ended', paneId, 'cleared');
+    }
+  }
+  for (const [k, l] of links)
+    if (l.a === paneId || l.b === paneId) {
+      links.delete(k);
+      any = true;
+    }
+  done(any);
+}
+
 // The panel closed or its process ended: nothing waits on it any more, and whoever did is told.
 function gone(paneId) {
   let any = busy.delete(paneId);
   began.delete(paneId);
+  clearSeen.delete(paneId);
   for (const [k, w] of waits) {
     if (w.from !== paneId && w.to !== paneId) continue;
     waits.delete(k);
@@ -335,6 +368,7 @@ module.exports = {
       for (const m of [waits, links, said, noticed]) m.clear();
       busy.clear();
       began.clear();
+      clearSeen.clear();
       now = () => Date.now();
     },
   },

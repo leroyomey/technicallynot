@@ -20,6 +20,7 @@ const crypto = require('crypto');
 const { app } = require('electron');
 const sessionStore = require('./session-store'); // writeAtomic only
 const lifecycle = require('./agent-lifecycle');
+const errors = require('./agent-errors');
 
 // User-adjustable limits (Settings › Agents), saved in userData/agent-graph.json with the
 // identities and hidden instances.
@@ -554,12 +555,16 @@ async function call(paneId, name, args = {}, signal = null) {
   }
   if (far)
     return fail(
-      'This task came from an agent on another computer, so sub-agents are not available in it. Answer in your final message: it goes back by itself.'
+      'This task came from an agent on another computer, so sub-agents are not available in it. Answer in your final message: it goes back by itself.',
+      'refused',
+      'answer in your final message'
     );
   const parent = nodeOf(paneId);
   if (!parent)
     return fail(
-      'This session is not a custom agent, so it has no Technically Not sub-agents. Do the work yourself.'
+      'This session is not a custom agent, so it has no Technically Not sub-agents. Do the work yourself.',
+      'refused',
+      'do the work yourself'
     );
   busy.add(paneId);
   armClose(parent.id);
@@ -567,10 +572,16 @@ async function call(paneId, name, args = {}, signal = null) {
   if (name === 'tnai_subagents') return ok(list(parent));
   if (name === 'tnai_wait') return wait(parent, args, signal);
   if (name === 'tnai_assign') return assign(parent, args);
-  return fail('Unknown tool ' + name);
+  return fail(
+    'Unknown tool ' + name,
+    'invalid',
+    'tnai_delegate, tnai_assign, tnai_subagents or tnai_wait'
+  );
 }
 const ok = text => ({ content: [{ type: 'text', text }] });
-const fail = text => ({ content: [{ type: 'text', text }], isError: true });
+
+// A refused call: the sentence, then the code line (agent-errors.js) with the step that fixes it.
+const fail = (text, code, hint) => errors.toolFail(text, code, hint);
 
 function list(parent) {
   const kids = family(parent.parentKey).filter(k => !k.archived);
@@ -605,15 +616,26 @@ function findChild(parent, key) {
 // The checks every delegation passes. Anything refused tells the agent why and what to do instead.
 function refuse(parent, purpose, task, why, agent = 'Claude Code') {
   if (purpose.length < 3 || task.length < 20)
-    return 'Refused: give the sub-agent a clear purpose and a self-contained task.';
+    return {
+      code: 'invalid',
+      hint: 'tnai_delegate with a purpose and a task the sub-agent can do without asking',
+      text: 'Refused: give the sub-agent a clear purpose and a self-contained task.',
+    };
   if (why.length < 15)
-    return "Refused: explain why delegating beats doing it yourself. If it doesn't, keep working on it yourself.";
+    return {
+      code: 'invalid',
+      hint: 'tnai_delegate with why (a sentence), or do it yourself',
+      text: "Refused: explain why delegating beats doing it yourself. If it doesn't, keep working on it yourself.",
+    };
   if (parent.depth + 1 > settings.maxDepth)
-    return (
-      "Refused: the user's delegation depth limit (" +
-      settings.maxDepth +
-      ') is reached. Do this part yourself.'
-    );
+    return {
+      code: 'full',
+      hint: 'do this part yourself',
+      text:
+        "Refused: the user's delegation depth limit (" +
+        settings.maxDepth +
+        ') is reached. Do this part yourself.',
+    };
   const text = purpose + ' ' + task;
   const same = [...nodes.values()].find(
     n =>
@@ -623,14 +645,17 @@ function refuse(parent, purpose, task, why, agent = 'Claude Code') {
       overlap(text, n.purpose + ' ' + n.task) >= DUPLICATE
   );
   if (same)
-    return (
-      'Refused: ' +
-      label(same) +
-      ' is already working on the same task ("' +
-      clip(same.purpose, 80) +
-      '"). Don\'t duplicate it; wait for its report.'
-    );
-  return '';
+    return {
+      code: 'busy',
+      hint: 'tnai_wait for its report',
+      text:
+        'Refused: ' +
+        label(same) +
+        ' is already working on the same task ("' +
+        clip(same.purpose, 80) +
+        '"). Don\'t duplicate it; wait for its report.',
+    };
+  return null;
 }
 
 function limit(parent) {
@@ -639,18 +664,24 @@ function limit(parent) {
     settings.maxActivePerAgent > 0 &&
     active.filter(n => n.parentId === parent.id).length >= settings.maxActivePerAgent
   )
-    return (
-      'Refused: you already have ' +
-      settings.maxActivePerAgent +
-      " working sub-agents (the user's limit). Wait for one (tnai_wait) or do it yourself."
-    );
+    return {
+      code: 'full',
+      hint: 'tnai_wait for one, or do it yourself',
+      text:
+        'Refused: you already have ' +
+        settings.maxActivePerAgent +
+        " working sub-agents (the user's limit). Wait for one (tnai_wait) or do it yourself.",
+    };
   if (settings.maxActiveTotal > 0 && active.length >= settings.maxActiveTotal)
-    return (
-      'Refused: ' +
-      settings.maxActiveTotal +
-      " sub-agents are already working in Technically Not (the user's limit). Do it yourself or wait."
-    );
-  return '';
+    return {
+      code: 'full',
+      hint: 'do it yourself, or tnai_wait',
+      text:
+        'Refused: ' +
+        settings.maxActiveTotal +
+        " sub-agents are already working in Technically Not (the user's limit). Do it yourself or wait.",
+    };
+  return null;
 }
 
 // `tnai new` (agent-mesh.js) is held to the same limits: a
@@ -756,14 +787,23 @@ async function delegate(
         .trim()
         .toLowerCase()
   );
-  if (!agent) return fail('Refused: agent must be one of ' + CLIS.join(', ') + '.');
+  if (!agent)
+    return fail(
+      'Refused: agent must be one of ' + CLIS.join(', ') + '.',
+      'invalid',
+      'agent: ' + CLIS.join(' | ')
+    );
   worktree = String(worktree || 'inherit')
     .trim()
     .toLowerCase();
   if (!WORKTREE.includes(worktree))
-    return fail('Refused: worktree must be one of ' + WORKTREE.join(', ') + '.');
+    return fail(
+      'Refused: worktree must be one of ' + WORKTREE.join(', ') + '.',
+      'invalid',
+      'worktree: ' + WORKTREE.join(' | ')
+    );
   const refused = refuse(parent, purpose, task, why, agent);
-  if (refused) return fail(refused);
+  if (refused) return fail(refused.text, refused.code, refused.hint);
 
   // model / effort: only names from that CLI's own list (model-pick.js). A picked model needs a
   // fresh conversation, so an idle or earlier sub-agent is not reused or revived for it: its
@@ -776,13 +816,18 @@ async function delegate(
           String(effort || '').slice(0, 40)
         )
       : { model: '', effort: '', label: '' };
-  if (pick.error) return fail('Refused: ' + pick.error);
+  if (pick.error)
+    return fail(
+      'Refused: ' + pick.error,
+      'invalid',
+      'call it again with a model and effort from that list, or without them'
+    );
 
   // The wait for the model list let a second delegate of the same task in: ask again.
   if (model || effort) {
     const refusedNow = refuse(parent, purpose, task, why, agent);
 
-    if (refusedNow) return fail(refusedNow);
+    if (refusedNow) return fail(refusedNow.text, refusedNow.code, refusedNow.hint);
   }
 
   let plan = decide(parent, purpose + ' ' + task, agent, worktree);
@@ -805,7 +850,7 @@ async function delegate(
   if (plan.action === 'reuse') {
     const k = plan.instance;
     const capped = limit(parent);
-    if (capped) return fail(capped);
+    if (capped) return fail(capped.text, capped.code, capped.hint);
     give(k, parent, purpose, task, why);
     deliver(
       k.paneId,
@@ -818,7 +863,7 @@ async function delegate(
     );
   }
   const limited = limit(parent);
-  if (limited) return fail(limited);
+  if (limited) return fail(limited.text, limited.code, limited.hint);
   let identity = plan.identity || identities.get(plan.instance?.identityId);
   if (!identity) {
     identity = {
@@ -882,7 +927,12 @@ async function delegate(
     model: pick.model,
     effort: pick.effort,
   });
-  if (!paneId) return fail(n.report || 'Not started.');
+  if (!paneId)
+    return fail(
+      n.report || 'Not started.',
+      'unreachable',
+      'do this part yourself (tnai_subagents shows why it did not start)'
+    );
 
   // Still starting after START_WAIT (e.g. the user hasn't answered the folder-trust dialog yet):
   // tnai_wait gets its report, or why it never started.
@@ -963,7 +1013,7 @@ function resend(parentPaneId, name, text) {
     .sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0))[0];
   if (!k || [...nodes.values()].some(n => n.identityId === k.identityId && alive(n))) return null;
   const capped = limit(parent);
-  if (capped) return Promise.resolve({ ok: false, error: capped });
+  if (capped) return Promise.resolve(errors.fail(capped.code, capped.text, capped.hint));
   give(k, parent, k.purpose, String(text || '').trim(), 'follow-up');
   Object.assign(k, { plan: 'revive', status: 'starting', paneId: '', lane: '' });
   publish();
@@ -1010,20 +1060,32 @@ async function assign(parent, { id, task = '' }) {
   const k = findChild(parent, id);
   if (!k)
     return fail(
-      'No single sub-agent matches "' + id + '"; use its id. Your sub-agents:\n' + list(parent)
+      'No single sub-agent matches "' + id + '"; use its id. Your sub-agents:\n' + list(parent),
+      'not_found',
+      'tnai_assign with an id from the list above'
     );
   if (!alive(k))
     return fail(
       label(k) +
         ' is ' +
         stateOf(k) +
-        '. Use tnai_delegate; Technically Not revives it when the work is related.'
+        '. Use tnai_delegate; Technically Not revives it when the work is related.',
+      'refused',
+      'tnai_delegate'
     );
   if (ACTIVE.has(k.status))
     return fail(
-      label(k) + ' is still working. Wait for it (tnai_wait), or tnai_delegate for a separate copy.'
+      label(k) +
+        ' is still working. Wait for it (tnai_wait), or tnai_delegate for a separate copy.',
+      'busy',
+      'tnai_wait'
     );
-  if (String(task).trim().length < 10) return fail('Give it a clear follow-up task.');
+  if (String(task).trim().length < 10)
+    return fail(
+      'Give it a clear follow-up task.',
+      'invalid',
+      'tnai_assign with a task of a sentence or more'
+    );
   give(k, parent, k.purpose, String(task).trim(), 'follow-up');
   deliver(k.paneId, '[TN.ai] Follow-up from ' + parent.name + ': ' + k.task);
   publish();
@@ -1080,7 +1142,7 @@ function wait(parent, { ids, timeout_seconds }, signal = null) {
     const cancel = () => {
       clearTimeout(w.timer);
       if (waiters.delete(w)) {
-        resolve(fail('Cancelled.'));
+        resolve(fail('Cancelled.', 'busy', 'tnai_wait again'));
         publish();
         flush(parent.paneId);
       }

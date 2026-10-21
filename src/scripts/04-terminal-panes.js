@@ -250,6 +250,8 @@
     return record;
   }
 
+  let rowsFrame = 0;
+
   function layoutGrid() {
     const n = panes.length,
       w = content.clientWidth || innerWidth,
@@ -272,7 +274,12 @@
     put('--term-cols', best.cols);
     put('--term-rows', Math.ceil(n / best.cols));
     if (count.textContent !== label) count.textContent = label;
-    requestAnimationFrame(() => {
+
+    // One waiting frame at most: a minimized window runs none, and every pane opened or closed
+    // meanwhile added one more that waited until the window was shown (test thread-stream-leak).
+    if (rowsFrame) return;
+    rowsFrame = requestAnimationFrame(() => {
+      rowsFrame = 0;
       const cols = Number(content.style.getPropertyValue('--term-cols')) || 1;
       put('--term-rows', Math.ceil(panes.length / cols));
     });
@@ -307,14 +314,17 @@
   if (!hasSavedTerminalState) main = createPane({ id: 'terminal-main', name: '', serial: 1 }, true);
   else
     saved.forEach(meta => {
-      const workspaceId = meta.workspaceId || 'workspace-1';
-      if (
-        panes.filter(
-          p => (window.TnaiTerminalWorkspaceByPane?.[p.id] || p.workspaceId) === workspaceId
-        ).length >= PANE_LIMIT
-      )
-        return;
-      const created = createPane(meta, meta.id === 'terminal-main');
+      const savedWorkspace = meta.workspaceId || 'workspace-1';
+      const countIn = id =>
+        panes.filter(p => (window.TnaiTerminalWorkspaceByPane?.[p.id] || p.workspaceId) === id)
+          .length;
+
+      // A workspace saved with more panels than the limit keeps every one: the extras go to a
+      // further workspace, which 07 adds and files under the project its panels work in.
+      let workspaceId = savedWorkspace;
+      for (let extra = 1; countIn(workspaceId) >= PANE_LIMIT; extra++)
+        workspaceId = savedWorkspace + '-more-' + extra;
+      const created = createPane({ ...meta, workspaceId }, meta.id === 'terminal-main');
       if (meta.id === 'terminal-main') main = created;
     });
   if (!main) main = panes[0] || null;

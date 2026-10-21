@@ -90,6 +90,21 @@
  * * the reports proof below is 29 (the numbers in this list fell behind the run's own as proofs
  * were
  * * added).
+ * * 29 in the run (added 2026-10-15). the rename limit: with full control on, B's agent runs
+ * * `tnai rename` (the real shim against B's mesh, run by the check as that agent) once, and a
+ * * second rename inside the minute is refused; with full control off it goes through. The
+ * * reports proof after it is 30.
+ * * 31 in the run (added 2026-10-15). late join: A reads the conversation of B's running agent
+ * * after B's first switch goes on again. STAND-IN: the record of that conversation (the
+ * * stand-in CLI writes none; tests/remote-two.main.js `talkSeed` answers the read for another
+ * * computer and gives the panel a conversation id). The handle, the shaping, the cut at the
+ * * pairing, the parts, the link, A's holding and A's read-only drawing are the two apps'.
+ * * WRITTEN 2026-10-15, NOT YET RUN.
+ * * 32 and 33 in the run (added 2026-10-15). late join: another project open on A hides B's
+ * * agents with the "On B" line and refuses an ask; with the live view on, a minute of the most
+ * * conversation asks A may make keeps B's trust gate under 116 messages in any minute
+ * * (`sentMinute`, a tap on the trust gate in tests/remote-two.main.js). WRITTEN 2026-10-15, NOT
+ * YET RUN.
  * * 26. a finished task's short result crosses (6g), and its answer's text is read through
  * * remote:reportText, not from the pushed state; it was 23, 24, then 25,
  * * as proofs came before it, and stays the last. In 16 to 21 the panels are real ones in B's
@@ -623,7 +638,11 @@ async function hand() {
     "the git hand-over: \"Bring A's work here\" on B fetches A's commit from B's own git remote into one branch, tnai/handoff/…, and B's checked-out branch and files stay as they were; asking the other computer is not offered (its right waits for the user's yes)",
     "a picture and a text file with a prompt: A's page makes the picture small and hands both over; B saves the same bytes under names of its own, its agent is sent the words and both paths, and B's list names the files",
     'agents messaging agents: while the piece is switched off the window cannot give the right, no computer says it takes such messages, and a `say` sent anyway is dropped unread; once it can be given: the message is written with its mark and fixed line, answered `said`, and listed on B',
+    "the rename limit: while A has full control on B, B's agent is renamed by `tnai rename` once and a second rename inside the minute is refused (A lists the new name); with full control off the command is as before",
     "a task that ends on B: its short result shows on A on that agent's row and the answer's text is read on demand, not from the state; B's first switch for A goes off: it is gone from A",
+    "late join: B's first switch on again under the new sentence; A opens B's running agent and reads its conversation so far, newest last, shaped, cut at the pairing, marked as B's, drawn read-only (no press reaches anything), out of the pushed state; B lists one read; a new turn on B arrives by a read from where the last ended; B's switch off drops it on A",
+    "late join, another project open on A: B's agent leaves A's thread list, the \"On B\" group's line says why, an ask sends nothing; the shared project again: listed again",
+    "late join and the live view at once: A watches B's agent and reads its conversation as often as it may for a minute; B's trust gate never lets out 116 messages in any minute, and every answer arrived whole",
   ];
   let step = 0;
   try {
@@ -2251,12 +2270,55 @@ async function hand() {
       }
     }
 
-    // 29 ---- a finished task's short result crosses to A and leaves again
+    // 29 ---- the rename limit. While A has full
+    // control on B, B's agent may run `tnai rename` once a minute: the name is part of the ticket
+    // A's Stop and Interrupt carry. With full control off, the command is as it always was. The
+    // `tnai` shim, B's mesh, B's window applying the rename and the "does a paired computer hold
+    // full control here" answer are B's own; the agent running the command is the check (its CLI
+    // is the stand-in).
+    step = 29;
+    {
+      await until(
+        'A may still control B (proof 28 left it on)',
+        async () => (await bOnA())?.canControl === true,
+        30000
+      );
+      const first29 = await call(B, 'rename', { paneId: p16.paneId, name: 'Rowan' });
+      const second29 = await call(B, 'rename', { paneId: p16.paneId, name: 'Aspen' });
+      const seen29 = await until(
+        "A lists B's agent under its new name",
+        async () => {
+          const r = rowOn(await bOnA(), p16.paneId);
+          return r && r.name === 'Rowan' ? r : null;
+        },
+        30000
+      ).catch(() => null);
+      await R(B, 'setControl', idA, false);
+      await until('A may no longer control B', async () => !(await bOnA())?.canControl, 30000);
+      const third29 = await call(B, 'rename', { paneId: p16.paneId, name: 'Aspen' });
+      await R(B, 'setControl', idA, true, 'choose say');
+      await until('A may control B again', async () => (await bOnA())?.canControl === true, 30000);
+      say(
+        29,
+        first29.code === 0 &&
+          /Renamed/.test(first29.out) &&
+          second29.code !== 0 &&
+          /less than a minute ago/.test(second29.out) &&
+          /You are still Rowan/.test(second29.out) &&
+          !!seen29 &&
+          third29.code === 0 &&
+          /Renamed/.test(third29.out),
+        steps[28],
+        `with full control on: first rename "${first29.out.trim().slice(0, 60)}", second "${second29.out.trim().slice(0, 70)}"; A lists the agent as ${seen29 ? seen29.name : 'not Rowan'}; with full control off: "${third29.out.trim().slice(0, 60)}"`
+      );
+    }
+
+    // 30 ---- a finished task's short result crosses to A and leaves again
     // with B's first switch for A. The task and its end are told to B's app as the real CLI's hooks
     // tell them (the stand-in has no model); the turn, the hand-over in main.js, the message, the
     // cut, A's state and the switch are the two apps'. It stays the LAST proof: the switch takes
     // control away.
-    step = 29;
+    step = 30;
     const did23 = 'Wrote the file; ran the tests';
     await call(B, 'finish', {
       paneId: p16.paneId,
@@ -2300,7 +2362,7 @@ async function hand() {
     // taken back with the switch: nothing to read any more
     const after26 = await R(A, 'reportText', idB, p16.paneId).catch(() => null);
     say(
-      29,
+      30,
       !!got23 &&
         got23.last.more === 0 &&
         got23.last.has === true &&
@@ -2314,11 +2376,213 @@ async function hand() {
         got23.finished?.did === did23 &&
         gone25 &&
         after26 === null,
-      steps[28],
+      steps[29],
       got23
         ? `A's row: did "${got23.last.did}", task "${got23.last.task}", has an answer: ${got23.last.has}, its text in the pushed state: ${inState26}, read on demand it starts "${String(text26?.text || '').slice(0, 19)}" (the same result: ${!!text26 && text26.at === got23.last.at}), cut ${got23.last.more}; read after it was taken back: ${after26 === null ? 'nothing' : 'STILL THERE'}; the computer's newest: "${got23.finished?.did}"; after B's first switch for A went off, gone from A: ${gone25}`
         : 'A never showed the result within 30 s'
     );
+
+    // 31 ---- late join: A reads the conversation of B's running agent. B's first switch goes on
+    // again (proof 30 left it off): turned on under the sentence that says conversations are
+    // read. The conversation record of B's stand-in panel is a stand-in (`talkSeed`: the stand-in
+    // CLI writes none); the handle, the shaping, the cut at the pairing, the parts, the link, A's
+    // holding and A's drawing are the two apps'. Full control stays off: reading needs only the
+    // text switch.
+    step = 31;
+    {
+      const t31 = Date.now();
+      const seed31 = [
+        { kind: 'you', text: 'OLD-31 before the pairing', at: 1000, pos: 0 },
+        { kind: 'you', text: 'ASK-31 fix the cart total', at: t31, pos: 10 },
+        {
+          kind: 'say',
+          text: 'SAY-31 done.\n\nTechnically Not report\n- Did: fixed it\n- Decide: Ship it? | 1. Yes | 2. No',
+          at: t31 + 1,
+          pos: 20,
+        },
+        {
+          kind: 'ask',
+          id: 'q31',
+          press: true,
+          questions: [{ question: 'Which file?', options: ['a.js', 'b.js'] }],
+          at: t31 + 2,
+          pos: 30,
+        },
+        { kind: 'act', verb: 'Started a sub-agent', what: 'look around', at: t31 + 3, pos: 40 },
+        { kind: 'result', id: 'r', text: 'RESULT-31 secret output', at: t31 + 4, pos: 50 },
+      ];
+      await call(B, 'talkSeed', { paneId: p16.paneId, entries: seed31 });
+      await R(B, 'setDetail', idA, true);
+      const row31 = await until(
+        "A's row of B's agent says its conversation can be read",
+        async () => {
+          const r = rowOn(await bOnA(), p16.paneId);
+          return r && r.talk === true && r.sure === true ? r : null;
+        },
+        30000
+      ).catch(() => null);
+      await call(A, 'page', { view: 'threads' });
+      await until(
+        "A opens B's agent from its thread list",
+        () => call(A, 'farAgents', { what: 'select', key: idB + '\n' + p16.paneId }),
+        15000
+      ).catch(() => false);
+      const held31 = await until(
+        'A holds the conversation',
+        async () => {
+          const l = await R(A, 'log', idB, p16.paneId).catch(() => null);
+          return l && l.entries.length ? l : null;
+        },
+        20000
+      ).catch(() => null);
+      const shown31 = await until(
+        "A's thread shows it, marked as B's",
+        async () => {
+          const s = await call(A, 'talkWindow', { what: 'read' });
+          return s.shown && s.entries.length && s.from ? s : null;
+        },
+        10000
+      ).catch(() => null);
+      const state31 = JSON.stringify(await R(A, 'state'));
+      const pressed31 = await call(A, 'talkWindow', { what: 'pressAll' });
+      const bLog31 = (await R(B, 'state')).log.filter(e => e.kind === 'read').length;
+
+      // a new turn on B: A asks for what is new, from where its answer ended
+      const reads31 = (await call(B, 'talkReads')).length;
+      seed31.push({ kind: 'say', text: 'NEW-31 and one more', at: Date.now(), pos: 60 });
+      await call(B, 'talkSeed', { paneId: p16.paneId, entries: seed31 });
+      await call(B, 'finish', {
+        paneId: p16.paneId,
+        task: 'one more',
+        answer: 'NEW-31 and one more',
+      });
+      const new31 = await until(
+        'the new turn reaches A',
+        async () => {
+          const l = await R(A, 'log', idB, p16.paneId).catch(() => null);
+          return l && l.entries.some(e => /NEW-31/.test(e.text || '')) ? l : null;
+        },
+        40000
+      ).catch(() => null);
+      const later31 = (await call(B, 'talkReads')).slice(reads31);
+
+      // B's switch off: A drops what it holds, and the line says the conversation is not shared
+      await R(B, 'setDetail', idA, false);
+      const gone31 = await until(
+        'A no longer holds it',
+        async () => (await R(A, 'log', idB, p16.paneId).catch(() => null)) === null,
+        20000
+      ).catch(() => false);
+      say(
+        31,
+        !!row31 &&
+          !!held31 &&
+          held31.older === true &&
+          !JSON.stringify(held31).includes('OLD-31') &&
+          !JSON.stringify(held31).includes('RESULT-31') &&
+          held31.entries[0].text.startsWith('ASK-31') &&
+          !!shown31 &&
+          /As .+ reported it/.test(shown31.from) &&
+          shown31.links === 0 &&
+          !state31.includes('ASK-31') &&
+          pressed31.reached.length === 0 &&
+          pressed31.buttons <= 1 &&
+          bLog31 === 1 &&
+          !!new31 &&
+          later31.length >= 1 &&
+          later31.every(r => Number.isFinite(r.where.after)) &&
+          gone31 === true,
+        steps[30],
+        `row says readable: ${!!row31}; held: ${held31 ? held31.entries.map(e => e.k).join(',') : 'nothing'} (older cut: ${held31?.older}); drawn: ${shown31 ? shown31.entries.length + ' blocks, "' + shown31.from + '", buttons ' + JSON.stringify(shown31.buttons) : 'no'}; words in A's state: ${state31.includes('ASK-31')}; presses reached ${JSON.stringify(pressed31.reached)}; B's lines ${bLog31}; the new turn: ${!!new31} after ${later31.length} read(s) ${JSON.stringify(later31.map(r => r.where))}; dropped with the switch: ${gone31}`
+      );
+    }
+
+    // 32 ---- late join, another project open on A: B's agents leave A's thread list, the "On B"
+    // group says why in one line, and no conversation can be asked. Then A opens the shared
+    // project again and B's agent is listed again.
+    step = 32;
+    {
+      await R(B, 'setDetail', idA, true);
+      await until(
+        "A lists B's agent as readable again",
+        async () => rowOn(await bOnA(), p16.paneId)?.talk === true,
+        30000
+      ).catch(() => null);
+      await call(A, 'project', { dir: zB });
+      const away32 = await until(
+        "A's thread list hides B's agents and says why",
+        async () => {
+          const c = await bOnA();
+          const s = await call(A, 'talkWindow', { what: 'read' });
+          const far = await call(A, 'farAgents', { what: 'read' });
+          const listed = far.rows.some(r => r.key === idB + '\n' + p16.paneId);
+          return c && !listed && s.why.some(w => /other project|same git project/.test(w))
+            ? { c, s, far }
+            : null;
+        },
+        30000
+      ).catch(() => null);
+      const ask32 = await R(A, 'askLog', idB, p16.paneId, 'first').catch(() => null);
+      await call(A, 'project', { dir: xA });
+      const back32 = await until(
+        "A lists B's agent again in the shared project",
+        async () => {
+          const far = await call(A, 'farAgents', { what: 'read' });
+          return far.rows.some(r => r.key === idB + '\n' + p16.paneId) ? far : null;
+        },
+        30000
+      ).catch(() => null);
+      say(
+        32,
+        !!away32 &&
+          away32.far.groups.some(g => g.name === 'On ' + away32.c.name || /^On /.test(g.name)) &&
+          !!ask32 &&
+          ask32.state === 'not_sent' &&
+          !!back32,
+        steps[31],
+        `another project on A: B's agent listed ${away32 ? 'no' : 'STILL or never checked'}; the line: ${away32 ? JSON.stringify(away32.s.why) : 'none'}; an ask then: ${ask32 ? ask32.state : 'error'}; back in the shared project, listed again: ${!!back32}`
+      );
+    }
+
+    // 33 ---- late join and the live view at once: with full control on, A watches B's agent and
+    // reads its conversation as often as A may for a minute; what B's trust gate let out in any
+    // 60 seconds stays under 116 (the relay mutes past 120), and every answer arrived whole.
+    step = 33;
+    {
+      await R(B, 'setControl', idA, true);
+      await until(
+        'A may watch that agent',
+        async () => {
+          const c = await bOnA();
+          return c?.canWatch && rowOn(c, p16.paneId)?.can && rowOn(c, p16.paneId)?.talk ? c : null;
+        },
+        30000
+      ).catch(() => null);
+      const since33 = Date.now();
+      const view33 = await R(A, 'view', idB, p16.paneId, await markOf(p16.paneId)).catch(
+        () => null
+      );
+      const states33 = [];
+      for (let i = 0; i < 12; i++) {
+        const r = await R(A, 'askLog', idB, p16.paneId, 'first').catch(() => null);
+        states33.push(r ? r.state : 'error');
+        await sleep(5200);
+        const l = await R(A, 'log', idB, p16.paneId).catch(() => null);
+        if (l) states33.push('held:' + l.state);
+      }
+      const minute33 = await call(B, 'sentMinute', { since: since33 });
+      await R(A, 'unview', 'closed').catch(() => null);
+      say(
+        33,
+        !!view33 &&
+          minute33.most > 0 &&
+          minute33.most < 116 &&
+          (minute33.types.log || 0) > 0 &&
+          !states33.includes('held:no_reply'),
+        steps[32],
+        `view asked: ${!!view33}; B sent at most ${minute33.most} messages in any minute (${JSON.stringify(minute33.types)}); A's asks and holds: ${states33.join(' ')}`
+      );
+    }
   } catch (e) {
     for (let n = Math.max(step, 1); n <= steps.length; n++)
       say(n, false, steps[n - 1], n === Math.max(step, 1) ? String(e.message || e) : 'not reached');

@@ -189,6 +189,10 @@ let resolve = () => {
 const served = new Map(); // tnai-view://<token>/ → { full, text }
 let viewSession = null;
 
+// What the viewer may load: the shown file's own address, in-page data, and Chromium's own PDF
+// viewer (chrome-extension: and chrome: pages). Never the web or other files on disk.
+const viewerMayLoad = address => /^(tnai-view|data|blob|chrome-extension|chrome):/i.test(address);
+
 function viewer() {
   if (viewSession) return viewSession;
 
@@ -204,6 +208,12 @@ function viewer() {
       headers: { 'content-type': 'text/plain; charset=utf-8' },
     });
   });
+
+  // A shown file loads nothing from outside: an SVG with <image href="https://…"> would otherwise
+  // tell a third party the file was opened (audit app-1 #10).
+  viewSession.webRequest.onBeforeRequest((details, done) =>
+    done({ cancel: !viewerMayLoad(details.url) })
+  );
   viewSession.on('will-download', event => event.preventDefault());
   viewSession.setPermissionRequestHandler((_wc, _permission, done) => done(false));
   return viewSession;
@@ -323,4 +333,5 @@ module.exports = {
   show: wrap(show),
   openOnPc: wrap(openOnPc),
   isMedia: file => MEDIA.has(ext(file)),
+  viewerMayLoad, // tools/electron-lows-test.js
 };

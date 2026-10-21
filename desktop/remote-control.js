@@ -161,6 +161,21 @@ const WORDS = {
   choose: ['done', 'refused', 'failed'],
 };
 
+// ---- Thread controls and Resume (plan item 44; the values are remote-thread.js) ----
+// `thread`: rename, close, model or effort of one agent's thread, with the row's ticket, answered
+// `threaded` (done, busy, refused, failed); 6 a minute for one computer. `resume`: start a past
+// conversation of this computer again, named by the handle of the list this computer sent
+// (remote-thread.js createPastAnswerer), answered `resumed`. A resume is a start: it is counted
+// with the starts and has their bounds (3 a minute, 6 in 10 minutes, 20 a day, 3 open).
+const { threadValue, threadCan, THREAD_WORDS } = require('./remote-thread.js');
+TYPES.thread = 'threaded';
+TYPES.resume = 'resumed';
+GOOD.threaded = ['done'];
+GOOD.resumed = ['started'];
+PER_MINUTE.thread = 6;
+WORDS.thread = THREAD_WORDS;
+WORDS.resume = ['started', 'refused', 'failed'];
+
 // A choice. The other
 // computer never sends a key: it sends "option N of the question I was shown". These three are the
 // item's side of it, as withFull / readFull / bindingOf2 are for `full`. A label is one clean line
@@ -370,6 +385,10 @@ function shapeReply(obj) {
   if (t === 'synced' && obj.ok !== true && SYNC_NO.includes(obj.state))
     // why a hand-over was not done: one of eight fixed words
     return { t, n, ok: false, state: obj.state };
+
+  // a thread operation not done because the agent was working: its own word
+  if (t === 'threaded' && obj.ok !== true && obj.state === 'busy')
+    return { t, n, ok: false, state: 'busy' };
   return obj.ok === true && GOOD[t].includes(obj.state)
     ? { t, n, ok: true, state: obj.state }
     : { t, n, ok: false, state: bad(obj.state) };
@@ -450,6 +469,13 @@ function createControl({
   // peerId, panelId, text, kind, by, n, guard, from, done }) → a word of a prompt. Without `say`
   // every one is refused.
   say = null,
+  // Thread controls (item 44). thread({ peerId, panelId, what, value, guard, from }) → a word of
+  // THREAD_WORDS. past.find(peerId, h) → { cli, id } of a past conversation in the list this
+  // computer sent that computer, or null. resume({ peerId, cli, id, guard, from }) → 'started' |
+  // 'refused' | 'failed', with the start's guard.
+  thread = () => 'failed',
+  past = null,
+  resume = () => 'failed',
   now = Date.now,
   random = crypto.randomBytes,
   timers = { set: (fn, ms) => setTimeout(fn, ms), clear: h => clearTimeout(h) },
@@ -491,6 +517,7 @@ function createControl({
           syncDay: [],
           say: [],
           sayDay: [],
+          thread: [],
           choosing: false,
           noAt: 0,
           day: [],
@@ -1088,6 +1115,101 @@ function createControl({
       }); // two lines in this computer's list: asked, and how it ended (one fixed word)
   }
 
+  // ---- Thread controls (item 44) ----
+  // A rename, close, model or effort for one agent's thread. Checked as an act is: the row, the
+  // agent as it is now, the ticket; then the value for its word and whether that CLI takes the word
+  // from another computer at all (remote-thread.js). Taken before the delivery, and the guard is
+  // asked again in the turn of the write.
+  function doThread(peerId, p, pairing, msg, n, t, refuse) {
+    const panelId = rowId(msg.id),
+      what = typeof msg.do === 'string' ? msg.do : '',
+      value = threadValue(what, msg.v);
+    if (!panelId || value === null) return refuse();
+    const a = agentOf(panelId),
+      ticket = a ? sign(pairing, peerId, panelId, a) : '';
+    if (!ticket || !sameTicket(msg.to, ticket) || !threadCan(a.cli, what)) return refuse();
+    p.ns.set(n, t);
+    const from = nameOf(peerId);
+    record(peerId, from, a.name, what, value);
+    const h = { peerId, panelId, pairing, ticket, at: t },
+      guard = () => holds(h);
+    let r;
+    try {
+      r = thread({ peerId, panelId, what, value, guard, from });
+    } catch {
+      r = 'failed';
+    }
+    return Promise.resolve(r)
+      .then(
+        w => w,
+        () => 'failed'
+      )
+      .then(word => {
+        const state = WORDS.thread.includes(word) ? word : 'failed';
+        tell(peerId, 'threaded', n, state);
+        return { taken: true, state };
+      });
+  }
+
+  // A resume of a past conversation of this computer: the same checks and bounds as a start (the
+  // project open here, the CLI ready here, 3 open, 20 a day), and the conversation is the one the
+  // handle names in the list this computer sent that computer (never an id or a path from the
+  // message). The CLI and the conversation come from this computer's own record.
+  function doResume(peerId, p, pairing, msg, n, t, refuse) {
+    const h = typeof msg.h === 'string' && HEX16.test(msg.h) ? msg.h : '',
+      key = firmKey(msg.project);
+    if (!h || !key || !past) return refuse();
+    const found = ask(past.find, peerId, h);
+    const cli = found && typeof found.cli === 'string' ? found.cli : '';
+    const id = found && typeof found.id === 'string' ? found.id : '';
+    const here = ask(clis),
+      open = ask(remoteStarted);
+    if (
+      !cli ||
+      !id ||
+      !Array.isArray(here) ||
+      !here.includes(cli) ||
+      firmKey(ask(openKey)) !== key ||
+      !Number.isInteger(open) ||
+      open < 0 ||
+      open + starting >= START_OPEN
+    )
+      return refuse();
+    p.day = p.day.filter(x => t - x < DAY_MS);
+    const kept = typeof startsToday === 'function' ? ask(startsToday, peerId) : p.day.length;
+    if (!Number.isInteger(kept) || kept < 0 || Math.max(kept, p.day.length) >= START_DAY)
+      return refuse();
+    p.ns.set(n, t);
+    p.day.push(t);
+    starting++;
+    if (typeof startTaken === 'function') ask(startTaken, peerId, t);
+    const from = nameOf(peerId);
+    record(peerId, from, cli, 'resume', typeof found.title === 'string' ? found.title : '');
+    const guard = panelKey =>
+      !stopped &&
+      now() - t < HELD_MS &&
+      pairingOf(peerId) === pairing &&
+      ask(live, peerId) === true &&
+      firmKey(panelKey) === key;
+    let r;
+    try {
+      r = resume({ peerId, cli, id, guard, from });
+    } catch {
+      r = 'failed';
+    }
+    return Promise.resolve(r)
+      .then(
+        w => w,
+        () => 'failed'
+      )
+      .then(word => {
+        starting--;
+        const state = WORDS.resume.includes(word) ? word : 'failed';
+        tell(peerId, 'resumed', n, state);
+        return { taken: true, state };
+      });
+  }
+
   // → { ignored: true } (not one of the three types) · { silent: 'limit' | 'off' | 'shape' }
   // (nothing done, nothing sent) · { refused: true } (the other computer was told "refused") · a
   // promise of { taken: true, state } once the delivery gave its word.
@@ -1100,8 +1222,9 @@ function createControl({
     const t = now(),
       p = peer(peerId);
 
-    // a prompt with files is a prompt: one count
-    if (!counted(p, kind === 'promptf' ? 'prompt' : kind, t)) return { silent: 'limit' };
+    // a prompt with files is a prompt: one count; a resume is a start (item 44)
+    const countAs = kind === 'promptf' ? 'prompt' : kind === 'resume' ? 'start' : kind;
+    if (!counted(p, countAs, t)) return { silent: 'limit' };
 
     // A choice is answered only while this computer's link has room, the line pictures stop at:
     // past it, silence, never "refused" (a refusal is a message too).
@@ -1128,6 +1251,10 @@ function createControl({
     )
       return refuse();
     if (kind === 'say') return doSay(peerId, p, pairing, msg, n, t, refuse);
+
+    // thread controls (item 44)
+    if (kind === 'thread') return doThread(peerId, p, pairing, msg, n, t, refuse);
+    if (kind === 'resume') return doResume(peerId, p, pairing, msg, n, t, refuse);
     return (
       kind === 'prompt' || kind === 'promptf'
         ? doPrompt
@@ -1166,14 +1293,17 @@ function createControl({
     // Is this message of that computer one the relay did not hold back (change 13)? The same
     // question the operations above ask, for the live view's `view` and `keep` (remote-view.js),
     // which echo the same counter.
-    fresh(peerId, msg) {
+    // limit: a shorter time than the operations' 60 s, for typing (remote-type.js asks 5 s); a
+    // longer one is never taken.
+    fresh(peerId, msg, limit) {
+      const ms = Number.isFinite(limit) && limit > 0 && limit < FRESH_MS ? limit : FRESH_MS;
       return (
         typeof peerId === 'string' &&
         !!peerId &&
         !!msg &&
         typeof msg === 'object' &&
         peers.has(peerId) &&
-        fresh(peers.get(peerId), msg, now())
+        fresh(peers.get(peerId), msg, now(), ms)
       );
     },
     // The control switch went off for that computer, by any path: its taken prompts that have not

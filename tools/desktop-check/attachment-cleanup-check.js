@@ -255,6 +255,21 @@ app.whenReady().then(async () => {
       'a whole clip is written as a video and its 3 frames: ' + clipsToday().length + ' files'
     );
     for (const file of [kept.video, ...kept.frames]) fs.rmSync(file, { force: true });
+
+    // An MP4 clip (the recorder's first choice since 2026-10-15) is saved as .mp4, is a clip file
+    // to the clean-up list, and is found by its name like a WebM one.
+    const mp4 = clip.save({ video: Buffer.from('video'), mp4: true, frames: [png] });
+    const found = await att.clip(path.basename(mp4.video));
+    check(
+      /-clip\.mp4$/.test(mp4.video) && has(mp4.video) && found?.video === mp4.video,
+      'an MP4 clip is saved as .mp4 and found by its name: ' +
+        path.basename(mp4.video) +
+        ' -> ' +
+        (found ? path.basename(found.video) : 'not found')
+    );
+    att.hold([mp4.video, ...mp4.frames]);
+    await att.discard(mp4.video);
+    check(![mp4.video, ...mp4.frames].some(has), 'discard deletes an MP4 clip and its frame');
     const realWrite = fs.writeFileSync;
     let threw = '';
     fs.writeFileSync = (file, ...rest) => {

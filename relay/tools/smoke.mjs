@@ -33,6 +33,10 @@ const WRONG_SECRET = crypto.randomBytes(32).toString('base64url');
 const DEVICE_A = 'smoke-a-' + crypto.randomUUID();
 const DEVICE_B = 'smoke-b-' + crypto.randomUUID();
 
+// The phone app's page address in this run, and a page that is not it.
+const PHONE_PAGE = 'https://phone.smoke.test';
+const OTHER_PAGE = 'https://elsewhere.smoke.test';
+
 let passed = 0,
   failed = 0;
 
@@ -71,6 +75,9 @@ function scratchCopy() {
     '# Test-only value for `wrangler dev` (relay/tools/smoke.mjs). Never a real secret.\n' +
       'RELAY_SECRET=' +
       SECRET +
+      '\n' +
+      'PHONE_ORIGINS=' +
+      PHONE_PAGE +
       '\n'
   );
   return folder;
@@ -180,8 +187,8 @@ function connect(socketAddress, ticket) {
 }
 
 // A connect call with a ticket, as a plain HTTP upgrade request, so a refusal's status and code
-// can be read (a WebSocket only says "failed").
-function connectRefusal(address, ticket) {
+// can be read (a WebSocket only says "failed"). `origin`: the page a browser would name.
+function connectRefusal(address, ticket, origin) {
   return new Promise(resolve => {
     const request = http.request(address + '/remote/connect?ticket=' + encodeURIComponent(ticket), {
       headers: {
@@ -189,6 +196,7 @@ function connectRefusal(address, ticket) {
         Upgrade: 'websocket',
         'Sec-WebSocket-Version': '13',
         'Sec-WebSocket-Key': crypto.randomBytes(16).toString('base64'),
+        ...(origin ? { Origin: origin } : {}),
       },
     });
     request.on('upgrade', (_response, socket) => {
@@ -396,6 +404,51 @@ async function run(worker) {
   );
   linkA.socket.close(1000, 'done');
   await until('both sockets are closed', () => linkA.closed && linkB.closed);
+  await browserPages(address);
+}
+
+// A browser on the phone app's page may read the relay's answers, by name and never "*"; a
+// browser on another page gets no allowance and no socket. (The two apps above sent no page.)
+async function browserPages(address) {
+  const ask = (path, page, method = 'OPTIONS') =>
+    fetch(address + path, {
+      method,
+      headers: { Origin: page, 'Access-Control-Request-Method': 'POST' },
+    });
+  const phoneAsks = await ask('/remote/ticket', PHONE_PAGE);
+  check(
+    'the phone page is allowed by name before a ticket call',
+    phoneAsks.status === 204 &&
+      phoneAsks.headers.get('access-control-allow-origin') === PHONE_PAGE &&
+      !phoneAsks.headers.get('access-control-allow-credentials'),
+    [...phoneAsks.headers]
+  );
+  const front = await ask('/', PHONE_PAGE, 'GET');
+  check(
+    'the phone page can read the front answer',
+    front.headers.get('access-control-allow-origin') === PHONE_PAGE,
+    [...front.headers]
+  );
+  const otherAsks = await ask('/remote/ticket', OTHER_PAGE);
+  const otherFront = await ask('/', OTHER_PAGE, 'GET');
+  check(
+    'another page gets no allowance',
+    !otherAsks.headers.get('access-control-allow-origin') &&
+      !otherFront.headers.get('access-control-allow-origin'),
+    [...otherAsks.headers]
+  );
+  const otherSocket = await connectRefusal(address, 'x', OTHER_PAGE);
+  check(
+    'another page opens no socket',
+    otherSocket.status === 403 && otherSocket.error === 'origin_not_allowed',
+    otherSocket
+  );
+  const phoneSocket = await connectRefusal(address, 'x', PHONE_PAGE);
+  check(
+    'the phone page passes the page rule (then its made-up ticket is refused)',
+    phoneSocket.status === 401 && phoneSocket.error === 'invalid_ticket',
+    phoneSocket
+  );
 }
 
 let worker = null;

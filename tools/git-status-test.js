@@ -25,6 +25,7 @@ const wait = ms => new Promise(done => setTimeout(done, ms));
 
 async function run() {
   const repo = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'tnai-git-status-'));
+  const plain = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'tnai-git-plain-'));
   const git = (...args) => execFileSync('git', args, { cwd: repo, stdio: 'ignore' });
   git('init', '-q');
   git('config', 'user.email', 'test@example.com');
@@ -81,10 +82,29 @@ async function run() {
       runs === 3 && afterCommit.value.files.length === 0,
       { runs, files: afterCommit.value?.files }
     );
+
+    // A folder that is not a repository yet: `git init` only writes inside .git, which the file
+    // watcher skips, so the folder watcher must end the kept "not a repository" answer (bug sweep
+    // 2026-10-21 group 23).
+    service.init(
+      () => plain,
+      (channel, payload) => sent.push({ channel, payload })
+    );
+    const before = await service.status();
+    check('a plain folder reads as no repository', before.ok && !before.value.repo, before);
+    execFileSync('git', ['init', '-q'], { cwd: plain, stdio: 'ignore' });
+    await wait(800);
+    const afterInit = await service.status();
+    check(
+      'after `git init` the next ask sees the repository',
+      afterInit.ok && afterInit.value.repo === true,
+      afterInit.value
+    );
   } finally {
     processStarter.start = realStart;
     service.stop();
     fs.rmSync(repo, { recursive: true, force: true });
+    fs.rmSync(plain, { recursive: true, force: true });
   }
   console.log(`\n${passed} passed, ${failed} failed (Node ${process.versions.node})`);
   process.exit(failed ? 1 : 0);

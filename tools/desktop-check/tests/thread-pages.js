@@ -203,6 +203,7 @@ const PAGES = [
     leave: () => window.TnaiPalette?.close(),
   },
   { row: 'All threads', name: 'terminals', there: mode('terminal'), picture: true },
+  { row: 'Board', name: 'board', there: mode('board'), picture: true },
   { row: 'Live preview', name: 'preview', there: mode('preview'), picture: true },
   { row: 'Skills', name: 'skills', there: mode('skills'), picture: true },
   { row: 'Devices and own relay', name: 'devices', there: mode('devices'), picture: true },
@@ -249,6 +250,8 @@ const walkPages = async look => {
 const STANDING_ROWS = [
   'Threads',
   'All threads',
+  // the Board page (157), right after All threads (user decision 2026-10-16)
+  'Board',
   'Terminal',
   'Live preview',
   'Projects',
@@ -256,11 +259,12 @@ const STANDING_ROWS = [
   'Usage and accounts',
   'Devices and own relay',
   'Snapshots',
+  'Keyboard shortcuts',
   'Settings',
 ];
 
 // Tabs of Settings: not in the list, shown only while a search finds them.
-const SEARCH_ONLY_ROWS = ['Keyboard shortcuts', 'Voice and snapshot', 'Updates and what is new'];
+const SEARCH_ONLY_ROWS = ['Voice and snapshot', 'Updates and what is new'];
 const CONDITIONAL_ROWS = ['Worktrees without a panel', 'Stop all agents'];
 
 // The menu's rhythm, read from the page.
@@ -294,7 +298,7 @@ const measureMenu = look => {
   check(
     rowNames.join() === STANDING_ROWS.join(),
     look +
-      ': the rows are the ten named ones in their order, Alerts is not among them (' +
+      ': the rows are the eleven named ones in their order, Alerts is not among them (' +
       rowNames.join(', ') +
       ')'
   );

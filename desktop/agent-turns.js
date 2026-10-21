@@ -44,6 +44,8 @@ function publicTurn(t) {
     startedAt: t.startedAt,
     endedAt: t.endedAt,
     endedBy: t.endedBy || '',
+    // when the CLI's own record shows its conversation was cleared just before this task (0: not)
+    clearedAt: t.clearedAt || 0,
     history: t.history === true,
     tokens: t.tokens,
     subAgents: t.subs ? [...t.subs.values()].filter(s => s.done).length : 0,
@@ -58,6 +60,8 @@ function publicTurn(t) {
     error: t.error || '',
     plan: t.plan || null,
     context: t.context || null,
+    // the last finished compact in this conversation (0: none seen)
+    compactedAt: t.compactedAt || 0,
     log: t.reader?.file || t.log || '',
     queued: (queues.get(t.paneId) || []).map(q => ({ text: q.text, at: q.at })),
     steps: t.endedAt ? null : stepsOf(t.paneId),
@@ -591,6 +595,9 @@ function addClaudeUsage(t, lines, sub) {
       const r = t.reader || t;
       r.callIds = new Set();
       r.lastTokens = post > 0 ? post : 0;
+
+      // when it finished: the thread's "Compacting" line ends here (158-cli-busy.js)
+      t.compactedAt = Date.parse(j.timestamp) || Date.now();
       t.context =
         post > 0
           ? {
@@ -1048,7 +1055,14 @@ function claudeHook(paneId, h) {
     try {
       pos = file ? fs.statSync(file).size : 0;
     } catch {}
-    return startClaude(paneId, old, h.prompt, file ? { file, pos, rest: null } : null);
+
+    // The session file changed under a running panel: a /clear only when Claude Code itself
+    // recorded one there after this panel's last task began (a resume or a fork keeps no such
+    // line of its own).
+    const oldFile = old?.agent === 'Claude Code' ? old.reader?.file : '';
+    const clearedAt =
+      file && oldFile && oldFile !== file ? claudeClearedIn(file, old.startedAt) : 0;
+    return startClaude(paneId, old, h.prompt, file ? { file, pos, rest: null } : null, clearedAt);
   }
 
   // published below with the task
@@ -1133,7 +1147,43 @@ function subIdle(s) {
   return Date.now() - at > SUB_IDLE_MS;
 }
 
-function startClaude(paneId, old, task, reader) {
+// When Claude Code recorded a /clear at the start of this session file at or after `since` (ms),
+// else 0. A cleared session's new file opens with the command's own line,
+// "<command-name>/clear</command-name>", within its first lines (seen in this PC's transcripts,
+// 2026-10-15); a resumed old session that began with a clear carries an older time.
+const CLEAR_HEAD = 64 * 1024;
+
+function claudeClearedIn(file, since) {
+  let head = '';
+  try {
+    const fd = fs.openSync(file, 'r');
+    try {
+      const buffer = Buffer.alloc(CLEAR_HEAD);
+      head = buffer.toString('utf8', 0, fs.readSync(fd, buffer, 0, CLEAR_HEAD, 0));
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return 0;
+  }
+  for (const line of head.split('\n')) {
+    if (!line.includes('<command-name>/clear</command-name>')) continue;
+    let entry = null;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const content = entry?.message?.content;
+    if (entry?.type !== 'user' || entry.isSidechain || typeof content !== 'string') continue;
+    if (!content.trimStart().startsWith('<command-name>/clear</command-name>')) continue;
+    const at = Date.parse(entry.timestamp);
+    if (at >= (since || 0)) return at;
+  }
+  return 0;
+}
+
+function startClaude(paneId, old, task, reader, clearedAt = 0) {
   unwatch(old);
   const t = {
     paneId,
@@ -1141,6 +1191,7 @@ function startClaude(paneId, old, task, reader) {
     source: 'claude-transcript',
     startedAt: Date.now(),
     endedAt: 0,
+    clearedAt,
     tokens: null,
     byId: new Map(),
     subs: new Map(),
@@ -1687,23 +1738,44 @@ function readCursor(c, lines = readLines(c.reader)) {
   publish(c.turn);
 }
 
-function attachCursor(paneId, chatId) {
+async function attachCursor(paneId, chatId) {
   const p = panes.get(paneId);
-  if (!p || p.agent !== 'Cursor Agent' || !chatId || p.cursor?.chatId === chatId) return;
+  if (
+    !p ||
+    p.agent !== 'Cursor Agent' ||
+    !chatId ||
+    p.cursor?.chatId === chatId ||
+    p.finding === chatId
+  )
+    return;
   const file = cursor.transcript(p.cwd, chatId);
   if (!file) return;
-  unwatch(p.cursor);
-  const c = { paneId, chatId, reader: { file, pos: 0, rest: null }, turn: null, answer: '' };
-  p.cursor = c;
+  p.finding = chatId;
+  try {
+    const c = { paneId, chatId, reader: { file, pos: 0, rest: null }, turn: null, answer: '' };
 
-  // the chat so far (its first task may already have started when the chat was found)
-  readCursor(c);
-  c.live = true;
-  watchFile(c, file, () =>
-    readLater(c.reader, lines => {
-      if (c.watcher) readCursor(c, lines);
-    })
-  );
+    // The chat so far (its first task may already have started when the chat was found), off the
+    // main loop: a long chat is many MB, and a read at once waited on the disk with the whole app
+    // held (stalls.log 2026-10-07, perf review app-4 #2).
+    const history = taken(c.reader, await readAhead(c.reader)) || [];
+
+    // the pane restarted, its process ended, or another chat attached meanwhile
+    if (panes.get(paneId) !== p || p.finding !== chatId) return;
+    unwatch(p.cursor);
+    p.cursor = c;
+    readCursor(c, history);
+    c.live = true;
+    const follow = () =>
+      readLater(c.reader, lines => {
+        if (c.watcher) readCursor(c, lines);
+      });
+    watchFile(c, file, follow);
+
+    // anything written while the history was read
+    follow();
+  } finally {
+    if (p.finding === chatId) p.finding = null;
+  }
 }
 
 module.exports = {
@@ -1813,7 +1885,7 @@ module.exports = {
     if (agent === 'OpenCode' && sessionId) attachOpenCode(paneId, sessionId);
 
     // a resumed chat (`--resume`) shows its last task
-    if (agent === 'Cursor Agent' && sessionId) attachCursor(paneId, sessionId);
+    if (agent === 'Cursor Agent' && sessionId) attachCursor(paneId, sessionId).catch(() => {});
   },
   // Events from pty-service: Codex's session id found; a process ended mid-task ends the task.
   fromPty(channel, payload) {
@@ -1828,7 +1900,7 @@ module.exports = {
       if (channel === 'pty:session') {
         attachCodex(payload.paneId, payload.sessionId).catch(() => {});
         attachOpenCode(payload.paneId, payload.sessionId);
-        attachCursor(payload.paneId, payload.sessionId);
+        attachCursor(payload.paneId, payload.sessionId).catch(() => {});
       }
       if (channel === 'pty:exit') {
         // The process is gone: its transcript / rollout watchers close (the turn itself stays
@@ -1877,4 +1949,6 @@ module.exports = {
     if (had) send('agent:turn', { paneId, cleared: true });
   },
   state: () => [...turns.values()].filter(t => t.startedAt).map(publicTurn),
+  // plain-Node checks only (tools/desktop-check/links-check.js)
+  _test: { claudeClearedIn },
 };

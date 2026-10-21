@@ -114,9 +114,14 @@
 .tat-dot[data-tone='err'] {
   --tone: var(--pg-err);
 }
+/* The name keeps room for itself, its pencil and its clock: on a narrow card the helper bubbles
+   give way first (a bubble with no room is out of sight), and the clip keeps the clock from ever
+   being drawn over a bubble or a button. */
 .tat-head-text {
-  flex: 1;
-  min-width: 0;
+  flex: 1 0 auto;
+  width: 0;
+  min-width: min(120px, 40%);
+  overflow: hidden;
 }
 .tat-head-text b,
 .tat-head-text small {

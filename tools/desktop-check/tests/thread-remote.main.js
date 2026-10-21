@@ -10,6 +10,22 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 module.exports = win => ({
   ...remoteAgents(win),
 
+  // Late join: what `remote:log` answers (a made-up held conversation, or null) and what
+  // `remote:askLog` answers; every ask is counted in `asks`. Nothing is paired or sent.
+  logStub(held, askState = 'asked') {
+    const { ipcMain } = require('electron');
+    module.exports.asks = 0;
+    ipcMain.removeHandler('remote:log');
+    ipcMain.handle('remote:log', () => ({ ok: true, value: held || null }));
+    ipcMain.removeHandler('remote:askLog');
+    ipcMain.handle('remote:askLog', () => {
+      module.exports.asks++;
+      return { ok: true, value: { state: askState } };
+    });
+    return true;
+  },
+  logAsks: () => module.exports.asks || 0,
+
   async size(width, height) {
     if (win.isMaximized()) win.unmaximize();
     win.setContentSize(width, height);

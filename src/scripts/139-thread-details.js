@@ -1,12 +1,13 @@
 // Technically Not · 139-thread-details.js — Desktop app only: one agent's details as a part that
 // can stand beside its thread (the side column), so the old "Agents and history" page (25) is not
 // needed for them. For the agent of one terminal panel it shows the total running time with its
-// color step, the queued prompts with their actions, and the sections Now, Sub-agents, Recent
-// activity, Working with, Files it is touching now, Skills and Setup. Every section folds, and an
-// empty one says so in one line. It listens to the same pushed events as the old page while at
-// least one copy is mounted, and to nothing after the last one is unmounted.
-// window.TnaiThreadDetails = { mount(host, paneId), unmount(host), refresh(host), state() }.
-// Look: src/styles/41-thread-details.css.
+// color step, the queued prompts with their actions, and the sections Now, Changes (what the agent
+// changed in its folder's git branch, and the branch's pull request; its rows are 153's),
+// Sub-agents, Recent activity, Working with, Files it is touching now, Skills and Setup. Every
+// section folds, and an empty one says so in one line. It listens to the same pushed events as the
+// old page while at least one copy is mounted, and to nothing after the last one is unmounted.
+// window.TnaiThreadDetails = { mount(host, paneId), unmount(host), refresh(host), state() }. Look:
+// src/styles/41-thread-details.css.
 (() => {
   const agents = window.TnaiAgents;
   const native = window.tnaiNative;
@@ -643,6 +644,40 @@
     );
   }
 
+  // ---------------------------------------------------------------- what the agent changed
+  // The facts and the section's rows are 153's (`TnaiThreadChanges`); this part says when to ask
+  // and places the section.
+  const changesKit = () => window.TnaiThreadChanges || null;
+
+  // A turn that ended is the moment the agent's work is done: its folder is asked again once.
+  const turnEndsSeen = new Map();
+
+  function onTurn(event) {
+    const paneId = event.detail?.paneId;
+    const turn = paneId ? window.TnaiTurns?.get?.(paneId) : null;
+    if (!turn?.endedAt || turnEndsSeen.get(paneId) === turn.endedAt) return;
+    turnEndsSeen.set(paneId, turn.endedAt);
+    if (![...views.values()].some(view => view.paneId === paneId)) return;
+    const session = agents.sessions().find(candidate => candidate.paneId === paneId);
+    const kit = changesKit();
+    kit?.ask(session?.cwd || '', kit.TURN_MS);
+  }
+
+  // Shown only for a folder in a git repository, once its first answer is in; `opened` is true
+  // when Details has just come on screen.
+  function paintChanges(view, session, opened) {
+    const kit = changesKit();
+    kit?.wantFor(session, opened);
+    const changes = kit?.get(session.cwd || '') || null;
+    const part = view.sections.changes;
+    const show = !!changes?.repo;
+    if (part.section.hidden === show) part.section.hidden = !show;
+    if (!show) return;
+    paint(view, 'changes', [session.paneId, changes], () =>
+      kit.build({ make, facts, note }, session, changes)
+    );
+  }
+
   // The card at the top: the state in its color, how long the agent has run, and what it does now
   // (the answer first). Empty sections say so in one quiet line under it.
   function paintHead(view, session, team) {
@@ -1067,6 +1102,9 @@
   const SECTIONS = [
     ['queue', 'Queued prompts'],
     ['now', 'Now'],
+
+    // after Now: the task, then what it has changed so far
+    ['changes', 'Changes'],
     ['team', 'Sub-agents'],
     ['timeline', 'Recent activity'],
     ['with', 'Working with'],
@@ -1084,6 +1122,10 @@
       view.stale = true;
       return;
     }
+
+    // just came on screen: mounted now, or shown again after its tab or the window was hidden
+    const opened = view.fresh || view.stale;
+    view.fresh = false;
     view.stale = false;
     const sessions = agents.sessions();
     const session = sessions.find(candidate => candidate.paneId === view.paneId);
@@ -1102,6 +1144,7 @@
     paintTotal(view, session);
     paintQueue(view, session);
     paintNow(view, session, team);
+    paintChanges(view, session, opened);
     paintSubAgents(view, session, team);
     paintActivity(view, session, team);
     paintWorkingWith(view, session, team, sessions, mine);
@@ -1183,6 +1226,12 @@
       window.TnaiThreads?.show?.(other.dataset.go);
       return;
     }
+    const pullRequest = target.closest('[data-pr]');
+    if (pullRequest) {
+      // refused as a window by the main process, which gives the address to the user's browser
+      window.open(pullRequest.dataset.pr, '_blank', 'noopener');
+      return;
+    }
     const worktree = target.closest('[data-worktree]');
     if (worktree) {
       window.TnaiWorktrees?.land?.(worktree.dataset.worktree, worktree);
@@ -1239,6 +1288,12 @@
       stops.push(() => target.removeEventListener(name, schedule));
     });
     window.addEventListener('tnai:terminal-pane-closed', onPanelClosed);
+    window.addEventListener('tnai:turn', onTurn);
+    stops.push(() => window.removeEventListener('tnai:turn', onTurn));
+
+    // 153: a folder's git facts came in
+    window.addEventListener('tnai:thread-changes', schedule);
+    stops.push(() => window.removeEventListener('tnai:thread-changes', schedule));
     stops.push(() => window.removeEventListener('tnai:terminal-pane-closed', onPanelClosed));
     if (native?.agentEvents) {
       keepStop(
@@ -1339,6 +1394,7 @@
       list,
       sections,
       stale: false,
+      fresh: true,
       totalMs: 0,
     };
   }

@@ -34,7 +34,7 @@ app.whenReady().then(async () => {
     if (Object.keys(data).length) kept.push(data);
   }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tnai-clip-')),
-    file = path.join(dir, 'abc123-clip.webm');
+    file = path.join(dir, 'abc123-clip.mp4');
   fs.writeFileSync(file, Buffer.alloc(2048, 7));
   const text =
     '[Attached clip: 2 s of screen recording as 1 frame, ' +
@@ -79,7 +79,7 @@ app.whenReady().then(async () => {
     check(!!got, 'a page receives the paste');
     check(
       got?.files.length === 1 &&
-        got.files[0].name === 'abc123-clip.webm' &&
+        got.files[0].name === 'abc123-clip.mp4' &&
         got.files[0].size === 2048,
       'the page gets the video as a file (' + JSON.stringify(got?.files) + ')'
     );
@@ -111,6 +111,21 @@ app.whenReady().then(async () => {
           ')'
       );
     console.log('note recorder formats this build can write: ' + types);
+
+    // The recorder's own list of formats (desktop/snapshot-recorder.html), tried in this build's
+    // engine: a clip is MP4 here, which X and other sites take (they refuse WebM).
+    const recorderPage = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'desktop', 'snapshot-recorder.html'),
+      'utf8'
+    );
+    const listText = (/const type = (\[[^\]]+\])\.find/.exec(recorderPage) || [])[1] || '[]';
+    const chosen = await win.webContents.executeJavaScript(
+      listText + '.find(type => MediaRecorder.isTypeSupported(type)) || ""'
+    );
+    check(
+      /^video\/mp4/.test(chosen),
+      'the recorder records clips as MP4 in this build (' + chosen + ')'
+    );
     win.destroy();
   } catch (error) {
     check(false, 'ran without an error: ' + error.message);

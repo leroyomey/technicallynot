@@ -4,7 +4,10 @@
 // account: the relay address, a connection ticket and the list of devices on the relay.
 //
 // The secret never leaves this file except as a keyed hash: not to the window, not to a log, and
-// not to the relay (which is sent a one-time proof made from it).
+// not to the relay (which is sent a one-time proof made from it). It is not even kept: what is
+// saved is this computer's own key, made from the secret for its device id (deviceKeyOf), which
+// proves that one id to the relay and nothing else. A settings file taken from this computer is
+// then one device on the relay, not all of them (docs/plans/own-relay.md, "Per-device keys").
 //
 // Pure Node apart from what is handed in, so tools/own-relay-test.js runs it without Electron.
 //   backend: remote-service.js storageBackend() for its own file (encrypt, decrypt, read, write,
@@ -36,7 +39,17 @@ const SECRET_MIN = 32,
 const WAITS = new Set(['proof_used', 'rate_limited']);
 
 // Refusals that need the user: the link stops and the page says which.
-const STOPS = new Set(['clock_off', 'too_many_ids']);
+// relay_too_old: the relay refused this computer's key and says it does not know device keys
+// (deployed before them), so the cure is a deploy, not the secret.
+const STOPS = new Set(['clock_off', 'too_many_ids', 'device_revoked', 'relay_too_old']);
+
+// Written as the "secret" beside a saved key, for builds before per-device keys (0.3.73 and
+// earlier). They do not know the key and read only `secret`: with none they would see "no relay",
+// and a signed-in account would then remove every pairing made through this relay. This text is
+// printable and of a secret's length, so they take it as a secret an earlier build saved, but it
+// repeats itself, so their rules (and today's) refuse it: they hold the relay as "secret no longer
+// taken" and ask for the secret, and nothing is wiped. It is no secret and proves nothing.
+const OLDER_BUILDS_MARK = 'key-saved-'.repeat(4);
 
 // What stands in for the account id while an own relay is set (accountId below says why it is one
 // constant). own-relay-wiring.js needs it before a relay is saved, to ask what a change to it
@@ -193,6 +206,17 @@ const onceASecret = text =>
   text.trim().length <= SECRET_MAX &&
   /^[\x21-\x7e]+$/.test(text.trim());
 
+// A key that was saved in place of the secret: 64 hex characters.
+const KEY = /^[0-9a-f]{64}$/;
+
+// The key one computer keeps for its own device id. The relay works out the same text
+// (relay/src/index.js deviceKeyOf) and takes a proof under it for that id only.
+const deviceKeyOf = (crypto, secret, id) =>
+  crypto
+    .createHmac('sha256', secret)
+    .update('device-key:' + id)
+    .digest('hex');
+
 // The file that keeps this computer's device id on own relays, as the idStore createOwnRelay
 // takes. It is here and not in main.js so a test can run it against a real folder.
 function idFileStore({ file, fs = require('fs') }) {
@@ -210,10 +234,21 @@ function idFileStore({ file, fs = require('fs') }) {
 
     // Written beside the file and moved over it, so a full disk leaves the old file whole. A
     // failure throws; the caller keeps it as the reason the Devices page shows.
+    // A half-written file beside it is taken away again (the full disk left it there until the
+    // next write that worked).
     write(text) {
       const tmp = file + '.tmp';
-      fs.writeFileSync(tmp, text);
-      fs.renameSync(tmp, file);
+      try {
+        fs.writeFileSync(tmp, text);
+        fs.renameSync(tmp, file);
+      } catch (error) {
+        try {
+          fs.unlinkSync(tmp);
+        } catch {
+          /* never written, or already gone */
+        }
+        throw error;
+      }
     },
   };
 }
@@ -231,7 +266,9 @@ function createOwnRelay({
   now = Date.now,
   crypto = require('crypto'),
 }) {
-  let saved; // undefined = not read yet; null = none; else { url, secret }
+  // undefined = not read yet; null = none; else { url, key, id } (this build) or { url, secret }
+  // (saved before it, or while this computer's id could not be read; moved over at a later read)
+  let saved;
 
   // why the last read gave nothing: '', 'unavailable', 'unreadable', 'old_secret' or
   // 'old_address'
@@ -281,8 +318,22 @@ function createOwnRelay({
       if (!text) return saved;
       const v = JSON.parse(backend.decrypt(Buffer.from(text, 'base64')).toString('utf8'));
       const url = cleanUrl(v?.url),
-        secret = cleanSecret(v?.secret);
-      if (url && secret) saved = { url, secret };
+        secret = cleanSecret(v?.secret),
+        hasKey = typeof v?.key === 'string' && KEY.test(v.key) && DEVICE.test(String(v?.id || ''));
+      if (url && hasKey) {
+        // A key is for one device id. One for another id (the id file was removed or replaced)
+        // cannot sign for this computer: held as a secret that is no longer taken, so the page
+        // asks for the secret again and nothing is sent.
+        if (v.id === deviceId()) saved = { url, key: v.key, id: v.id };
+        else {
+          problem = 'old_secret';
+          oldUrl = url;
+          return saved;
+        }
+      } else if (url && secret) {
+        saved = { url, secret };
+        moveToKey();
+      }
 
       // A relay was saved here with an address or a secret an earlier build took and today's
       // rules refuse. That is not "no relay": said as "none", the card would offer to set one with
@@ -290,7 +341,7 @@ function createOwnRelay({
       // It is kept as a relay that is held (held() below) and cannot be used until the user sets
       // it again; the page says which of the two it is. An address that is no longer taken is not
       // kept or shown: nothing is sent to it and the page has no use for it.
-      const wasSaved = onceAnAddress(v?.url) && onceASecret(v?.secret);
+      const wasSaved = onceAnAddress(v?.url) && (hasKey || onceASecret(v?.secret));
       if (!saved && wasSaved) {
         problem = url ? 'old_secret' : 'old_address';
         oldUrl = url || '';
@@ -304,9 +355,39 @@ function createOwnRelay({
     return saved;
   }
 
+  // A relay saved with its secret (by an earlier build, or while this computer's id could not be
+  // read) is saved again as this computer's key, once its id is on disk. Until then, and when the
+  // write fails, the secret is used as before.
+  function moveToKey() {
+    if (!saved?.secret || !idStore) return;
+    const id = deviceId();
+    if (idProblem !== '') return;
+    try {
+      store({ url: saved.url, key: deviceKeyOf(crypto, saved.secret, id), id });
+    } catch {
+      /* kept as it was; tried again at the next start */
+    }
+  }
+
+  // What set() saves for an address and a secret: this computer's key, or the secret itself while
+  // this computer's id is good for this run only (a key for that id would not sign after a
+  // restart).
+  function entryFor(url, secret) {
+    // (no file for the id at all: the same, every start would make another id)
+    if (!idStore) return { url, secret };
+    const id = deviceId();
+    if (idProblem !== '') return { url, secret };
+    return { url, key: deviceKeyOf(crypto, secret, id), id };
+  }
+
   function store(value) {
+    // a key goes to disk with the mark older builds read (OLDER_BUILDS_MARK); in memory it is
+    // the key alone
+    const written = value?.key ? { ...value, secret: OLDER_BUILDS_MARK } : value;
     backend.write(
-      value ? backend.encrypt(Buffer.from(JSON.stringify(value), 'utf8')).toString('base64') : ''
+      written
+        ? backend.encrypt(Buffer.from(JSON.stringify(written), 'utf8')).toString('base64')
+        : ''
     );
     saved = value;
 
@@ -336,8 +417,11 @@ function createOwnRelay({
   const hmac = (secret, data) => crypto.createHmac('sha256', secret).update(data).digest('hex');
 
   // Each proof needs a newer time than the last one of this device (the relay refuses a repeat).
+  // Signed with this computer's key, which speaks for its own id only; with the secret only while
+  // the relay is still saved with it (moveToKey).
   function proof(what, deviceId) {
     const r = load();
+    if (r.key && r.id !== deviceId) throw { status: 0, code: 'device_required' };
     lastTime = Math.max(now(), lastTime + 1);
     return {
       'X-Relay-Device': deviceId,
@@ -345,7 +429,7 @@ function createOwnRelay({
       // the relay's host is part of it: a proof sent to a mistyped address is worth nothing at
       // the real one
       'X-Relay-Proof': hmac(
-        r.secret,
+        r.key || r.secret,
         'proof:' + what + ':' + new URL(r.url).host.toLowerCase() + ':' + deviceId + ':' + lastTime
       ),
     };
@@ -379,6 +463,9 @@ function createOwnRelay({
     const r = load();
     if (!r) throw { status: 0, code: 'no_relay' };
     if (!DEVICE.test(String(deviceId || ''))) throw { status: 0, code: 'device_required' };
+
+    // a saved key signs for its own id only
+    if (r.key && r.id !== deviceId) throw { status: 0, code: 'device_required' };
     let res, body;
     try {
       res = await fetch(r.url + path, {
@@ -418,9 +505,31 @@ function createOwnRelay({
       if (!again) return call(method, path, what, deviceId, true);
     }
 
+    // A key refused by a relay that does not know keys (deployed before them): the page says to
+    // deploy it again, not to check the secret (typing it again would save a key again).
+    if (code === 'invalid_proof' && r.key && (await relayTooOld(r.url)))
+      throw { status: 403, code: 'relay_too_old' };
+
     // Some pass by themselves, so the link waits and tries again (429); some need the user, so it
     // stops and the page says why (403); a 401 is the relay refusing the secret.
     throw { status: WAITS.has(code) ? 429 : STOPS.has(code) ? 403 : res.status, code };
+  }
+
+  // Does the relay at this address say it was deployed before device keys? Its front answer
+  // (GET /, no proof) names `keys: 1` since then. Asked only after a key was refused; anything
+  // that is not a clear "Technically Not relay without keys" counts as no.
+  async function relayTooOld(url) {
+    try {
+      const res = await fetch(url + '/', {
+        method: 'GET',
+        redirect: 'error',
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+      const front = JSON.parse(await limited(res));
+      return res.ok && front?.relay === 'technically-not' && front.keys !== 1;
+    } catch {
+      return false;
+    }
   }
 
   // A relay was saved here but cannot be read right now (the file does not decrypt this once, or
@@ -517,7 +626,7 @@ function createOwnRelay({
       const r = checked(urlText, secretText);
       if (!r.ok) return r;
       try {
-        store({ url: r.url, secret: r.secret });
+        store(entryFor(r.url, r.secret));
       } catch {
         return { ok: false, error: 'not_saved' };
       }

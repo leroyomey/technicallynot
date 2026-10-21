@@ -139,13 +139,23 @@
     return false;
   }
 
+  // The panel a revive opened, closed again when no process started in it, so a failed revive
+  // leaves no empty thread behind (as Past conversations' Resume does, 117).
+  async function dropPanel(paneId) {
+    if (agents.sessions().some(session => session.paneId === paneId && session.running === true))
+      return;
+    await agents.stop?.(paneId);
+    paneEl(paneId)?.querySelector('.terminal-pane-tools button[title="Close terminal"]')?.click();
+  }
+
   async function reopen(req) {
     const since = Date.now();
     let paneId = req.paneId;
 
     // A pane left over from the last Technically Not session that still shows this conversation:
-    // resume there instead of opening a duplicate.
-    if (!paneId && req.contextId)
+    // resume there instead of opening a duplicate. Not for a Resume another computer asked for
+    // (item 44): that one always opens a new panel under its own mark, held at "Ask first".
+    if (!paneId && req.contextId && !req.remote)
       paneId =
         agents.sessions().find(s => !s.running && s.sessionId === req.contextId && paneEl(s.paneId))
           ?.paneId || '';
@@ -181,11 +191,20 @@
 
       // `tnai new --model --effort` (desktop/model-pick.js checked them): the fresh pane starts on
       // that pick (46 once), like a model named in the composer (73).
+      // req.schedule: a scheduled prompt's run (desktop/prompt-schedules.js). It starts at the
+      // normal access level of the schedule's own project (46 `accessIn`), never a higher one, and
+      // its mark goes to main with the start, which starts it in that project's folder.
       const pick = req.remote
         ? { access: 'ask' }
-        : !req.contextId && (req.model || req.effort)
-          ? { model: req.model || '', effort: req.effort || '' }
-          : null;
+        : req.schedule
+          ? {
+              model: req.model || '',
+              effort: req.effort || '',
+              access: window.TnaiLaunchPrefs?.accessIn?.(req.folder, req.agent) || 'default',
+            }
+          : !req.contextId && (req.model || req.effort)
+            ? { model: req.model || '', effort: req.effort || '' }
+            : null;
       if (pick) window.TnaiLaunchPrefs?.once(req.agent, pick);
       let opened;
       try {
@@ -196,11 +215,18 @@
           customAgentId: req.customAgentId || '',
           ownedByUser: !!req.ownedByUser,
           ...(req.remote ? { remote: req.requestId } : null),
+          ...(req.schedule ? { schedule: String(req.schedule) } : null),
         });
+      } catch (error) {
+        await dropPanel(record.id).catch(() => {});
+        throw error;
       } finally {
         if (pick) window.TnaiLaunchPrefs?.once(req.agent, null);
       }
-      if (!opened?.ok) return { error: opened?.error || req.agent + ' could not start.' };
+      if (!opened?.ok) {
+        await dropPanel(record.id).catch(() => {});
+        return { error: opened?.error || req.agent + ' could not start.' };
+      }
       paneId = record.id;
       if (name !== req.name && req.name)
         say(req.name + ' is back as ' + name + ' (another agent has that name now).');
@@ -224,8 +250,13 @@
 
   // ---------- `tnai rename NAME`: an agent renames its own panel when the user asks (same path as
   // the user's rename, 21) ----------
-  native.lifecycle.onRename?.(({ paneId, name } = {}) => {
-    if (paneId && name) window.TnaiPaneNames?.rename(String(paneId), String(name));
+  native.lifecycle.onRename?.(({ paneId, name, by } = {}) => {
+    if (!paneId || !name) return;
+    const before = window.TnaiAgents?.sessions?.().find(s => s.paneId === paneId)?.name || '';
+    window.TnaiPaneNames?.rename(String(paneId), String(name));
+
+    // `by`: another computer asked for it (item 44), which is said where it lands
+    if (by) say(String(by) + ' renamed ' + (before || 'an agent') + ' to ' + String(name) + '.');
   });
 
   // ---------- Close an agent Technically Not revived, once it finished that task (its conversation
@@ -249,6 +280,17 @@
             ' closed ' +
             (name || 'an agent') +
             ' as you asked. Its conversation and results are kept.'
+        );
+        return;
+      }
+
+      // another computer closed it from its "..." menu (item 44)
+      if (reason === 'remote') {
+        say(
+          (by || 'Another computer') +
+            ' closed ' +
+            (name || 'an agent') +
+            '. Its conversation is kept in Past conversations.'
         );
         return;
       }

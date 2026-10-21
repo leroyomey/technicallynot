@@ -4,8 +4,9 @@
 // encrypted sessions (link.mjs), what each computer says needs you and the answers (needs.mjs).
 // This file only shows screens, reads the camera and hands messages over. What it does NOT have
 // yet: signing in, the real relay (it talks to the address it was served from, the stand-in relay
-// of tools/phone-pair-try, where a "room" is one test computer), agents, activity, notifications,
-// the app lock. Two habits of this file, both learned from mistakes found in review:
+// of tools/phone-pair-try, where a "room" is one test computer), notifications, the app lock.
+// Agents, one agent, Start and Activity are screens.mjs, which this file only calls. Two habits of
+// this file, both learned from mistakes found in review:
 // - The connection is never steered step by step. The page keeps what it WANTS (which room, a
 // pairing under way, the screen visible) and sync() brings the link there, one change after
 // another. Nobody else calls the link's stop, hold or resume.
@@ -18,6 +19,7 @@ import { createLink } from '../src/link.mjs';
 import { createNeeds } from '../src/needs.mjs';
 import { createOwnRelay } from '../src/own-relay.mjs';
 import { icon } from './icons.mjs';
+import { createScreens } from './screens.mjs';
 
 const $ = id => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -66,6 +68,8 @@ const NOT_SENT = {
 let store,
   link,
   needs,
+  // the control screens: Agents, one agent, Start an agent, Activity (screens.mjs)
+  screens,
   own,
   myId = '';
 
@@ -168,14 +172,15 @@ function show(name) {
   }
   if (name === 'computers') listComputers();
   if (name === 'scan') startCamera();
+  screens?.shown(name);
 }
 
 function tabs() {
   for (const nav of document.querySelectorAll('.tabs'))
     for (const [key, ic, label, on] of [
       ['needs', 'bell', 'Needs you', true],
-      ['agents', 'bot', 'Agents', false],
-      ['activity', 'clock', 'Activity', false],
+      ['agents', 'bot', 'Agents', true],
+      ['activity', 'clock', 'Activity', true],
       ['computers', 'network', 'Computers', true],
     ]) {
       const b = el('button', 'tab'),
@@ -232,6 +237,7 @@ async function listComputers() {
       await link.forget(p.id).catch(() => {});
       peers.delete(p.id);
       needs.forget(p.id);
+      screens.forget(p.id);
       await listComputers();
       paintNeeds();
     };
@@ -746,8 +752,25 @@ const RELAY_ERR = {
   clock_off: "This phone's clock is more than two minutes off. Set the time, then connect again.",
   too_many_ids:
     'Your relay knows too many devices. Set a new secret on the relay and here; your pairings stay.',
+
+  // the relay keeps a key per phone now (phone/src/own-relay.mjs STOPS says when each comes)
+  phone_key_retired:
+    'Your relay now gives each phone its own key. Type its secret again under Change.',
+  other_id:
+    'The key saved for your relay belongs to another device. Type its secret again under Change.',
+  relay_too_old:
+    'Your relay is older than this app. Deploy it again (npm run deploy in its folder), then connect again.',
+  device_revoked:
+    'Your relay no longer lets this phone in. Whoever runs the relay can let it in again.',
   refused: 'No relay answers at that address. Check the address under Change.',
   device_required: 'This phone has no device id yet. Close the app and open it again.',
+
+  // the relay answers but does not name this page (relay/README.md, "Which web page"); "or check
+  // the connection": a network that answers every address looks the same from here
+  page_not_allowed:
+    "Your relay does not let this page in yet. Add this page's address (" +
+    location.origin +
+    ') to PHONE_ORIGINS in its wrangler.toml and deploy it again, or check the connection.',
   network: 'The relay could not be reached. Check the connection and try again.',
 };
 const RELAY_CONN = {
@@ -781,7 +804,9 @@ async function relayChanged() {
 function relaySetup() {
   $('relaySave').onclick = async () => {
     $('relaySave').disabled = true;
-    const saved = await own.set($('relayUrl').value, $('relaySecret').value);
+
+    // the key is made for this phone's id, so the relay can tell this phone from the others
+    const saved = await own.set($('relayUrl').value, $('relaySecret').value, myId);
     if (!saved.ok) {
       $('relaySave').disabled = false;
       return paintRelay(RELAY_ERR[saved.error]);
@@ -859,6 +884,13 @@ async function main() {
     send: (id, obj) => link.send(id, obj),
     on: { changed: () => paintNeeds() },
   });
+  screens = createScreens({
+    el,
+    $,
+    show,
+    label: pcLabel,
+    send: (id, obj) => link.send(id, obj),
+  });
   link = createLink({
     self: { id: myId },
     store,
@@ -886,16 +918,23 @@ async function main() {
       },
       peer: (id, s) => {
         peers.set(id, s);
-        if (!s.session) needs.sessionEnded(id);
+        if (!s.session) {
+          needs.sessionEnded(id);
+          screens.sessionEnded(id);
+        }
         paintComputers();
         paintNeeds();
       },
       session: id => {
         needs.sessionStarted(id);
+        screens.sessionStarted(id);
         paintComputers();
       },
       // every field is read again as untrusted text there, and only ever set as text here
-      message: (id, obj) => needs.onMessage(id, obj),
+      message: (id, obj) => {
+        needs.onMessage(id, obj);
+        screens.onMessage(id, obj);
+      },
       pair: (from, obj) => {
         onPair(from, obj).catch(() => {});
       },

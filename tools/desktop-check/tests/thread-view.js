@@ -401,6 +401,32 @@ try {
     check(/typed-55/.test(textOf(term)), 'with everything it showed before');
     await until(() => term.rows === rowsBefore, 4000);
 
+    // The prompt box aimed at the second agent while the first thread is open (a letter under
+    // the prompt box does this): the route hint warns, and stops warning when aimed back.
+    const routeHint = () => document.querySelector('.composer .tnai-route-hint');
+    window.TnaiLiveTasks.setTarget(second);
+    check(
+      !!(await until(
+        () =>
+          routeHint()?.classList.contains('tnai-elsewhere') &&
+          /, not this thread$/.test(routeHint().textContent),
+        3000
+      )),
+      'aimed at another agent, the hint warns: ' + routeHint()?.textContent
+    );
+    for (const theme of ['dark', 'light']) {
+      window.TnaiTheme.set(theme);
+      await frame();
+      await wait(400);
+      await shot('thread-view-elsewhere-' + theme);
+    }
+    window.TnaiTheme.set('dark');
+    window.TnaiLiveTasks.setTarget(first);
+    check(
+      !!(await until(() => !routeHint()?.classList.contains('tnai-elsewhere'), 3000)),
+      'aimed back at the open thread, the warning goes: ' + routeHint()?.textContent
+    );
+
     // ---- G: low and narrow windows ----
     const was = await main('minimum'),
       start = await main('content');

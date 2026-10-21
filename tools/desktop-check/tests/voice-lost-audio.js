@@ -1,11 +1,10 @@
 /*
- * Technically Not tools · desktop-check/tests/voice-lost-audio.js — a busy window loses no audio
- * of a voice prompt (the recorder reads the mic off the window's thread; it still says how much was
- * lost, which is now none), and the notification sound waits while the mic records. Uses this
- * PC's real microphone for about four seconds; nothing is transcribed, kept or sent. With no
- * microphone it says so and checks only what needs none. The window is held up by a blocking
- * request to a local page that answers late (voice-lost-audio.main.js): no busy loop. Returns {ok,
- * log}.
+ * Technically Not tools · desktop-check/tests/voice-lost-audio.js — a busy window loses no audio of
+ * a voice prompt (the recorder reads the mic off the window's thread; it still says how much was
+ * lost, which is now none), and the notification sound waits while the mic records. Uses this PC's
+ * real microphone for about four seconds; nothing is transcribed, kept or sent. With no microphone
+ * it says so and checks only what needs none. The window is held up at a `debugger;` statement that
+ * the main side lets go after the wait (voice-lost-audio.main.js): no busy loop. Returns {ok, log}.
  */
 const log = [],
   wait = ms => new Promise(r => setTimeout(r, ms));
@@ -37,16 +36,13 @@ AC.prototype.createOscillator = function () {
   tones++;
   return realOsc.call(this);
 };
-const hold = (url, ms) => {
-  const x = new XMLHttpRequest();
-  x.open('GET', url + '?ms=' + ms + '&t=' + Date.now(), false);
-  try {
-    x.send();
-  } catch (e) {}
+
+// The main side (voice-lost-audio.main.js) holds the page at this statement for the armed time.
+const hold = () => {
+  debugger;
 };
 try {
   check(!!R && R.supported(), 'the recorder is there');
-  const url = await main('serve');
   let mic = true;
   try {
     await R.start();
@@ -70,9 +66,10 @@ try {
 
     // 2: the window held up for 600 ms in the middle of a recording.
     await R.start();
+    await main('armHold', 600);
     await wait(500);
     const t0 = performance.now();
-    hold(url, 600);
+    hold();
     const heldMs = Math.round(performance.now() - t0);
     await wait(500);
     const clip = await R.stop();
@@ -165,6 +162,6 @@ try {
   R.rest && R.rest();
 } catch (e) {}
 try {
-  await main('stop');
+  await main('disarm');
 } catch (e) {}
 return { ok, log };

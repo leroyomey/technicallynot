@@ -389,6 +389,8 @@ try {
   const wanted = [
     'Queued prompts',
     'Now',
+    // the thread's work on its branch (153, built 2026-10-16)
+    'Changes',
     'Sub-agents',
     'Recent activity',
     'Working with',
@@ -549,9 +551,8 @@ try {
   // one finished with its output, one that never reports that it started.
   const endpoint = await native.agentEvents.endpoint(lead);
   const hook = message =>
-    fetch(endpoint.hook, {
+    window.TnaiTest.request(endpoint.hook, {
       method: 'POST',
-      mode: 'no-cors',
       body: JSON.stringify({ session_id: 's', transcript_path: 't', cwd: 'c', ...message }),
     });
   const longTask =

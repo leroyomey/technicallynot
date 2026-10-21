@@ -86,11 +86,14 @@ const ready = (paneId, idle) => (
     }
     const text = await screen(paneId),
       rows = text.split('\n');
-    if (/Update available/i.test(text) && /esc skip/i.test(text)) {
+
+    // Codex's update offer and its "Hooks need review" question (the app's step hook is new in
+    // the throwaway profile, and the app never trusts it itself): skip both, never accept.
+    if (/Update available|Hooks need review/i.test(text) && /esc skip/i.test(text)) {
       N.pty.write(paneId, '\x1b');
       await wait(1500);
       return false;
-    } // Codex update offer: skip, never update
+    }
     if (
       /trust the files in this folder|project you created or one you trust|trust the contents of this directory|Trust this folder\?/i.test(
         text.replace(/\s+/g, ' ')

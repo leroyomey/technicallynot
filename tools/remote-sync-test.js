@@ -1718,14 +1718,21 @@ function handoffFor(cwd, more = {}) {
         line = (/handle\('remote:setControl'([\s\S]*?)handle\('/.exec(svc) || ['', ''])[1]
           .replace(/\/\/.*$/gm, '')
           .replace(/\s+/g, ' '),
-        asks =
-          src('src/scripts/111-devices-page.js').match(/act\('setControl'[^)]*sync[^)]*\)/g) || [];
+        // every ask of the page that names the hand-over, as one statement (up to its `;`)
+        asks = (
+          src('src/scripts/111-devices-page.js').match(/act\(\s*'setControl'[^;]*;/g) || []
+        ).filter(a => a.includes('sync'));
+
+      // Updated 2026-10-21 (review 23 pass): the typing word 'choose say sync type' (item 41)
+      // carries the hand-over too, and a phone's question asks without it (review 23, H2).
       check(
-        "grantable by one word only (read from the code): the window's channel sets the hand-over mark for exactly 'choose say sync' and nothing else, and the page asks for it only with that word",
+        "grantable by its words only (read from the code): the window's channel sets the hand-over mark for exactly 'choose say sync' or 'choose say sync type', and the page asks with them only for a computer, never for a phone",
         (line.match(/sync:/g) || []).length === 1 &&
-          line.includes("sync: more === 'choose say sync'") &&
+          line.includes("sync: more === 'choose say sync' || more === 'choose say sync type',") &&
           asks.length >= 1 &&
-          asks.every(a => /true,\s*'choose say sync'\)$/.test(a)),
+          asks.every(a =>
+            /true,\s*isPhone\(pc\)\s*\?\s*'choose say'\s*:\s*'choose say sync type'\s*\)/.test(a)
+          ),
         [line.trim().slice(0, 160), asks]
       );
 

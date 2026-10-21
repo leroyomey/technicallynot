@@ -100,6 +100,40 @@ if (detected.get('Claude Code')?.installed)
     'Claude Code (real, no prompt sent)'
   );
 else log.push('skip Claude Code: not installed');
+
+// A new lead started the way the prompt box starts one (19 startLead): its panel is handed to the
+// caller (onOpened) as soon as it exists, well before the tool is ready, so the prompt box can open
+// its thread at once instead of after the start (no prompt is sent).
+if (detected.get('Claude Code')?.installed && window.TnaiTeam?.startLead) {
+  const began = performance.now();
+  let openedAfter = 0;
+  let openedPane = '';
+  const lead = await window.TnaiTeam.startLead({
+    here: true,
+    agent: 'Claude Code',
+    onOpened: paneId => {
+      openedAfter = performance.now() - began;
+      openedPane = paneId;
+    },
+  });
+  const readyAfter = performance.now() - began;
+  log.push(
+    'time a new lead: its panel handed over after ' +
+      Math.round(openedAfter) +
+      ' ms, ready for its prompt after ' +
+      Math.round(readyAfter) +
+      ' ms'
+  );
+  check(
+    !!lead?.paneId &&
+      openedPane === lead.paneId &&
+      openedAfter > 0 &&
+      openedAfter < readyAfter - 300,
+    "a new lead's panel is handed over before the tool is ready, so its thread can open at once (" +
+      (lead?.error || Math.round(openedAfter) + ' ms against ' + Math.round(readyAfter) + ' ms') +
+      ')'
+  );
+}
 for (const s of agents.sessions().filter(s => s.running))
   await agents.stop(s.paneId).catch(() => {});
 

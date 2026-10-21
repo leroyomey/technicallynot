@@ -226,14 +226,13 @@ try {
   await main('jump', first);
   check(!!(await reaches(first)), "a pressed notification opens that agent's thread");
 
-  // The agent's card of the old grid (11). The grid is still built, unseen, so the press is sent
-  // to the card itself.
+  // The old grid of 11 builds no cards while it is off screen (speed lead 8), so there is no card
+  // to press.
   check(await otherPage('skills'), 'setup: the Skills page shows');
-  const card = document.querySelector('.tnai-card[data-pane="' + CSS.escape(second) + '"]');
-  if (card) {
-    card.click();
-    check(!!(await reaches(second)), "a press on the agent's card opens its thread");
-  } else log.push('note the old grid has no card for the agent, so its press was not sent');
+  check(
+    !document.querySelector('.tnai-card[data-pane="' + CSS.escape(second) + '"]'),
+    'the hidden old grid has no card for the agent'
+  );
 
   // A sub-agent's arrow on its lead's card (19). No sub-agent runs here, so the arrow is made up
   // with the markup 19 gives it; the handler that takes the press is the app's own.

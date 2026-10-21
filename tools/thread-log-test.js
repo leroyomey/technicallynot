@@ -163,7 +163,7 @@ const got = claude.entries(LINES);
 const kinds = got.map(entry => entry.kind).join(' ');
 check(
   kinds ===
-    'note you title say act result act result act result act result ask act result act from note say worked',
+    'note note you title say act result act result act result act result ask act result act from note say worked',
   'every line becomes the right kind of entry, in order: ' + kinds
 );
 const byId = id => got.filter(entry => entry.id === id);
@@ -172,17 +172,21 @@ check(
   'a slash command is a small note: "' + got[0].text + '"'
 );
 check(
-  got[1].text === 'Fix the cart total.',
+  got[1].kind === 'note' && got[1].text === 'Set model to Haiku',
+  'what a command such as /model answered is one quiet note: "' + got[1].text + '"'
+);
+check(
+  got[2].text === 'Fix the cart total.',
   "the prompt is the user's words: the app's mark and the CLI's reminder are taken off (\"" +
-    got[1].text +
+    got[2].text +
     '")'
 );
 check(
-  got[2].kind === 'title' && got[2].text === 'Fix the cart total',
+  got[3].kind === 'title' && got[3].text === 'Fix the cart total',
   "the tool's own title is kept"
 );
 check(
-  got[3].text === 'I will look at **cart.js** first.' && got[3].model === 'claude-haiku-5-5',
+  got[4].text === 'I will look at **cart.js** first.' && got[4].model === 'claude-haiku-5-5',
   "the agent's words are kept as written, with the model that wrote them"
 );
 check(
@@ -657,6 +661,118 @@ check(
   );
 }
 
+// ---------- the GitHub Copilot reader ----------
+// Made-up events in the shapes of the schema Copilot CLI 1.0.101 ships
+// (schemas/session-events.schema.json), read 2026-10-21: no real conversation on this PC yet.
+{
+  const copilot = require('../desktop/thread-log-copilot');
+  let number = 0;
+  const event = (type, data, more = {}) =>
+    JSON.stringify({ type, data, id: 'e' + ++number, timestamp: at(number), ...more });
+  const events = [
+    event('session.start', { sessionId: 's1', context: { cwd: CWD } }),
+    event('user.message', { content: 'Make a landing page.' }),
+    event('assistant.message', { messageId: 'm1', content: 'Writing it.', model: 'gpt-5.5' }),
+    event('tool.execution_start', { toolCallId: 't0', toolName: 'report_intent', arguments: {} }),
+    event('tool.execution_start', {
+      toolCallId: 't1',
+      toolName: 'create',
+      arguments: { path: CWD + '\\index.html', file_text: '<h1>Hi</h1>\n<p>x</p>\n' },
+    }),
+    event('tool.execution_complete', {
+      toolCallId: 't1',
+      success: true,
+      result: { content: 'Created file' },
+    }),
+    event('tool.execution_start', {
+      toolCallId: 't2',
+      toolName: 'powershell',
+      arguments: { command: 'npm test' },
+    }),
+    event('tool.execution_complete', {
+      toolCallId: 't2',
+      success: false,
+      error: { message: 'exit code 1' },
+    }),
+    event('tool.execution_start', {
+      toolCallId: 't3',
+      toolName: 'view',
+      arguments: { path: CWD + '\\a.js' },
+      parentToolCallId: 'task-1',
+    }),
+    event('assistant.message', { messageId: 'm2', content: 'Inside a helper.' }, { agentId: 'a1' }),
+    event('user.message', { content: 'skill text', source: 'skill-pdf' }),
+    event('tool.execution_start', {
+      toolCallId: 't4',
+      toolName: 'ask_user',
+      arguments: { question: 'Which color?', choices: ['Blue', 'Green'] },
+    }),
+    event('tool.execution_start', {
+      toolCallId: 't5',
+      toolName: 'tnai_delegate',
+      mcpServerName: 'tnai',
+      mcpToolName: 'tnai_delegate',
+      arguments: {},
+    }),
+    event('abort', { reason: 'user_initiated' }),
+  ];
+  const seen = copilot.entries(events, { cwd: CWD });
+  const kinds = seen.map(entry => entry.kind).join(',');
+  check(
+    kinds === 'you,say,act,result,act,result,ask,act,note',
+    'Copilot: prompt, words, actions with results, a question, a stop: ' + kinds
+  );
+  const wrote = seen.find(entry => entry.kind === 'act' && entry.id === 't1');
+  const wroteResult = seen.find(entry => entry.kind === 'result' && entry.id === 't1');
+  check(
+    wrote?.verb === 'Wrote' &&
+      wrote.what === 'index.html' &&
+      wroteResult?.added === 2 &&
+      wroteResult.created === true,
+    'Copilot: a new file is Wrote, from the session folder, with its line count'
+  );
+  const ran = seen.find(entry => entry.kind === 'result' && entry.id === 't2');
+  check(
+    ran?.failed === true && ran.text === 'exit code 1',
+    'Copilot: a failed command says so, with its error'
+  );
+  check(
+    seen[1].model === 'gpt-5.5' && seen[1].text === 'Writing it.',
+    'Copilot: the words carry their model'
+  );
+  check(
+    !seen.some(entry => entry.text === 'Inside a helper.' || entry.id === 't3'),
+    'Copilot: its own sub-agents’ steps are left out'
+  );
+  check(
+    !seen.some(entry => String(entry.text || '').includes('skill text')),
+    'Copilot: text a skill put in is no prompt'
+  );
+  check(
+    seen.find(entry => entry.kind === 'ask')?.questions[0].options.join() === 'Blue,Green',
+    'Copilot: ask_user is a question with its choices'
+  );
+  check(
+    seen.find(entry => entry.id === 't5')?.what === 'tnai · tnai_delegate',
+    'Copilot: a connected server’s tool is named by its server'
+  );
+
+  // where the file is: <COPILOT_HOME>/session-state/<id>/events.jsonl
+  const copilotHome = fs.mkdtempSync(path.join(os.tmpdir(), 'tnai-thread-log-copilot-'));
+  const folder = path.join(copilotHome, 'session-state', 's1');
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(path.join(folder, 'events.jsonl'), events.join('\n') + '\n');
+  const record = { agent: 'GitHub Copilot', sessionId: 's1', accountDir: copilotHome };
+  check(
+    log.readable('GitHub Copilot') &&
+      log.fileFor(record) === path.join(folder, 'events.jsonl') &&
+      log.fileFor({ ...record, sessionId: '..' }) === '' &&
+      log.fileFor({ ...record, sessionId: 'none' }) === '',
+    'Copilot: the record is found from the account folder and session id, never from a path'
+  );
+  fs.rmSync(copilotHome, { recursive: true, force: true });
+}
+
 // ---------- a prompt sent while the agent worked ----------
 // Claude Code records it as a "queued_command" attachment inside the running turn, not as a user
 // line; a background task's notice comes the same way and is not the user's prompt.
@@ -915,9 +1031,127 @@ async function watchChecks() {
   fs.rmSync(grown, { force: true });
 }
 
+// ---------- a read for another computer (late join) ----------
+// It never watches a file and never tells the window, so another computer cannot take this
+// computer's own watches away; it reads at most the tail, from a position it handed out itself;
+// and every reader's entries pass the one shaping of remote-log.js with only the allowed keys.
+async function peerChecks() {
+  const { shapeLogEntry } = require('../desktop/remote-log.js');
+  const told = [];
+  log.setNotify(what => told.push(what));
+  for (let pane = 0; pane < 12; pane++)
+    await log.read({ ...record, paneId: 'own' + pane }, -1, options);
+  for (let i = 0; i < 20; i++)
+    await log.readForPeer({ ...record, paneId: 'far' + i }, {}, { ...options, sub: 'helper' });
+  check(
+    log.watched() === 12 &&
+      log.watchedPanels().every(paneId => paneId.startsWith('own')) &&
+      told.length === 0,
+    'twelve own watches, then twenty reads for another computer: still twelve, nothing pushed'
+  );
+  log.endWatches();
+
+  const all = await log.readForPeer(record, {}, options);
+  check(
+    all.readable && all.found && all.entries.length > 5 && all.entries.every(e => e.pos >= 0),
+    'a read for another computer gives entries, each with where its line starts'
+  );
+  check(all.more === false && all.fresh === true, 'a short record: nothing older, a fresh read');
+  const lastPos = all.entries[all.entries.length - 1].pos;
+  const earlier = await log.readForPeer(record, { before: lastPos }, options);
+  check(
+    earlier.entries.length > 0 && earlier.entries.every(e => e.pos < lastPos),
+    'Show earlier: only lines before the position that was handed out'
+  );
+  for (const odd of [-1, 1e15, 'x', lastPos + 3]) {
+    const got = await log.readForPeer(record, { before: odd }, options);
+    check(
+      got.entries.every(e =>
+        typeof e.pos === 'number' && e.text !== undefined ? !String(e.text).startsWith('{') : true
+      ),
+      'a cursor of ' + JSON.stringify(odd) + ' reads whole lines of the same record only'
+    );
+  }
+  const after = await log.readForPeer(record, { after: all.next }, options);
+  check(after.entries.length === 0 && after.next === all.next, 'what is new: nothing yet');
+
+  // the four readers' entries through the one shaping
+  const ALLOWED = {
+    you: ['at', 'cut', 'k', 'text'],
+    say: ['at', 'cut', 'k', 'text'],
+    note: ['at', 'cut', 'k', 'text'],
+    title: ['cut', 'k', 'text'],
+    act: ['at', 'cut', 'k', 'verb', 'what'],
+    ask: ['at', 'k', 'questions'],
+    worked: ['at', 'k', 'ms'],
+  };
+  const codex = require('../desktop/thread-log-codex');
+  const cursor = require('../desktop/thread-log-cursor');
+  const opencode = require('../desktop/thread-log-opencode');
+  const samples = {
+    'Claude Code': all.entries,
+    Codex: codex.entries(
+      [
+        JSON.stringify({ type: 'event_msg', payload: { type: 'user_message', message: 'hi' } }),
+        JSON.stringify({ type: 'event_msg', payload: { type: 'agent_message', message: 'ok' } }),
+        JSON.stringify({ type: 'event_msg', payload: { type: 'task_complete', duration_ms: 9 } }),
+      ],
+      { cwd: CWD }
+    ),
+    'Cursor Agent': cursor.entries(
+      [
+        JSON.stringify({
+          role: 'assistant',
+          message: {
+            content: [
+              { type: 'text', text: 'hello' },
+              { type: 'tool_use', name: 'Read', input: { path: 'C:/Users/someone/a.txt' } },
+            ],
+          },
+        }),
+        JSON.stringify({ type: 'turn_ended', status: 'success' }),
+      ],
+      { cwd: CWD }
+    ),
+    OpenCode: [
+      ...opencode.partEntries(
+        { id: '1', time_created: 5, data: { type: 'text', text: 'hi' } },
+        { role: 'user' },
+        CWD
+      ),
+      ...opencode.partEntries(
+        {
+          id: '2',
+          time_created: 6,
+          data: {
+            type: 'tool',
+            tool: 'bash',
+            state: { status: 'completed', input: { command: 'ls' }, output: 'x' },
+          },
+        },
+        { role: 'assistant' },
+        CWD
+      ),
+    ],
+  };
+  for (const [tool, entries] of Object.entries(samples)) {
+    const shaped = entries.map(shapeLogEntry).filter(Boolean);
+    check(
+      shaped.length > 0 &&
+        shaped.every(e => ALLOWED[e.k] && Object.keys(e).every(key => ALLOWED[e.k].includes(key))),
+      tool + ': every entry shaped has only the allowed keys (' + shaped.length + ')'
+    );
+    check(
+      !JSON.stringify(shaped).includes('C:/Users/someone'),
+      tool + ': no path outside the project names a user folder'
+    );
+  }
+}
+
 (async () => {
   await openCodeChecks();
   await watchChecks();
+  await peerChecks();
 
   // ---------- reading: whole lines, only what is new ----------
   const first = await log.read(record, -1, options);
@@ -950,7 +1184,7 @@ async function watchChecks() {
   fs.writeFileSync(file, LINES.slice(0, 6).join('\n') + '\n');
   const shorter = await log.read(record, whole.next, options);
   check(
-    shorter.reset && shorter.entries.length === 3,
+    shorter.reset && shorter.entries.length === 4,
     'a file that got shorter is read again, and says so'
   );
 

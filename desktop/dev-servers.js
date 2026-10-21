@@ -31,6 +31,8 @@ async function claim(project, paneId, name, url, { answers, alive }) {
   if (had && had.paneId !== paneId && alive(had.paneId) && (await answers(url)))
     return {
       ok: false,
+      code: 'busy',
+      hint: 'tnai preview ' + had.url,
       error:
         had.name +
         ' owns the dev server at ' +
@@ -85,6 +87,8 @@ function release(project, paneId, url) {
     ? { ok: true, text: 'Released: ' + gone.join(', ') + '.' }
     : {
         ok: false,
+        code: 'not_found',
+        hint: 'tnai server list',
         error: url ? 'You own no dev server at ' + url + '.' : 'You own no dev servers.',
       };
 }

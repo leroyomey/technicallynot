@@ -143,6 +143,49 @@ function watchGitDir(dir) {
   }
 }
 
+// While the project folder is not a repository, watches the folder itself (not its subfolders) for
+// a `.git` appearing (`git init`, a clone into it). watch-service skips everything under .git and
+// the git dir watcher above needs a repository, so without this a kept "not a repository" answer
+// stayed until some project file changed.
+let folderWatcher = null,
+  folderWatched = null,
+  folderTimer = null;
+
+function watchForNewRepo(dir) {
+  if (dir === folderWatched) return;
+  if (folderWatcher)
+    try {
+      folderWatcher.close();
+    } catch {}
+  folderWatcher = null;
+  folderWatched = dir;
+  clearTimeout(folderTimer);
+  if (!dir) return;
+  try {
+    folderWatcher = fs.watch(dir, (_type, name) => {
+      if (String(name || '').toLowerCase() !== '.git') return;
+
+      // Forgotten after git has had a moment to write HEAD: an answer asked while .git is half
+      // made would otherwise be kept as "not a repository" again.
+      clearTimeout(folderTimer);
+      folderTimer = setTimeout(() => {
+        forgetStatus();
+        send('git:changed', { at: Date.now() });
+      }, 300);
+    });
+    folderWatcher.on('error', () => {
+      try {
+        folderWatcher.close();
+      } catch {}
+      folderWatcher = null;
+      folderWatched = null;
+    });
+  } catch {
+    folderWatcher = null;
+    folderWatched = null;
+  }
+}
+
 // `git status --porcelain=v2 -z` → branch, upstream, ahead/behind, and files grouped staged /
 // unstaged / untracked / conflicted.
 function parseStatus(out) {
@@ -226,6 +269,7 @@ async function numstat(args, cwd) {
 async function status() {
   const facts = await probe();
   watchGitDir(facts.repo ? facts.gitDir : null);
+  watchForNewRepo(facts.available && !facts.repo ? root() : null);
   if (!facts.repo) return { ...facts, root: root() };
   const { stdout } = await git([
     'status',
@@ -283,6 +327,7 @@ module.exports = {
   },
   stop() {
     watchGitDir(null);
+    watchForNewRepo(null);
     clearTimeout(timer);
     forgetStatus();
   },

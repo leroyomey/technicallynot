@@ -13,7 +13,7 @@
 <body>
 <!-- The phone app's first pages: welcome, needs you, computers, add a computer (scan), almost paired (digits), paired.
      Logic: app.mjs. One screen is shown
-     at a time. The tab bar has the mock's four tabs; Agents and Activity are off until a computer sends what they would show. -->
+     at a time. The tab bar has the mock's four tabs; Agents and Activity show what paired computers send (screens.mjs). -->
 
 <section class="screen" data-s="welcome" hidden>
   <div class="top"><div class="eyebrow">Test build</div><h1>Technically Not</h1></div>
@@ -92,6 +92,39 @@
     <p class="note">This test build pairs, keeps an encrypted session with the computer while it is open, shows what needs you there and sends your answer back. Agents, activity and notifications come with later builds.</p>
   </div>
   <div class="foot"><button class="btn pri" data-go="needs">Done</button></div>
+</section>
+
+<!-- The control screens (screens.mjs; approved look, screens 2, 3, 4 and 9). Everything a computer sends is put in as text. -->
+<section class="screen" data-s="agents" hidden>
+  <div class="top"><div class="trow"><div class="grow"><div class="eyebrow" id="agentsCount">0 computers</div><h1>Agents</h1></div><button class="ib" id="agentsStart" aria-label="Start an agent"></button></div>
+    <div class="chips" id="agentsChips"></div></div>
+  <div class="bd" id="agentsList"></div>
+  <nav class="tabs"></nav>
+</section>
+
+<section class="screen" data-s="agent" hidden>
+  <div class="top"><div class="trow"><button class="ib" id="agentBack" aria-label="Back to agents"></button><div class="who grow"><span class="tile" id="agentTile">?</span><div><b id="agentName">Agent</b><span class="meta" id="agentMeta"></span></div></div><button class="ib c-err" id="agentStop" aria-label="Stop this agent" hidden></button></div></div>
+  <div class="bd" id="agentBody"></div>
+  <p class="note sendnote" id="agentNote" aria-live="polite"></p>
+  <div class="send" id="agentSend" hidden><div class="field"><input id="agentText" placeholder="Message" autocomplete="off" aria-label="Message this agent"><button class="go" id="agentGo" aria-label="Send"></button></div></div>
+  <nav class="tabs"></nav>
+</section>
+
+<section class="screen" data-s="start" hidden>
+  <div class="top"><div class="trow"><button class="ib" id="startBack" aria-label="Back to agents"></button><h1 class="grow">Start an agent</h1></div></div>
+  <div class="bd">
+    <section class="surf"><span class="lbl">Computer</span><div class="rows" id="startPcs"></div></section>
+    <section class="surf"><span class="lbl">Agent</span><div class="chips" id="startClis"></div></section>
+    <section class="surf"><span class="lbl">What should it do?</span><textarea class="area" id="startText" placeholder="Describe the task (optional)" aria-label="Task"></textarea></section>
+    <p class="note" id="startWhere"></p>
+  </div>
+  <div class="foot"><button class="btn pri" id="startGo" disabled>Start</button></div>
+</section>
+
+<section class="screen" data-s="activity" hidden>
+  <div class="top"><div class="eyebrow">All computers</div><h1>Activity</h1></div>
+  <div class="bd" id="activityList"></div>
+  <nav class="tabs"></nav>
 </section>
 
 <section class="screen" data-s="failed" hidden>

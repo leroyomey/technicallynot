@@ -191,6 +191,16 @@
     const power = headButton('tat-act-power', 'square-stop', 'Stop this agent');
     power.hidden = true;
 
+    // the thread actions (154 shows it for a thread in a git repository and opens its menu)
+    const work = headButton(
+      'tat-act-work',
+      'git-branch',
+      "Actions for this thread's work: commit, pull request, review"
+    );
+    work.hidden = true;
+    work.setAttribute('aria-haspopup', 'menu');
+    work.setAttribute('aria-expanded', 'false');
+
     // the blur (120 keeps which threads are blurred and paints this button)
     const blur = headButton('tat-act-blur', 'eye', 'Blur this thread');
     blur.dataset.iconSize = '14';
@@ -198,7 +208,7 @@
     const more = headButton('tat-act-more', 'ellipsis', 'More for this thread');
     more.setAttribute('aria-haspopup', 'menu');
     more.setAttribute('aria-expanded', 'false');
-    head.append(dot, text, chips, handoff, side, power, blur, more, open);
+    head.append(dot, text, chips, handoff, side, work, power, blur, more, open);
     const body = make('div', 'tnt-talk tat-body');
     body.setAttribute('role', 'log');
 
@@ -231,6 +241,7 @@
       sub,
       age,
       power,
+      work,
       powerShows: '',
       blur,
       body,
@@ -389,6 +400,7 @@
     card.can = can;
     paintHelpers(paneId, card);
     paintPower(paneId, card);
+    window.TnaiThreadActions?.paintCard?.(paneId, card.work);
     paintBlur(paneId, card);
     window.TnaiThreadView?.paintAge?.(card.age, paneId);
   }
@@ -473,9 +485,11 @@
   }
 
   // Every card has one width; a step changes one number and the style sheet slides the row.
-  // The row's width is read once a visit and again when its size changes (the observer below),
-  // not at every repaint: the read lays the page out, and the cards are repainted at every
-  // change of a thread while agents work (measured 2026-10-13, `perf-background-switch`).
+  // The row's width comes from the observer on the row (below), which hears it after the
+  // browser's own layout and before the frame is painted. It is kept between visits, so the
+  // press on All threads never reads it: a read there made the page's first layout happen in
+  // the middle of drawing the cards (2026-10-21, `perf-page-switch`, bug sweep group 28).
+  // Only the very first visit, before the observer has heard a width, reads it.
   let room = 0;
 
   function layoutRow() {
@@ -544,7 +558,6 @@
     const on = isOn();
     if (on === wasOn) return on;
     wasOn = on;
-    room = 0;
     box.hidden = !on;
     view.classList.toggle('tat-on', on);
     if (title) setText(title, on ? 'All threads' : titleWas);
@@ -686,7 +699,7 @@
   // the press was one of them.
   function pressCardButton(target, paneId, card) {
     const pressed = target.closest(
-      '.tat-act-handoff, .tat-act-side, .tat-act-power, .tat-act-blur, .tat-act-more'
+      '.tat-act-handoff, .tat-act-side, .tat-act-power, .tat-act-blur, .tat-act-work, .tat-act-more'
     );
     if (!pressed || !card) return false;
     const more = window.TnaiThreadMore;
@@ -699,6 +712,8 @@
       more?.stopOrStart?.(paneId, card.el);
     } else if (pressed.classList.contains('tat-act-blur')) {
       window.TnaiThreadBlur?.toggle(paneId);
+    } else if (pressed.classList.contains('tat-act-work')) {
+      window.TnaiThreadActions?.open?.(pressed, paneId);
     } else if (more?.isOpen?.()) {
       more.close(true);
     } else {
@@ -796,13 +811,18 @@
     attributes: true,
     attributeFilter: ['class', 'hidden', 'data-view', 'data-mode'],
   });
-  new ResizeObserver(() => {
-    room = 0;
-    soon();
-  }).observe(content);
-  new ResizeObserver(() => {
-    room = 0;
-    soon();
+  new ResizeObserver(soon).observe(content);
+
+  // A new width of the row lays the cards out again in the same frame, before it is painted.
+  // A hidden row reports 0: the last real width is kept for the next visit.
+  new ResizeObserver(entries => {
+    const width = Math.round(entries[entries.length - 1].contentRect.width);
+    if (!width || width === room) return;
+    room = width;
+    if (!isOn() || !order.length) return;
+    layoutRow();
+    mountNear();
+    paintNav();
   }).observe(clip);
 
   // the thread list is the app's own reading of the sessions: when it changes, so does this

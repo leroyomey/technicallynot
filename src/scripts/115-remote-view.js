@@ -249,5 +249,86 @@
   agents.onChange?.(() => {
     if (watching.length) schedule();
   });
+
+  // ---- (3) typing from another computer (desktop/remote-type.js) ----
+  // Where the keys land, the panel says so: "Typed from (name)" over every terminal view of that
+  // panel (its CLI screen, Your terminal, the thread's Terminal view), for a minute after the
+  // last key, and one notice when a computer starts typing into a panel. The main process sends
+  // who typed where (`typed`), never what was typed.
+  const TYPED_MS = 60 * 1000;
+  let typed = [],
+    typedKey = '',
+    typedTimer = 0;
+  const told = new Map(); // panel id → the last key time a notice was given for
+
+  function paintTyped() {
+    const now = Date.now(),
+      live = typed.filter(x => now - x.at < TYPED_MS);
+    const want = new Map(live.map(x => [x.panelId, x]));
+    for (const v of agents.views()) {
+      const host = v.term?.element;
+      if (!host) continue;
+      let mark = host.querySelector(':scope > .tnai-rt-mark');
+      const x = want.get(v.paneId);
+      if (!x) {
+        if (mark) {
+          mark.dataset.off = '1';
+          setTimeout(() => mark.remove(), 250);
+        }
+        continue;
+      }
+      if (!mark || mark.dataset.off) {
+        mark = document.createElement('span');
+        mark.className = 'tnai-rt-mark';
+        mark.setAttribute('role', 'status');
+        host.append(mark);
+      }
+
+      // the name is the one this computer gives that computer, with the end of its id; set as text
+      const text = 'Typed from ' + x.name;
+      if (mark.textContent !== text) mark.textContent = text;
+      mark.title = x.name + ' typed into this terminal at ' + clock(x.at) + '.';
+    }
+
+    // the marks go by themselves a minute after the last key: one timer, only while one is shown
+    clearTimeout(typedTimer);
+    typedTimer = 0;
+    if (live.length) {
+      const next = Math.min(...live.map(x => x.at + TYPED_MS)) - now;
+      typedTimer = setTimeout(paintTyped, Math.max(250, next));
+    }
+  }
+
+  native.on?.(s => {
+    const next = Array.isArray(s?.typed)
+      ? s.typed.filter(
+          x =>
+            x &&
+            typeof x.panelId === 'string' &&
+            typeof x.name === 'string' &&
+            Number.isFinite(x.at)
+        )
+      : [];
+    const k = JSON.stringify(next);
+    if (k === typedKey) return;
+    typedKey = k;
+    typed = next;
+
+    // one notice per panel when typing starts there (no key for a minute before)
+    for (const x of next) {
+      const last = told.get(x.panelId) || 0;
+      if (x.at - last >= TYPED_MS) {
+        const where =
+          (agents.sessions?.() || []).find(a => a.paneId === x.panelId)?.name || 'a terminal';
+        window.toast?.(x.name + ' is typing into ' + where + ' from that computer.');
+      }
+      told.set(x.panelId, x.at);
+    }
+    paintTyped();
+  });
+  agents.onChange?.(() => {
+    if (typed.length) paintTyped();
+  });
+
   window.TnaiRemoteView = { read, watched: () => [...watched.keys()], paint };
 })();

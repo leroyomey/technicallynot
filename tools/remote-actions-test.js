@@ -114,10 +114,12 @@ function world() {
         w.calls.spawn.push(a);
         return typeof w.spawnSays === 'function' ? w.spawnSays(...a) : w.spawnSays;
       },
-      remoteTake: (mark, paneId, agent) => {
+      // as agent-lifecycle.js: a Resume's mark is taken only with the conversation it asked for
+      remoteTake: (mark, paneId, agent, resumeId = '') => {
         w.calls.take.push([mark, paneId, agent]);
         const ask = w.asks.get(mark);
         if (!ask || ask.paneId || ask.agent !== agent) return false;
+        if ((ask.contextId || '') !== (resumeId || '')) return false;
         ask.paneId = paneId;
         w.remote.add(paneId);
         return ask.kept || {};
@@ -135,6 +137,10 @@ function world() {
     attention: {
       blocker: id => (w.question.has(id) ? { kind: 'permission' } : null),
       hasDraft: id => w.draft.has(id) || w.speaking,
+      deliveryOpen: id => {
+        if (w.delivering === 'unknown') throw new Error('not readable');
+        return !!w.delivering && w.delivering.has(id);
+      },
       remotePasted: id => {
         w.calls.pasted.push(id);
       },
@@ -949,6 +955,91 @@ const yes = () => true,
           resumeId: 'conv-remote',
         }).error === 'string'
       );
+
+      // Limit c: a revived sub-agent of a CLI that takes no level on a resume.
+      const codexKid = w2.actions.startOptions({
+        paneId: 'sub-8',
+        agent: 'Codex',
+        mode: 'run',
+        subagentOf: 'under-remote',
+        resumeId: 'codex-conv',
+        access: 'ask',
+      });
+      const codexFresh = w2.actions.startOptions({
+        paneId: 'sub-9',
+        agent: 'Codex',
+        mode: 'run',
+        subagentOf: 'under-remote',
+        access: 'full',
+      });
+      const codexOwn = {
+        paneId: 'sub-10',
+        agent: 'Codex',
+        mode: 'run',
+        subagentOf: 'under-own',
+        resumeId: 'codex-conv',
+        access: 'full',
+      };
+      check(
+        'limit c: a revived Codex sub-agent under a remotely started agent is refused with a reason; a fresh one is capped; one under an own agent is untouched',
+        typeof codexKid.error === 'string' &&
+          /Ask first/.test(codexKid.error) &&
+          !codexKid.options &&
+          codexFresh.options?.access === 'ask' &&
+          w2.actions.startOptions(codexOwn).options === codexOwn,
+        [codexKid, codexFresh]
+      );
+
+      // Limit b: the record of marks could not be read.
+      const lostWorld = known =>
+        createRemoteActions({
+          ptys: { list: () => [] },
+          mesh: {},
+          turns: {},
+          attention: {},
+          submit: async () => null,
+          abort: async () => null,
+          panelKey: async () => '',
+          lifecycle: {
+            remoteTake: () => false,
+            remoteStarted: () => false,
+            remoteResumed: () => false,
+            remoteOpen: () => 0,
+            remoteMarksLost: () => 1700000000000,
+            remoteKnown: (agent, id) => known.includes(id),
+          },
+        });
+      const lost = lostWorld(['conv-placed']);
+      const unplaced = lost.startOptions({
+        paneId: 'l1',
+        agent: 'Claude Code',
+        mode: 'run',
+        resumeId: 'conv-old',
+      });
+      const placed = { paneId: 'l2', agent: 'Claude Code', mode: 'run', resumeId: 'conv-placed' };
+      const freshLost = { paneId: 'l3', agent: 'Claude Code', mode: 'run' };
+      const shellLost = { paneId: 'l4', agent: 'Terminal', mode: 'run', resumeId: 'x' };
+      check(
+        'limit b: with the marks unreadable, a resume of a conversation that cannot be placed is refused; a placed one, a fresh start and a PowerShell are untouched',
+        typeof unplaced.error === 'string' &&
+          /could not read/.test(unplaced.error) &&
+          lost.startOptions(placed).options === placed &&
+          lost.startOptions(freshLost).options === freshLost &&
+          lost.startOptions(shellLost).options === shellLost,
+        unplaced
+      );
+      const kidLost = lost.startOptions({
+        paneId: 'l5',
+        agent: 'OpenCode',
+        mode: 'run',
+        subagentOf: 'x',
+        resumeId: 'oc-old',
+      });
+      check(
+        'limit b: a revived sub-agent of a conversation that cannot be placed is refused too',
+        typeof kidLost.error === 'string',
+        kidLost
+      );
     }
     const shell = { paneId: 'n1', agent: 'Terminal', mode: 'run' },
       signIn = { paneId: 'n1', agent: 'Claude Code', mode: 'login', login: {} };
@@ -1704,6 +1795,129 @@ const yes = () => true,
           life.remoteResumed('n4', 'Claude Code', 'conv-k2') === true,
         life.conversations('C:\\work\\proj').length
       );
+
+      // Limit b: the marks' second home (remote-marks.json).
+      life.flushSaves();
+      await new Promise(r => setTimeout(r, 700));
+      life.flushSaves();
+      const lifeFile = path.join(tmp, 'agent-lifecycle.json'),
+        marksPath = path.join(tmp, 'remote-marks.json');
+      check(
+        'limit b: the marks file is written beside the lifecycle file',
+        fs.existsSync(marksPath)
+      );
+      fs.rmSync(lifeFile, { force: true });
+      life = fresh();
+      life.init(() => {}, { root: () => 'C:\\work\\proj', canResume: () => true });
+      check(
+        'limit b: agent-lifecycle.json lost: the marks come back from their own file, nothing is unknown',
+        life.remoteConversation('Claude Code', 'conv-k2') === true &&
+          life.remoteMarksLost() === 0 &&
+          life.remoteKnown('Claude Code', 'conv-k2') === true &&
+          life.remoteKnown('Claude Code', 'conv-never') === false
+      );
+      fs.writeFileSync(marksPath, '{ not json');
+      life = fresh();
+      life.init(() => {}, { root: () => 'C:\\work\\proj', canResume: () => true });
+      const lostAt = life.remoteMarksLost();
+      check(
+        'limit b: a marks file that cannot be read leaves the marks unknown (a time is given)',
+        lostAt > 0 && lostAt <= Date.now(),
+        lostAt
+      );
+      await new Promise(r => setTimeout(r, 700));
+      life.flushSaves();
+      life = fresh();
+      life.init(() => {}, { root: () => 'C:\\work\\proj', canResume: () => true });
+      check(
+        'limit b: the loss is saved, so a restart does not end it',
+        life.remoteMarksLost() === lostAt,
+        [life.remoteMarksLost(), lostAt]
+      );
+
+      // Group 4 Low 1: both files lost, but the tiny sign that marks were kept here is left.
+      const seenPath = path.join(tmp, 'remote-marks.seen');
+      check('low 1: the sign that marks were kept here is written', fs.existsSync(seenPath));
+      fs.rmSync(marksPath, { force: true });
+      fs.rmSync(lifeFile, { force: true });
+      life = fresh();
+      life.init(() => {}, { root: () => 'C:\\work\\proj', canResume: () => true });
+      check(
+        'low 1: both files lost while the sign is there: the marks are unknown, not "never used"',
+        life.remoteMarksLost() > 0,
+        life.remoteMarksLost()
+      );
+
+      // Only the marks file lost: agent-lifecycle.json says marks were kept (the sign gone too).
+      await new Promise(r => setTimeout(r, 700));
+      life.flushSaves();
+      fs.writeFileSync(marksPath, JSON.stringify({ remoteConvs: [] }));
+      life = fresh();
+      life.init(() => {}, { root: () => 'C:\\work\\proj', canResume: () => true });
+      life.flushSaves();
+      await new Promise(r => setTimeout(r, 700));
+      life.flushSaves();
+      fs.rmSync(marksPath, { force: true });
+      fs.rmSync(seenPath, { force: true });
+      life = fresh();
+      life.init(() => {}, { root: () => 'C:\\work\\proj', canResume: () => true });
+      check(
+        'low 1: the marks file lost while agent-lifecycle.json says it was kept: the marks are unknown',
+        life.remoteMarksLost() > 0,
+        life.remoteMarksLost()
+      );
+
+      // Group 4 Low 2: a read error that passes. A folder in the marks file's place cannot be read
+      // (EISDIR), as a file another program holds for a moment cannot. The instance before writes
+      // its waiting save first, so it cannot land during the wait below.
+      await new Promise(r => setTimeout(r, 700));
+      life.flushSaves();
+      await new Promise(r => setTimeout(r, 300));
+      fs.rmSync(lifeFile, { force: true });
+      fs.rmSync(seenPath, { force: true });
+      fs.rmSync(marksPath, { recursive: true, force: true });
+      fs.mkdirSync(marksPath);
+      life = fresh();
+      life.init(() => {}, { root: () => 'C:\\work\\proj', canResume: () => true });
+      check(
+        'low 2: a marks file that cannot be read at the start holds resumes for now',
+        life.remoteMarksLost() > 0
+      );
+      fs.rmSync(marksPath, { recursive: true, force: true });
+      fs.writeFileSync(marksPath, JSON.stringify({ remoteConvs: [['conv-back', 'Claude Code']] }));
+      await new Promise(r => setTimeout(r, 2600));
+      check(
+        'low 2: read again a moment later it is fine: the hold ends and its marks are taken',
+        life.remoteMarksLost() === 0 &&
+          life.remoteConversation('Claude Code', 'conv-back') === true,
+        [life.remoteMarksLost(), life.remoteConversation('Claude Code', 'conv-back')]
+      );
+      life.flushSaves();
+      await new Promise(r => setTimeout(r, 700));
+      life.flushSaves();
+
+      // The read fails again: the loss stays.
+      fs.rmSync(marksPath, { recursive: true, force: true });
+      fs.mkdirSync(marksPath);
+      life = fresh();
+      life.init(() => {}, { root: () => 'C:\\work\\proj', canResume: () => true });
+      await new Promise(r => setTimeout(r, 2600));
+      check(
+        'low 2: a second failed read keeps the marks unknown',
+        life.remoteMarksLost() > 0,
+        life.remoteMarksLost()
+      );
+      fs.rmSync(marksPath, { recursive: true, force: true });
+
+      fs.rmSync(marksPath, { force: true });
+      fs.rmSync(lifeFile, { force: true });
+      fs.rmSync(seenPath, { force: true });
+      life = fresh();
+      life.init(() => {}, { root: () => 'C:\\work\\proj', canResume: () => true });
+      check(
+        'limit b: no marks file and no sign of one (remote never used here): nothing is unknown',
+        life.remoteMarksLost() === 0
+      );
     }
     try {
       fs.rmSync(tmp, { recursive: true, force: true });
@@ -1929,6 +2143,66 @@ const yes = () => true,
         mesh.interruptLeft('pane-x') === 0,
       [left0, left1, other]
     );
+  }
+
+  // ---- typing from another computer (remote-type.js) ----
+  {
+    const w = world();
+    const yes = () => true;
+    check(
+      'typing into an agent the app started is written once',
+      w.actions.type({ panelId: 'p1', data: 'ls\r', guard: yes }) === 'done' &&
+        w.calls.write.length === 1 &&
+        w.calls.write[0][1] === 'ls\r'
+    );
+    check(
+      'typing into a plain terminal is written',
+      w.actions.type({ panelId: 'shell', data: 'dir', guard: yes }) === 'done'
+    );
+    check(
+      'typing into a PowerShell panel with a CLI typed by hand is written (it is a terminal)',
+      w.actions.type({ panelId: 'typed', data: 'x', guard: yes }) === 'done'
+    );
+    const before = w.calls.write.length;
+    check(
+      'a sign-in run is never typed into',
+      w.actions.type({ panelId: 'login', data: 'x', guard: yes }) === 'refused'
+    );
+    check(
+      'a panel whose process ended is never typed into',
+      w.actions.type({ panelId: 'dead', data: 'x', guard: yes }) === 'refused'
+    );
+    check(
+      'a panel that does not exist is never typed into',
+      w.actions.type({ panelId: 'nope', data: 'x', guard: yes }) === 'refused'
+    );
+    check(
+      'the guard saying no: nothing written',
+      w.actions.type({ panelId: 'p1', data: 'x', guard: () => false }) === 'refused'
+    );
+    check(
+      'nothing to write: refused',
+      w.actions.type({ panelId: 'p1', data: '', guard: yes }) === 'refused'
+    );
+    check('no refused try wrote anything', w.calls.write.length === before);
+
+    // review 23, L7: keys never go out with a prompt that is half-way in that input
+    w.delivering = new Set(['p1']);
+    check(
+      'L7: while a prompt waits for its Enter in that panel, typing answers "changed"',
+      w.actions.type({ panelId: 'p1', data: 'x', guard: yes }) === 'changed' &&
+        w.calls.write.length === before
+    );
+    check(
+      'L7: another panel is typed into as before',
+      w.actions.type({ panelId: 'shell', data: 'x', guard: yes }) === 'done'
+    );
+    w.delivering = 'unknown';
+    check(
+      'L7: when that cannot be read, nothing is typed',
+      w.actions.type({ panelId: 'p1', data: 'x', guard: yes }) === 'changed'
+    );
+    w.delivering = null;
   }
 
   console.log(

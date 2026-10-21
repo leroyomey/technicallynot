@@ -600,3 +600,120 @@ html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode > .tnt-side {
 html.tnt-on:not(#tnt):not(#pg) .tnt-sidefiles .repository-rail.repo-searching .repo-rail-tree {
   display: none !important;
 }
+
+/* ---------------------------------------------------------------- Files of another computer */
+/* While another computer's thread is open, 163 shows that computer's files here and this
+   computer's rail and file view step aside (they stay as they were underneath). The head, the
+   note and the text use the file view's own look above; only the folder's rows, the edit box and
+   the picture are new. No box, line or fill of their own. */
+.tnt-sidefiles.tnt-remote-on > :is(.repository-rail, .tnt-fileview) {
+  display: none !important;
+}
+.tnt-remotefiles {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 var(--inset) 14px;
+}
+.tnt-remotefiles[hidden],
+.tnt-remotefiles [hidden] {
+  display: none !important;
+}
+
+/* the head's icon buttons: the same as the file view's */
+html.tnt-on:not(#tnt):not(#pg) .tnt-remotefiles .tnt-fileview-head button:not(#lp):disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.tnt-rf-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+
+/* A row is its icon and its name, as a row of the rail reads in this column. */
+html.tnt-on:not(#tnt):not(#pg) .tnt-rf-row:not(#lp) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  margin: 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--pg-text-2);
+  font: 400 13px/30px var(--pg-sans);
+  text-align: left;
+  cursor: pointer;
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-rf-row:not(#lp):hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-rf-row:not(#lp):focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+.tnt-rf-row svg {
+  flex: none;
+  display: block;
+  color: var(--pg-text-3);
+}
+.tnt-rf-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The edit box: the reader's look, so the text does not move when editing starts. */
+.tnt-rf-box {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  resize: none;
+  outline: none;
+}
+.tnt-rf-box:focus-visible {
+  box-shadow: 0 0 0 var(--pg-ring) var(--pg-accent);
+  border-radius: var(--pg-r-sm);
+}
+
+/* The picture of the other computer's page, whole, with its address under it. */
+.tnt-rf-shot {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+}
+.tnt-rf-shot img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--pg-r-sm);
+  cursor: default;
+  user-select: none;
+}
+.tnt-rf-shot figcaption {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
