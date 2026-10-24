@@ -210,16 +210,18 @@
     card.hidden = true;
     const frame = make('button', 'tnt-design-frame');
     frame.type = 'button';
-    frame.title = 'The page itself, small and still: Open large to use it';
+    frame.title = 'A still picture of the page: press to use it here';
     const live = button('Live preview', 'Open this page in Live preview', press =>
       toPreview(state, item, press)
     );
     const large = button('Open large', 'Open this page large, over the thread', () =>
       openLarge({ kind: 'page', state, item, opener: large })
     );
-    frame.addEventListener('click', () => openLarge({ kind: 'page', state, item, opener: frame }));
+    const still = button('Make still', 'Stop using the page here (Esc)', () => stopHere());
+    still.hidden = true;
+    frame.addEventListener('click', () => useHere(state, item, card, frame, still));
     card.append(
-      cardTop('file-text', baseName(item.file), HOW.page[item.how], [large, live]),
+      cardTop('file-text', baseName(item.file), HOW.page[item.how], [still, large, live]),
       frame
     );
     if (pictures.length)
@@ -261,6 +263,64 @@
       .catch(() => {
         card.dataset.state = 'none';
       });
+  }
+
+  // ---------- A page used right there in its card ----------
+  // A press on the still picture puts the page itself in its place, in the same walled frame as
+  // Open large. Only one page runs at a time: another press, "Make still", Esc while the keyboard
+  // is on the card's own buttons (not inside the page) or the card leaving the screen puts the
+  // still picture back, so nothing runs that is not in use (the graphics card stays idle
+  // otherwise).
+  let here = null;
+
+  const offScreen = new IntersectionObserver(entries => {
+    for (const entry of entries)
+      if (!entry.isIntersecting && here?.card === entry.target) stopHere();
+  });
+
+  function stopHere() {
+    if (!here) return;
+    const { card, frame, box, still, onKey } = here;
+    here = null;
+    offScreen.unobserve(card);
+    card.removeEventListener('keydown', onKey);
+    box.remove();
+    frame.hidden = false;
+    still.hidden = true;
+  }
+
+  function useHere(state, item, card, frame, still) {
+    stopHere();
+    native?.designs
+      ?.page?.(state.paneId, item.file, { shot: false })
+      .then(found => {
+        if (!found?.ok || !card.isConnected) return;
+        const box = make('div', 'tnt-design-live');
+        const page = make('iframe');
+        page.name = 'tnai-lp-design';
+        page.title = baseName(item.file);
+        page.setAttribute('sandbox', 'allow-scripts allow-forms');
+        page.referrerPolicy = 'no-referrer';
+        page.src = found.url;
+        box.append(page);
+        frame.after(box);
+        frame.hidden = true;
+        still.hidden = false;
+        const onKey = event => {
+          if (event.key !== 'Escape') return;
+          event.stopPropagation();
+          stopHere();
+          frame.focus({ preventScroll: true });
+        };
+        card.addEventListener('keydown', onKey);
+        here = { card, frame, box, still, onKey };
+        offScreen.observe(card);
+
+        // the keyboard stays on the card, where Esc is heard: a key pressed inside the page
+        // itself never reaches the card (another document)
+        still.focus({ preventScroll: true });
+      })
+      .catch(() => {});
   }
 
   // The pictures that are there to show. One a command only named is left out: the app shows it
@@ -310,7 +370,9 @@
           openLarge({ kind: 'picture', state, item: first, opener: frame })
         );
         card.append(frame);
-        card.tntDesignLoad = () => paintThumb(state, first, frame);
+
+        // one picture fills the conversation's width, so it asks for the wider copy
+        card.tntDesignLoad = () => paintThumb(state, first, frame, true);
         nearScreen.observe(card);
       } else card.append(pictureRow(state, list));
       card.hidden = false;
@@ -341,9 +403,9 @@
     return row;
   }
 
-  function paintThumb(state, item, box) {
+  function paintThumb(state, item, box, wide = false) {
     native.designs
-      .picture(state.paneId, item.file, { since: item.since })
+      .picture(state.paneId, item.file, { since: item.since, wide })
       .then(found => {
         if (!found?.image) {
           box.replaceChildren(make('span', 'tnt-design-none', 'Too large to show small'));

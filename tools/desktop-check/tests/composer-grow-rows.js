@@ -192,20 +192,29 @@ try {
         : 'the prompt box growing does not change the panel rows here')
   );
 
-  // ---- A− / A+ in the thread top row: the CLI screen's own text size; the 'terminal' size (used
-  // by Your terminal, 136) stays. The buttons sit on the strip's line.
-  const fUp = document.querySelector('.tnt-head [data-tnai-font="1"]'),
-    fDown = document.querySelector('.tnt-head [data-tnai-font="-1"]');
+  // ---- Smaller / Larger text in the thread's "..." menu (137; the A− / A+ of the top row until
+  // 2026-10-24): the CLI screen's own text size; the 'terminal' size (used by Your terminal, 136)
+  // stays. Each press opens the menu and presses the row, which closes it.
+  const menuRow = async id => {
+    window.TnaiThreadMore.close();
+    document.querySelector('.tnt-view .tnt-head-menu').click();
+    await wait(60);
+    return document.querySelector('.tnt-menu-thread .tnt-menu-row[data-row="' + id + '"]');
+  };
+  const press = async id => (await menuRow(id))?.click();
+  const fUp = await menuRow('font-up');
+  const fDown = await menuRow('font-down');
+  window.TnaiThreadMore.close();
   const px = () => parseFloat(getComputedStyle(pane.querySelector('.xterm-rows')).fontSize),
     f0 = px(),
     t0 = G.fontFor('terminal'),
     rows0 = rows();
   check(
-    !!fUp && !!fDown && !fUp.disabled && /px/.test(fUp.title),
-    'the strip has A− / A+ (' + fUp?.title + ')'
+    !!fUp && !!fDown && !fUp.dataset.off && /px/.test(fDown.textContent),
+    'the menu has Smaller and Larger text (' + fDown?.textContent + ')'
   );
-  fUp.click();
-  fUp.click();
+  await press('font-up');
+  await press('font-up');
   await wait(900);
   check(
     px() === f0 + 2 &&
@@ -226,8 +235,8 @@ try {
   );
   console.log('TNAI_SHOT:focus-font');
   await wait(500);
-  fDown.click();
-  fDown.click();
+  await press('font-down');
+  await press('font-down');
   await wait(700);
   check(
     px() === f0 && rows() === rows0,

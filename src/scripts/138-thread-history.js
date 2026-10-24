@@ -1,8 +1,8 @@
 // Technically Not · 138-thread-history.js — Desktop only: the two things of the old "Agents and
 // history" page that are not an agent of this computer, in the thread view.
 //
-// - Past conversations. A button in the thread's top row (before Handoff history) and the same
-//   button at the foot of the thread list, which is there on every page and with no thread open.
+// - Past conversations. A row of the thread's "..." menu (137) and a button at the foot of the
+//   thread list, which is there on every page and with no thread open.
 //   It opens a popover in the app's menu material (`.tnt-menu`, 27): the open project's past
 //   conversations, newest first, each with its tool, its first words and its date. A press on one
 //   shows it inside the same popover, read-only: what is known about it and the short parts that
@@ -69,7 +69,7 @@
   const NAME = 'Past conversations';
   const TIP = 'Past conversations of this project: read one, or continue it';
 
-  // ---------- the two buttons ----------
+  // ---------- the button at the foot of the thread list ----------
   function makeButton(className, withWords) {
     const button = make('button', className);
     button.type = 'button';
@@ -82,19 +82,15 @@
     button.addEventListener('click', () => toggle(button));
     return button;
   }
-  const headButton = makeButton('tnt-icon-btn tnh-open', false);
   const footButton = makeButton('tnh-foot-btn', true);
   const foot = make('div', 'tnh-foot');
   foot.append(footButton);
 
-  // The top row is built by 120 with the first thread; the list slot is filled by 119, which puts
-  // its own island in once. Both are looked at again whenever either was drawn.
+  // The list slot is filled by 119, which puts its own island in once; looked at again whenever
+  // it was drawn. (The top row's button went into the thread's "..." menu, 137, user 2026-10-24.)
   function placeButtons() {
     if (!past()) return;
     const frame = threads();
-    const acts = frame?.slot('main')?.querySelector('.tnt-view .tnt-head-acts');
-    if (acts && headButton.parentNode !== acts)
-      acts.insertBefore(headButton, acts.querySelector('.tnt-head-handoff'));
     const list = frame?.slot('list');
     if (list && (foot.parentNode !== list || list.lastElementChild !== foot)) list.append(foot);
   }
@@ -400,7 +396,7 @@
   // leave the keyboard nowhere, so it goes back to the button then.
   function onOutsidePress(event) {
     const target = event.target;
-    if (pop.contains(target) || headButton.contains(target) || footButton.contains(target)) return;
+    if (pop.contains(target) || opener?.contains(target) || footButton.contains(target)) return;
     const back = opener;
     close(false);
     setTimeout(() => {
@@ -412,14 +408,14 @@
 
   // The button the popover was opened from, or the one that is on screen now.
   function focusButton(wanted) {
-    const button = [wanted, headButton, footButton].find(onScreen);
+    const button = [wanted, footButton].find(onScreen);
     button?.focus({ preventScroll: true });
   }
 
   function showPop() {
     build();
     if (isOpen()) return;
-    if (!onScreen(opener)) opener = [headButton, footButton].find(onScreen) || null;
+    if (!onScreen(opener)) opener = onScreen(footButton) ? footButton : null;
     const anchor = opener || document.querySelector('.top .tnt-menu-btn');
 
     // nothing to stand at: the list is not left asked for behind a popover that never showed
@@ -429,9 +425,7 @@
     }
     shownKey = '';
     pop.hidden = false;
-    [headButton, footButton].forEach(button =>
-      button.setAttribute('aria-expanded', String(button === opener))
-    );
+    footButton.setAttribute('aria-expanded', String(footButton === opener));
     window.TnaiFloat?.attach(anchor, pop, {
       placement: opener === footButton ? 'top-start' : 'bottom-end',
       offset: 6,
@@ -450,7 +444,7 @@
     const back = opener;
     pop.hidden = true;
     window.TnaiRemoteThreadMore?.pastClosed?.();
-    [headButton, footButton].forEach(button => button.setAttribute('aria-expanded', 'false'));
+    footButton.setAttribute('aria-expanded', 'false');
     window.TnaiFloat?.detach?.(pop);
     window.removeEventListener('pointerdown', onOutsidePress, true);
     if (returnFocus) focusButton(back);

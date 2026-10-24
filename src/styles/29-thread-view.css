@@ -207,14 +207,47 @@
   display: block;
 }
 
-/* The blur button (120): the one top-row button in a color of its own (--pg-privacy, lime), so
-   it is found at a glance. While the thread is blurred it holds a soft wash of that color. */
-.tnt-view .tnt-icon-btn.tnt-icon-btn.tnt-head-blur,
-.tnt-view .tnt-icon-btn.tnt-icon-btn.tnt-head-blur:hover:not(:disabled) {
-  color: var(--pg-privacy);
+/* Preview (120) and Split (131): the two top-row buttons with their names, in the look of
+   "N helpers" (30), user 2026-10-24, tab 5 of app-polish.html. Split is 127's kind of button, so
+   its rule carries that rule's weight (33). The icon keeps its page color (44). */
+.tnt-view .tnt-icon-btn.tnt-icon-btn.tnt-head-named,
+html.tnt-on:not(#tnt):not(#pg) .tnt-view .tnt-fold.tnt-head-named:not(#lp) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  padding: 0 11px;
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+  font: 500 12.5px/1 var(--pg-sans);
+  white-space: nowrap;
 }
-.tnt-view .tnt-icon-btn.tnt-icon-btn.tnt-head-blur[aria-pressed='true'] {
-  background: color-mix(in srgb, var(--pg-privacy) 18%, transparent);
+.tnt-view .tnt-icon-btn.tnt-icon-btn.tnt-head-named:hover:not(:disabled),
+html.tnt-on:not(#tnt):not(#pg) .tnt-view .tnt-fold.tnt-head-named:not(#lp):hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+/* Split while the column shows: the pressed surface, as "N helpers" while it splits */
+html.tnt-on:not(#tnt):not(#pg) .tnt-view .tnt-fold.tnt-head-named:not(#lp)[aria-expanded='true'] {
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+}
+.tnt-view .tnt-head-named svg {
+  flex: none;
+}
+
+/* A narrow island has no room for the names: the two step down whole to their icons (the state
+   word has left by then, below). */
+@container tnt-main (max-width: 680px) {
+  .tnt-view .tnt-icon-btn.tnt-icon-btn.tnt-head-named,
+  html.tnt-on:not(#tnt):not(#pg) .tnt-view .tnt-fold.tnt-head-named:not(#lp) {
+    justify-content: center;
+    width: 30px;
+    padding: 0;
+  }
+  .tnt-view .tnt-head-named > span {
+    display: none;
+  }
 }
 
 /* A blurred thread: what it says is out of sight, just enough that nothing can be read; the top
@@ -302,7 +335,6 @@
    the conversation's live line and the All threads cards. A still dot read as "finished" while the
    agent worked in the background. The app's one working pulse (05, stPulse):
    only the opacity moves, so it costs no layout. Still under reduced motion (modern-ui rule). */
-.tnt-th[data-tone='work'] .tnt-face::after,
 .tnt-th[data-tone='work'] .tnt-dot,
 .tnt-head-state[data-tone='work'] i,
 .tnt-live:not([data-tone='needs']):not([data-tone='agents']) i,
@@ -310,7 +342,6 @@
   animation: stPulse 1.8s ease-in-out infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-  .tnt-th[data-tone='work'] .tnt-face::after,
   .tnt-th[data-tone='work'] .tnt-dot,
   .tnt-head-state[data-tone='work'] i,
   .tnt-live:not([data-tone='needs']):not([data-tone='agents']) i,

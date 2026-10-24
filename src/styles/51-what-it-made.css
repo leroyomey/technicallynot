@@ -19,14 +19,14 @@
   border: 0;
   border-radius: var(--pg-r-sm);
   background: transparent;
-  color: var(--pg-text-3);
+  color: var(--pg-text-2);
   font: 12.5px/1.4 var(--pg-sans);
   text-align: left;
   cursor: pointer;
 }
 .tnt-made-head:hover {
   background: var(--pg-panel-hover-soft);
-  color: var(--pg-text-2);
+  color: var(--pg-text);
 }
 .tnt-made-head em {
   font-style: normal;
@@ -47,83 +47,227 @@
   outline-offset: 2px;
 }
 
-/* ---------- New and Changed ---------- */
+/* ---------- round 3: the top line, and every new thing a card across the width ---------- */
+.tnt-made-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.tnt-made-top .tnt-made-chip {
+  height: 28px;
+  border-radius: 999px;
+}
 .tnt-made-body {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px;
-  border-radius: var(--pg-r-sm);
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--pg-r);
   background: var(--pg-panel);
 }
 .tnt-made-body[hidden] {
   display: none;
 }
-.tnt-made-group {
-  margin: 2px 2px 0;
-  color: var(--pg-text-3);
-  font: 600 11px/1.3 var(--pg-sans);
-  letter-spacing: 0.02em;
-}
-.tnt-made-thumbs {
-  display: flex;
-  gap: 8px;
-  padding-bottom: 2px;
-  overflow-x: auto;
-  scrollbar-width: thin;
+.tnt-made-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
 }
 .tnt-made-thumb {
-  display: grid;
-  flex: none;
-  grid-template-rows: 76px auto;
-  gap: 6px;
-  width: 150px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   margin: 0;
-  padding: 6px;
+  padding: 0;
+  overflow: hidden;
+  /* a card sits lighter than the block it is in, with an edge, so it reads in Dark (learned
+     2026-10-22: the page's own dark background on the block's panel made a dark card vanish) */
   border: 1px solid var(--pg-line-2);
   border-radius: var(--pg-r-sm);
-  background: var(--pg-bg);
+  background: var(--pg-panel-2);
   color: var(--pg-text);
   font: 500 12.5px/1.3 var(--pg-sans);
   text-align: left;
   cursor: pointer;
+  transition:
+    transform 0.15s var(--pg-ease),
+    border-color 0.15s var(--pg-ease);
 }
-.tnt-made-thumb:hover,
+.tnt-made-thumb:hover {
+  transform: translateY(-2px);
+  border-color: var(--pg-text-4);
+}
 .tnt-made-thumb[aria-pressed='true'] {
   border-color: var(--pg-accent);
 }
 .tnt-made-thumb[data-gone='true'] {
   opacity: 0.6;
 }
+
+/* what it is, where a picture goes: the picture, the page's still picture, a document's first
+   lines, or a browser frame with the site's own address */
 .tnt-made-thumb > i {
+  position: relative;
   display: grid;
-  place-items: center;
+  aspect-ratio: 16 / 10;
   overflow: hidden;
-  border-radius: 7px;
-  background: var(--pg-panel-2);
-  color: var(--pg-text-3);
+  /* a soft well a shade off the card, so a card stands apart from the block in Light too */
+  background: color-mix(in srgb, var(--pg-text) 5%, transparent);
+  color: var(--pg-text-2);
+  font-style: normal;
+  place-items: center;
 }
 .tnt-made-thumb > i img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
-.tnt-made-thumb > span {
-  min-width: 0;
+.tnt-made-ttext {
+  align-content: start;
+  place-items: start !important;
+  padding: 12px 14px;
+  font: 11px/1.5 var(--pg-mono);
+  text-align: left;
+  -webkit-mask-image: linear-gradient(to bottom, #000 60%, transparent);
+  mask-image: linear-gradient(to bottom, #000 60%, transparent);
+}
+.tnt-made-ttext b {
+  display: block;
+  margin-bottom: 4px;
   overflow: hidden;
+  color: var(--pg-text);
+  font: 600 12.5px/1.3 var(--pg-sans);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tnt-made-thumb small {
+.tnt-made-ttext span {
+  display: block;
+  color: var(--pg-text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tnt-made-tsite {
+  grid-template-rows: auto 1fr;
+  place-items: stretch !important;
+  padding: 8px;
+  gap: 8px;
+}
+.tnt-made-tbar {
   display: flex;
   align-items: center;
-  gap: 5px;
+  height: 22px;
+  padding: 0 10px;
   overflow: hidden;
-  color: var(--pg-text-3);
+  border-radius: 999px;
+  background: var(--pg-bg);
+  color: var(--pg-text-2);
+  font: 11px/1 var(--pg-mono);
+  white-space: nowrap;
+}
+.tnt-made-tbar span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tnt-made-tmid {
+  display: grid;
+  border-radius: 8px;
+  background: var(--pg-bg);
+  color: var(--pg-text-2);
+  place-items: center;
+}
+
+/* under the picture: the name and one fact, the kind as a small badge */
+.tnt-made-words {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 11px 10px;
+}
+.tnt-made-wtext {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.tnt-made-wtext b {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* a block, not a flex row, so a long fact ends in "…" instead of being cut mid-word (the state
+   dot keeps its room with a margin) */
+.tnt-made-thumb small {
+  display: block;
+  overflow: hidden;
+  color: var(--pg-text-2);
   font-size: 11px;
   font-weight: 400;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.tnt-made-kind {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--pg-accent-soft);
+  color: var(--pg-text);
+  font-size: 11px;
+  font-style: normal;
+}
+
+/* ---------- a tint per kind (user 2026-10-23 chose "Proposed" in made-chips.html) ---------- */
+/* One hue per kind. The tile and the badge are that hue at 16 %; the tile's icon is the hue mixed
+   with the look's own text color, so it reads in all six looks (icons 3.5 to 5.5 to 1, badge text
+   6.6 to 13 to 1; numbers in docs/plans/design-concepts/README.md, made-chips). */
+.tnt-made-thumb[data-kind='document'] {
+  --made-kind: var(--pg-hue-document);
+}
+.tnt-made-thumb:is([data-kind='picture'], [data-kind='video']) {
+  --made-kind: var(--pg-hue-picture);
+}
+.tnt-made-thumb[data-kind='page'] {
+  --made-kind: var(--pg-hue-page);
+}
+.tnt-made-thumb[data-kind='site'] {
+  --made-kind: var(--pg-hue-site);
+}
+.tnt-made-thumb[data-kind='data'] {
+  --made-kind: var(--pg-hue-data);
+}
+.tnt-made-tile {
+  display: grid;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--made-kind, var(--pg-accent)) 16%, transparent);
+  color: color-mix(in srgb, var(--made-kind, var(--pg-accent)) 60%, var(--pg-text));
+  place-items: center;
+}
+.tnt-made-thumb[data-kind] .tnt-made-kind {
+  background: color-mix(in srgb, var(--made-kind) 16%, transparent);
+}
+.tnt-made-thumb[data-kind]:hover {
+  border-color: color-mix(in srgb, var(--made-kind) 60%, var(--pg-text));
+}
+
+/* the changed-files pill: added and removed lines in the app's diff colors (Files: 12), mixed a
+   little toward the text so they stay above 4.5 to 1 in Dim */
+.tnt-made-chip u,
+.tnt-made-chip s {
+  flex: none;
+  font: 500 12px/1 var(--pg-mono);
+  text-decoration: none;
+}
+.tnt-made-chip u {
+  color: color-mix(in srgb, var(--pg-ready) 75%, var(--pg-text));
+}
+.tnt-made-chip s {
+  color: color-mix(in srgb, var(--pg-err) 75%, var(--pg-text));
 }
 .tnt-made-chips {
   display: flex;
@@ -140,7 +284,7 @@
   padding: 0 11px;
   border: 1px solid var(--pg-line-2);
   border-radius: var(--pg-r-sm);
-  background: var(--pg-bg);
+  background: var(--pg-panel-2);
   color: var(--pg-text);
   font: 500 12.5px/1 var(--pg-sans);
   cursor: pointer;
@@ -159,7 +303,7 @@
   white-space: nowrap;
 }
 .tnt-made-chip small {
-  color: var(--pg-text-3);
+  color: var(--pg-text-2);
   font-weight: 400;
 }
 
@@ -176,13 +320,18 @@
 .tnt-made-stopped {
   background: var(--pg-text-4);
 }
+.tnt-made-thumb small > :is(.tnt-made-live, .tnt-made-stopped) {
+  margin-right: 5px;
+  vertical-align: 0.5px;
+}
 
 /* ---------- a preview in place, at a fixed height ---------- */
 .tnt-made-preview {
   overflow: hidden;
   margin-top: 4px;
+  border: 1px solid var(--pg-line-2);
   border-radius: var(--pg-r-sm);
-  background: var(--pg-bg);
+  background: var(--pg-panel-2);
 }
 .tnt-made-preview[hidden] {
   display: none;
@@ -210,7 +359,7 @@
   gap: 6px;
   min-width: 0;
   overflow: hidden;
-  color: var(--pg-text-3);
+  color: var(--pg-text-2);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -247,7 +396,7 @@
 }
 .tnt-made-none {
   margin: 4px 2px 8px;
-  color: var(--pg-text-3);
+  color: var(--pg-text-2);
   font-size: 12.5px;
 }
 .tnt-made-image {
@@ -340,7 +489,18 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tnt-made-head .tn-ico {
+  .tnt-made-head .tn-ico,
+  .tnt-made-thumb {
     transition: none;
+  }
+  .tnt-made-thumb:hover {
+    transform: none;
+  }
+}
+
+/* under touch every card and pill is at least 44 tall */
+@media (pointer: coarse) {
+  .tnt-made-top .tnt-made-chip {
+    height: 44px;
   }
 }

@@ -1,10 +1,11 @@
 /*
- * Technically Not tools · desktop-check/tests/system-stats.js — The top bar PC stats chip
- * (81-system-stats.js + desktop/system-stats.js) on this real PC: CPU and memory (and GPU where
- * nvidia-smi exists) appear, fit the top bar without overlapping or cutting anything off;
- * sparklines from 1600 px wide, numbers only at 1440×900, hidden at 1024×768 (purple breakpoints);
- * minimizing stops the GPU reader and restoring brings fresh numbers. Light + Dark screenshots at
- * 2560×1440, one at 1600×900. Returns {ok, log}.
+ * Technically Not tools · desktop-check/tests/system-stats.js — The top bar's System chip
+ * (81-system-stats.js + desktop/system-stats.js) on this real PC: the chip says OK or High and
+ * fits the top bar without overlapping or cutting anything off at every size, its bar only from
+ * 1100 page px; a press opens the popover right under it with CPU and RAM rows (and GPU where
+ * nvidia-smi exists), Esc closes it and the keyboard is back on the chip; minimizing stops the GPU
+ * reader and restoring brings fresh numbers. Light + Dark screenshots of the open popover at
+ * 2560×1440, one at 1024×768. Returns {ok, log}.
  */
 const log = [],
   wait = ms => new Promise(r => setTimeout(r, ms));
@@ -33,7 +34,10 @@ const main = (cmd, ...args) =>
     };
     console.log('TNAI_MAIN:' + JSON.stringify({ id, cmd, args }));
   });
-const chip = () => document.querySelector('.top-right .tnai-sys-chip');
+const system = window.TnaiSystemChip;
+const chip = () => document.getElementById('pgSysChip');
+const pop = () => document.getElementById('pgSysPop');
+const row = key => system?.list.querySelector(`.pg-chip[data-m="${key}"]`);
 const shown = el =>
   !!el &&
   !el.hidden &&
@@ -41,6 +45,7 @@ const shown = el =>
   el.getBoundingClientRect().width > 0;
 
 try {
+  check(!!system && !!chip() && !!pop(), 'the System chip and its popover are in the page');
   const vis = el =>
     el &&
     el.getBoundingClientRect().width > 0 &&
@@ -53,12 +58,12 @@ try {
         .map(k => k.getBoundingClientRect().right)
     );
   const truncated = () =>
-    [...document.querySelectorAll('.top-right > .status, .top-left .crumb')]
+    [...document.querySelectorAll('.top-right > .pg-chip, .top-left .crumb')]
       .filter(vis)
       .some(e => e.scrollWidth > e.clientWidth + 1);
   const fits = label => {
-    // Purple top bar: the ⌘ K button is hidden (Ctrl+K still works); the chip must clear the title,
-    // stay in the window, overlap no other top-bar item and sit on the bar's center line.
+    // The chip must clear the title, stay in the window, overlap no other top-bar item and sit on
+    // the bar's center line.
     const c = chip().getBoundingClientRect(),
       bar = document.querySelector('header.top').getBoundingClientRect();
     const others = [...document.querySelectorAll('.top-right > *')]
@@ -88,28 +93,47 @@ try {
   await wait(600);
   const topH = document.querySelector('header.top').getBoundingClientRect().height;
   check(
-    !!(await until(() => shown(chip()) && /CPU/.test(chip().textContent), 8000)),
-    'chip shows CPU: ' + JSON.stringify(chip()?.textContent)
+    !!(await until(() => shown(chip()) && row('cpu') && row('ram'), 8000)),
+    'readings arrive: the popover has CPU and RAM rows'
   );
-  const text = chip()?.textContent || '';
+  const word = chip().querySelector('.v').textContent;
+  check(
+    (word === 'OK') === (chip().dataset.level === 'ok') && /^(OK|High)$/.test(word),
+    'the chip says ' + word + ' with level ' + chip().dataset.level
+  );
 
   // 21's rolling count: the number is drawn by CSS
-  const cpuN = chip().querySelector('.pg-chip[data-m="cpu"] .v')?.style.getPropertyValue('--tn-n');
+  const cpuN = row('cpu').querySelector('.v')?.style.getPropertyValue('--tn-n');
   check(
-    /^\d+$/.test(String(cpuN).trim()) && /RAM\s*[\d.]+\/[\d.]+ GB/.test(text),
+    /^\d+$/.test(String(cpuN).trim()) && /[\d.]+\/[\d.]+ GB/.test(row('ram').textContent),
     'CPU % (' + cpuN + ') and RAM used/total'
   );
   const gpuReader = await main('nvidiaRunning');
   check(
-    !!chip().querySelector('.pg-chip[data-m="gpu"]') === gpuReader,
-    'GPU shown exactly when the NVIDIA reader runs (' + gpuReader + ')'
+    !!row('gpu') === gpuReader,
+    'GPU row exactly when the NVIDIA reader runs (' + gpuReader + ')'
   );
-  log.push('info tooltip: ' + JSON.stringify(chip()?.title));
-  check([...chip().querySelectorAll('.pg-chip svg')].every(shown), '2560x1440: sparklines shown');
+  log.push('info tip: ' + JSON.stringify(chip()?.title));
+  check(shown(chip().querySelector('.pg-meter-bar')), '2560x1440: the chip shows its bar');
   fits('2560x1440');
   check(
     Math.abs(document.querySelector('header.top').getBoundingClientRect().height - topH) < 1,
     'top bar height unchanged'
+  );
+
+  // A press opens the popover right under the chip; Esc closes it and the keyboard is back.
+  chip().focus();
+  chip().click();
+  await wait(300);
+  const c = chip().getBoundingClientRect(),
+    p = pop().getBoundingClientRect();
+  check(
+    shown(pop()) &&
+      chip().getAttribute('aria-expanded') === 'true' &&
+      p.top >= c.bottom &&
+      p.top - c.bottom <= 12 &&
+      p.right <= innerWidth,
+    'a press opens the popover right under the chip (' + Math.round(p.top - c.bottom) + ' px below)'
   );
   window.TnaiTheme?.set('light');
   await wait(400);
@@ -118,25 +142,36 @@ try {
   await wait(400);
   await (window.TnaiTest?.shot?.('system-stats-dark') ?? wait(1200));
   window.TnaiTheme?.set('light');
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await wait(100);
+  check(
+    !shown(pop()) && document.activeElement === chip(),
+    'Esc closes the popover and the keyboard is back on the chip'
+  );
 
-  // Purple breakpoints (07 / 81): sparklines from 1600 px, numbers only from 1340, hidden below.
-  for (const [w, h, sparks] of [
-    [1920, 1080, true],
-    [1600, 900, true],
-    [1440, 900, false],
+  // The chip stays at every size; its bar shows from 1100 page px.
+  for (const [w, h] of [
+    [1920, 1080],
+    [1440, 900],
+    [1024, 768],
   ]) {
     await main('setSize', w, h);
     await wait(600);
+    const bar = innerWidth >= 1100;
     check(
-      shown(chip()) && [...chip().querySelectorAll('.pg-chip svg')].some(shown) === sparks,
-      w + 'x' + h + ': ' + (sparks ? 'sparklines' : 'numbers only')
+      shown(chip()) && shown(chip().querySelector('.pg-meter-bar')) === bar,
+      w +
+        'x' +
+        h +
+        ' (' +
+        innerWidth +
+        ' page px): chip shown, ' +
+        (bar ? 'with' : 'without') +
+        ' its bar'
     );
     fits(w + 'x' + h);
   }
-  await (window.TnaiTest?.shot?.('system-stats-1440') ?? wait(1200));
-  await main('setSize', 1024, 768);
-  await wait(600);
-  check(!shown(chip()), '1024x768: chip hidden (no room)');
+  await (window.TnaiTest?.shot?.('system-stats-1024') ?? wait(1200));
   await main('setSize', 1920, 1080);
   await wait(400);
 
@@ -144,10 +179,10 @@ try {
   await main('minimize');
   await wait(1500);
   check(!(await main('nvidiaRunning')), 'minimized: no nvidia-smi process');
-  const before = chip().title;
+  const before = row('ram')?.title + row('cpu')?.title;
   await main('restore');
   check(
-    !!(await until(() => shown(chip()) && chip().title !== before, 9000)),
+    !!(await until(() => row('ram') && row('ram').title + row('cpu')?.title !== before, 9000)),
     'restored: numbers update again'
   );
   if (gpuReader)

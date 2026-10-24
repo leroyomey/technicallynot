@@ -57,6 +57,23 @@ const ONE = '[TN.ai] [New task while you work on "count"] ... ONE',
   await wait(20);
   send(ONE);
   check(queued() === 1, 'sent while running → 1 queued');
+
+  // The queue shows only the user's words, never the app's wrapper (screenshot 2026-10-24).
+  const shownP = 'p-shown';
+  turns.started(shownP, 'Claude Code', '', '');
+  turns.claudeHook(shownP, {
+    transcript_path: tx,
+    hook_event_name: 'UserPromptSubmit',
+    prompt: '[TN.ai] Busy',
+  });
+  send(
+    '[TN.ai] [New task while you work on "<agent-message from="a8f8">"] If it belongs to that work, fold it in. New task: Why square designs?',
+    shownP
+  );
+  check(
+    get(shownP)?.queued?.[0]?.text === 'Why square designs?',
+    'queued prompt shows only the user words: ' + JSON.stringify(get(shownP)?.queued?.[0]?.text)
+  );
   await wait(150);
   hook({ hook_event_name: 'UserPromptSubmit', prompt: ONE });
   check(

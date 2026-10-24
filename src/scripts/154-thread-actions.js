@@ -1,7 +1,7 @@
-// Technically Not · 154-thread-actions.js — Desktop app only: the thread actions. One icon button
-// (git-branch) in the open thread's top row, just before the on/off button and the "..." (user
-// decision 2026-10-16, preview docs/plans/design-concepts/thread-actions-places.html, place "top"),
-// and the same button in an All threads card's head (135 makes it, this file paints it). It is
+// Technically Not · 154-thread-actions.js — Desktop app only: the thread actions. A row of the open
+// thread's "..." menu (137, "Commit, pull request, review…"; it was an icon button of the top row
+// until the user chose fewer buttons there, 2026-10-24, tab 5 of app-polish.html), and an icon
+// button in an All threads card's head (135 makes it, this file paints it). It is
 // shown only for a thread whose folder is in a git repository (153's facts), never for a plain
 // terminal thread.
 //
@@ -22,7 +22,8 @@
 // The prompts are edited in Settings › Agents › After finishing ("Thread actions"), one field per
 // prompt with "Reset to default"; kept on this computer in localStorage `tnai.thread-actions.v1`
 // (only the ones changed from the default).
-// window.TnaiThreadActions = { open(anchor, paneId), paintCard(paneId, button), prompts() }.
+// window.TnaiThreadActions = { open(anchor, paneId), paintCard(paneId, button), shows(paneId),
+// prompts() }.
 (() => {
   'use strict';
 
@@ -371,54 +372,30 @@
     });
   }
 
-  // ---------------------------------------------------------------- the top row's button
-  const TITLE = "Actions for this thread's work: commit, pull request, review";
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'tnt-icon-btn tnt-head-work';
-  button.title = TITLE;
-  button.setAttribute('aria-label', TITLE);
-  button.setAttribute('aria-haspopup', 'menu');
-  button.setAttribute('aria-expanded', 'false');
-  button.innerHTML = window.TnaiIcon?.('git-branch', { size: 16 }) || '';
-  button.hidden = true;
-  button.addEventListener('click', () => open(button, window.TnaiThreadView?.shown?.() || ''));
-
-  // Just before the on/off button (137 keeps that one beside the "..."), else before the "...".
-  function place() {
-    const acts = document.querySelector('.tnt-view .tnt-head-acts');
-    if (!acts) return;
-    const before = acts.querySelector('.tnt-head-power') || acts.querySelector('.tnt-head-menu');
-    if (before && button.nextElementSibling !== before) before.before(button);
-    else if (!before && button.parentNode !== acts) acts.append(button);
-  }
-
-  function paintButton() {
-    place();
-    const session = sessionOf(window.TnaiThreadView?.shown?.() || '');
-    const hide = !shows(session, changesFor(session));
-    if (button.hidden !== hide) button.hidden = hide;
+  // ---------------------------------------------------------------- the thread's "..." menu row
+  // The open thread's actions are a row of its "..." menu (137, "Commit, pull request, review…"),
+  // no longer a button of the top row (user 2026-10-24, tab 5 of app-polish.html): the row shows
+  // when this would, and opens this menu under the "..." button.
+  function showsFor(paneId) {
+    const session = sessionOf(paneId);
+    return shows(session, changesFor(session));
   }
 
   // An All threads card's button (135 makes it hidden and calls this when it paints the card).
   function paintCard(paneId, cardButton) {
     if (!cardButton) return;
-    const session = sessionOf(paneId);
-    const hide = !shows(session, changesFor(session));
+    const hide = !showsFor(paneId);
     if (cardButton.hidden !== hide) cardButton.hidden = hide;
   }
 
   function paintAll() {
-    paintButton();
     document.querySelectorAll('.tat-card[data-pane] .tat-act-work').forEach(cardButton => {
       paintCard(cardButton.closest('.tat-card').dataset.pane, cardButton);
     });
   }
 
-  // Painted on pushed changes only: another thread opened, a session changed, new git facts.
-  window.addEventListener('tnai:thread-view', paintButton);
+  // Painted on pushed changes only: new git facts.
   window.addEventListener('tnai:thread-changes', paintAll);
-  window.TnaiAgents?.onChange?.(paintButton);
 
   // ---------------------------------------------------------------- Settings
   // Settings › Agents › After finishing: one field per prompt, with Reset to default.
@@ -492,11 +469,13 @@
   }
 
   buildSettings();
-  paintButton();
 
   window.TnaiThreadActions = {
     open,
     paintCard,
+
+    // whether the thread has a git folder its actions can work on (137 shows its menu row then)
+    shows: showsFor,
 
     // the watched pull request of a thread ({ number, url, everyMin }) or null (153's Details note)
     watching: paneId => watched.get(paneId) || null,

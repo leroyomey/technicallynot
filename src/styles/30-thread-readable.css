@@ -575,7 +575,7 @@ code.tnt-act-what {
 /* every conversation (open thread, helper beside it, All threads cards), so on .tnt-talk-list */
 .tnt-view u,
 .tnt-talk-list u {
-  color: var(--pg-work);
+  color: var(--pg-work-text);
   text-decoration: none;
 }
 .tnt-view s,
@@ -749,9 +749,10 @@ code.tnt-act-what {
 }
 
 /* Each label in the color it has in the terminal: one list of kinds, in 75-report-highlight.js,
-   which writes these colors for Light and for Dark. */
+   which writes these colors for Light and for Dark. "Did" takes the app's text green instead
+   (user decision 2026-10-23, mock green-text.html), which has a value for every shade. */
 .tnt-report-row[data-kind='did'] > span {
-  color: var(--rp-did);
+  color: var(--pg-work-text);
 }
 .tnt-report-row[data-kind='found'] > span {
   color: var(--rp-found);
@@ -1432,4 +1433,15 @@ html.tnt-on:not(#tnt):not(#pg) .tnt-queued-act:not(#lp):hover,
 .tnt-queued-act:focus-visible {
   outline: var(--pg-ring) solid var(--pg-accent);
   outline-offset: -2px;
+}
+
+/* the folder a command runs in, on the Working line (122 paintLive, 183; tab 2 of
+   docs/plans/design-concepts/app-polish.html) */
+.tnt-live-folder {
+  padding: 1px 8px;
+  border-radius: 6px;
+  background: var(--pg-panel);
+  font: 12px/1.5 var(--pg-mono);
+  color: var(--pg-text);
+  white-space: nowrap;
 }

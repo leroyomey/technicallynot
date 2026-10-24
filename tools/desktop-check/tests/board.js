@@ -99,9 +99,17 @@ check(
   cols.every(col => col.getBoundingClientRect().width >= 175.5),
   'no column under 176 px'
 );
+
+// Board round 2: the columns share one row; when they do not fit, the row scrolls sideways
+const boardRow = page.querySelector('.bd-board');
 check(
-  cols.every(col => col.getBoundingClientRect().right <= boardBox.right + 0.5),
-  'no column cut at the right'
+  cols.every(col => col.getBoundingClientRect().right <= boardBox.right + 0.5) ||
+    boardRow.scrollWidth > boardRow.clientWidth,
+  'no column cut at the right without a way to scroll to it'
+);
+check(
+  cols.every(col => col.querySelector('.bd-col-body') && col.querySelector('.bd-fold')),
+  'each column has its own scrolling body and a fold button'
 );
 
 // A new idea, typed in place, kept, then deleted.

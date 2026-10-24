@@ -123,33 +123,32 @@ await wait(500);
     others = [...acts.children].filter(el => el !== b && shown(el)),
     more = acts.querySelector('.tnt-head-menu');
 
-  // The order a user reads: past conversations, handoff history, the page button, the column's
-  // button, then the buttons that came later (the pop-out 162, the thread actions 154, the on/off
-  // button 137 keeps right before "..."), and the thread's own "..." menu last.
+  // The order a user reads (user 2026-10-24, tab 5 of app-polish.html): Preview (the page
+  // button), Split (the column's button, with its name), then the on/off button 137 keeps right
+  // before "...", and the thread's own "..." menu last.
   const order = [...acts.children].filter(shown);
   const at = selector => order.indexOf(acts.querySelector(selector));
   const mine = order.indexOf(b);
   const before = order.filter((el, index) => index < mine);
   const after = order.filter((el, index) => index > mine);
-  const LATER = ['tnt-head-popout', 'tnt-head-work', 'tnt-head-power', 'tnt-head-menu'];
+  const LATER = ['tnt-head-power', 'tnt-head-menu'];
   check(
     acts.lastElementChild === more &&
       after.every(el => LATER.some(name => el.classList.contains(name))) &&
-      near(bb.width, bb.height, 0.6) &&
-      bb.width > 26,
-    'the button comes right before the pop-out, thread actions, on/off and "..." buttons, square (' +
+      /Split/.test(b.textContent) &&
+      bb.width > bb.height &&
+      bb.height > 26,
+    'the button "Split" comes right before the on/off and "..." buttons, with its name (' +
       n(bb.width) +
       ' by ' +
       n(bb.height) +
       ')'
   );
   check(
-    at('.tnh-open') >= 0 &&
-      at('.tnh-open') < at('.tnt-head-handoff') &&
-      at('.tnt-head-handoff') < at('.tnt-head-page') &&
+    at('.tnt-head-page') >= 0 &&
       at('.tnt-head-page') < at('.tnt-fold-side') &&
       at('.tnt-fold-side') < at('.tnt-head-menu'),
-    'the top row reads: past conversations, handoff history, the page, the column, "..." (' +
+    'the top row reads: Preview, Split, "..." (' +
       order.map(el => el.getAttribute('aria-label') || el.textContent.trim()).join(' | ') +
       ')'
   );

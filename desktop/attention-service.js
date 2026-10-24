@@ -1220,6 +1220,22 @@ function notify({ paneId, title, body } = {}) {
   return true;
 }
 
+// The count on the app's taskbar icon (174, user 2026-10-23): a small picture the page draws with
+// the number, or none when nothing is new. Windows only; elsewhere it does nothing.
+const BADGE_MAX = 20000;
+
+function badge(picture, count) {
+  const w = getWin();
+  if (!w || w.isDestroyed() || process.platform !== 'win32') return false;
+  const text = String(picture || '');
+  const total = Number(count) || 0;
+  const shown = total > 0 && text.length <= BADGE_MAX && /^data:image\/png;base64,/.test(text);
+  const image = shown ? require('electron').nativeImage.createFromDataURL(text) : null;
+  const label = shown ? total + (total === 1 ? ' thread' : ' threads') + ' to look at' : '';
+  w.setOverlayIcon(image && !image.isEmpty() ? image : null, label);
+  return true;
+}
+
 module.exports = {
   init(sendFn, deps = {}) {
     send = sendFn;
@@ -1279,6 +1295,7 @@ module.exports = {
   voice,
   sendHeldNow,
   notify,
+  badge,
   // Prompts from another computer. For prompt-submit.js: holdRemote, remoteReady, remotePasted,
   // remoteEnterOk, remoteGone, remoteEnded. For the service that takes them: remoteHeld(key) → [{
   // id, paneId, at }], cancelRemote(key) and remoteRecheck() → how many were dropped.

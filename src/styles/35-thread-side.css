@@ -152,6 +152,27 @@ html.tnt-on:not(#tnt):not(#pg) .tnt-sidefiles .repo-row {
 html.tnt-on:not(#tnt):not(#pg) .tnt-sidefiles .repo-row > :is(.repo-file-kind, .repo-file-path) {
   display: none !important;
 }
+/* "Tool folders" (09): one row at the end of the top level for the folders whose names start with
+   a dot, quieter than the project's own rows, their names small at its right. */
+html.tnt-on:not(#tnt):not(#pg) .tnt-sidefiles .repo-row.repo-tools-row {
+  grid-template-columns: 16px 18px auto minmax(0, 1fr) !important;
+  color: var(--pg-text-3);
+}
+html.tnt-on:not(#tnt):not(#pg) .tnt-sidefiles .repo-row.repo-tools-row:hover {
+  color: var(--pg-text-2);
+}
+.repo-rail-tree .repo-tools-row .repo-folder-icon {
+  color: var(--pg-text-3);
+}
+.repo-rail-tree .repo-tools-names {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font: 11px var(--pg-mono);
+  color: var(--pg-text-3);
+}
 html.tnt-on:not(#tnt):not(#pg) .tnt-sidefiles .repository-rail-note {
   flex: none;
   border-top: 0;

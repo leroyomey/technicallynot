@@ -355,12 +355,24 @@
 
   // ---------- window title "(N) " ----------
   const titleEl = document.querySelector('title');
+
+  // Also counted (174, user 2026-10-23): threads with something new since the user last looked,
+  // each once, and not again when it also needs the user. The same number goes on the taskbar.
   const paintTitle = () => {
-    const n = items.length + decided.length,
+    const needing = new Set([...items.map(item => item.paneId), ...decided]);
+    let unread = [];
+    try {
+      unread = window.TnaiUnread?.panes?.() || [];
+    } catch {}
+    const n = items.length + decided.length + unread.filter(paneId => !needing.has(paneId)).length,
       base = document.title.replace(/^\(\d+\) /, ''),
       want = (n ? '(' + n + ') ' : '') + base;
     if (document.title !== want) document.title = want;
+    try {
+      window.TnaiUnread?.badge?.(n);
+    } catch {}
   };
+  addEventListener('tnai:unread-changed', paintTitle);
   if (titleEl)
     new MutationObserver(paintTitle).observe(titleEl, {
       childList: true,

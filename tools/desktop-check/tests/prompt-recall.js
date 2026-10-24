@@ -79,7 +79,15 @@ t(
   box.value === '' && R.parked().join('|') === 'parked one'
 );
 await wait(450);
-t('the kept draft (16) is gone too', !localStorage.getItem('tnai.draft.composer.v1'));
+
+// the box's own draft and a thread's draft (16, one per thread since 2026-10-22)
+t(
+  'the kept draft (16) is gone too',
+  !localStorage.getItem('tnai.draft.composer.v1') &&
+    !Object.values(JSON.parse(localStorage.getItem('tnai.draft.threads.v1') || '{}')).includes(
+      'parked one'
+    )
+);
 type('second park');
 key('s', S);
 type('');

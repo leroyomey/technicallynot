@@ -1772,7 +1772,15 @@ handle(
         // its lead's tnai_delegate / tnai_wait gets the reason (agent-graph.js).
         if (options?.subagentOf) graph.notStarted(paneId, error.message);
       }
-      return { ok: false, error: { message: error.message, code: error.code || '' } };
+
+      // held: the panel is still one another computer started (its start was refused after the
+      // mark was taken). The window keeps such a panel: it is counted among that computer's three
+      // until this computer's user closes it (remote-protocol.md 6, Medium 3).
+      return {
+        ok: false,
+        error: { message: error.message, code: error.code || '' },
+        held: lifecycle.remoteStarted(paneId) === true,
+      };
     } finally {
       if (ptyLaunching.get(paneId) === gen) ptyLaunching.delete(paneId);
     }
@@ -2839,6 +2847,35 @@ handle('threadLog:read', (paneId, from, sub) =>
   )
 );
 
+// A Claude Code workflow's helpers, for its card in the thread (171, workflow-runs.js). The
+// window names a panel and the run; the folder is found here from that panel's session record.
+// A watched run pushes `workflow:changed` ({ paneId, runId }) when its journal changes.
+const workflowRuns = require('./workflow-runs');
+const workflowWatches = new Map();
+handle('workflow:read', (paneId, runId) =>
+  workflowRuns.read(require('./session-store').get(String(paneId || '')), String(runId || ''))
+);
+handle('workflow:watch', (paneId, runId) => {
+  const key = String(paneId || '') + ' ' + String(runId || '');
+  if (workflowWatches.has(key)) return true;
+  const stop = workflowRuns.watch(
+    require('./session-store').get(String(paneId || '')),
+    String(runId || ''),
+    () => toWindow('workflow:changed', { paneId: String(paneId || ''), runId: String(runId || '') })
+  );
+
+  // a refused watch (no run folder yet, or too many watched) is not kept, so it can be asked again
+  if (!stop) return false;
+  workflowWatches.set(key, stop);
+  return true;
+});
+handle('workflow:unwatch', (paneId, runId) => {
+  const key = String(paneId || '') + ' ' + String(runId || '');
+  workflowWatches.get(key)?.();
+  workflowWatches.delete(key);
+  return true;
+});
+
 // A page or picture the agent wrote or showed, as a card in its conversation (159,
 // thread-designs.js). The window names a panel and the path its conversation wrote; the file is
 // found and checked here.
@@ -2857,6 +2894,7 @@ handle('designs:picture', (paneId, file, options) =>
   threadDesigns.picture(String(paneId || ''), String(file), {
     since: Number(options?.since) || 0,
     large: options?.large === true,
+    wide: options?.wide === true,
     check: options?.check === true,
   })
 );
@@ -2890,6 +2928,9 @@ handle('attention:sendHeldNow', heldId => attention.sendHeldNow(heldId));
 // 71 read the CLI's input box as empty: a draft counted from keys goes
 handle('attention:inputEmpty', paneId => attention.inputEmpty(String(paneId)));
 handle('attention:notify', opts => attention.notify(opts || {}));
+
+// the count on the app's taskbar icon (174)
+handle('attention:badge', (picture, count) => attention.badge(picture, count));
 
 // Alerts to Discord: the webhook URL goes one way, renderer -> main; only a masked form ever comes
 // back.

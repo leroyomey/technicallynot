@@ -195,6 +195,18 @@ function promptEntries(text, at) {
         at,
       },
     ];
+
+  // " [Attached image: C:\\…\\shot.png]" (27-composer-attachments): the picture is shown as a tile
+  // under the words (122), so the path is not printed in them; the agent still got it
+  const pictures = [];
+  const shown = words
+    .replace(/\s*\[Attached image: ([^\]\n]{1,500})\]/g, (whole, file) => {
+      pictures.push(file.trim());
+      return '';
+    })
+    .trim();
+  if (pictures.length)
+    return [{ kind: 'you', text: clip(shown, PROMPT_MAX), pictures, ...extra, at }];
   return [{ kind: 'you', text: clip(words, PROMPT_MAX), ...extra, at }];
 }
 

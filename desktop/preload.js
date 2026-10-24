@@ -336,6 +336,17 @@ contextBridge.exposeInMainWorld('tnaiNative', {
     onChange: listen('threadLog:changed'),
   },
 
+  // A Claude Code workflow's helpers, for its card (workflow-runs.js, 171): read(paneId, runId) →
+  // { ok, helpers: [{ id, label, phase, state, startedAt, endedAt }] }; watch / unwatch a run;
+  // onChange gets { paneId, runId } when its journal changed.
+  workflows: {
+    read: (paneId, runId) => invoke('workflow:read', String(paneId ?? ''), String(runId ?? '')),
+    watch: (paneId, runId) => invoke('workflow:watch', String(paneId ?? ''), String(runId ?? '')),
+    unwatch: (paneId, runId) =>
+      invoke('workflow:unwatch', String(paneId ?? ''), String(runId ?? '')),
+    onChange: listen('workflow:changed'),
+  },
+
   // A page or picture the agent wrote or showed, as a card in the conversation (thread-designs.js).
   // page → { ok, name, url, refs, image } (a still picture of the page); picture → { ok, name,
   // image } (small, or whole with large); preview opens the page in Live preview.
@@ -348,6 +359,7 @@ contextBridge.exposeInMainWorld('tnaiNative', {
       invoke('designs:picture', String(paneId ?? ''), String(file ?? ''), {
         since: Number(options?.since) || 0,
         large: options?.large === true,
+        wide: options?.wide === true,
         check: options?.check === true,
       }),
     preview: (paneId, file) => invoke('designs:preview', String(paneId ?? ''), String(file ?? '')),
@@ -421,6 +433,10 @@ contextBridge.exposeInMainWorld('tnaiNative', {
     cancelHeld: heldId => invoke('attention:cancelHeld', String(heldId)),
     sendHeldNow: heldId => invoke('attention:sendHeldNow', String(heldId)),
     inputEmpty: paneId => invoke('attention:inputEmpty', String(paneId)),
+
+    // the count on the taskbar icon (174): a PNG data address with the number, or '' for none
+    badge: (picture, count) =>
+      invoke('attention:badge', String(picture || ''), Math.max(0, Number(count) || 0)),
     notify: ({ paneId, title, body } = {}) =>
       invoke('attention:notify', {
         paneId: paneId == null ? null : String(paneId),

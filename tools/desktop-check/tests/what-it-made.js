@@ -239,7 +239,8 @@ try {
   const head = newest.querySelector('.tnt-made-head');
   check(
     /Worked for 6m 12s/.test(head?.textContent) &&
-      /made 5 things, changed 4 files/.test(head?.textContent),
+      /made 5 things/.test(head?.textContent) &&
+      !/changed/.test(head?.textContent),
     'the head says what it made: "' + head?.textContent.trim() + '"'
   );
   check(
@@ -248,38 +249,44 @@ try {
   );
   check(newest.dataset.folded === 'false', 'the newest task is open');
 
-  // ---- New and Changed ----
-  const thumbs = () =>
-    [...newest.querySelectorAll('.tnt-made-thumb')].map(
-      thumb => thumb.querySelector('span')?.firstChild?.textContent || ''
-    );
-  await until(() => !thumbs().includes('old.png') && thumbs().length === 3, 6000);
+  // ---- the cards (round 3: every new thing a card across the width; Changed a pill in the top)
+  // ----
+  const cards = () => [...newest.querySelectorAll('.tnt-made-grid > .tnt-made-thumb')];
+  const names = () =>
+    cards().map(card => card.querySelector('.tnt-made-wtext b')?.textContent || '');
+  await until(() => !names().includes('old.png') && names().length === 5, 6000);
   check(
-    JSON.stringify(thumbs()) === JSON.stringify(['Site', 'hero.png', 'made.png']),
-    'New, as small pictures: ' +
-      thumbs().join(', ') +
+    JSON.stringify([...names()].sort()) ===
+      JSON.stringify(['PRICING.md', 'Site', 'hero.png', 'made.png', 'sales.csv']),
+    'every new thing is a card: ' +
+      names().join(', ') +
       ' (a picture a command only named is left out)'
   );
-  const chips = [
-    ...newest.querySelectorAll('.tnt-made-chips')[0].querySelectorAll('.tnt-made-chip > span'),
-  ].map(span => span.textContent);
   check(
-    JSON.stringify(chips) === JSON.stringify(['PRICING.md', 'sales.csv']),
-    'New, as chips: ' + chips.join(', ')
+    cards().every(card => card.querySelector('.tnt-made-kind')),
+    'each card names its kind'
   );
-  const changes = [...newest.querySelectorAll('.tnt-made-chip')].find(chip =>
-    /files? changed/.test(chip.textContent)
+  check(
+    !!(await until(
+      () =>
+        /Three plans|PRICING|plan/i.test(
+          cards()
+            .find(card => /PRICING/.test(card.textContent))
+            ?.querySelector('.tnt-made-ttext')?.textContent || ''
+        ),
+      6000
+    )),
+    "a document's card shows its own first lines"
   );
+  const changes = newest.querySelector('.tnt-made-top .tnt-made-chip');
   check(
     !!changes && /4 files changed/.test(changes.textContent),
-    'Changed is one chip: "' + changes?.textContent + '"'
+    'Changed is one pill in the top line: "' + changes?.textContent + '"'
   );
 
   // ---- previews ----
   const preview = newest.querySelector('.tnt-made-preview');
-  const csvChip = [...newest.querySelectorAll('.tnt-made-chip')].find(chip =>
-    /sales\.csv/.test(chip.textContent)
-  );
+  const csvChip = cards().find(card => /sales\.csv/.test(card.textContent));
   await press(csvChip);
   const bars = await until(() => preview.querySelectorAll('.tnt-made-chart rect').length, 6000);
   check(bars === 3, 'a data file is drawn as a bar of its number column: ' + bars + ' bars');
@@ -292,15 +299,13 @@ try {
   newest.scrollIntoView({ block: 'center' });
   await shot('what-it-made-chart');
 
-  await press(
-    [...newest.querySelectorAll('.tnt-made-chip')].find(chip => /PRICING/.test(chip.textContent))
-  );
+  await press(cards().find(card => /PRICING/.test(card.textContent)));
   check(
     !!(await until(() => /Three plans/.test(preview.textContent), 6000)),
     'a document shows its text, with "Open in Files": ' + /Open in Files/.test(preview.textContent)
   );
 
-  await press(newest.querySelectorAll('.tnt-made-thumb')[1]);
+  await press(cards().find(card => /hero\.png/.test(card.textContent)));
   check(
     !!(await until(() => preview.querySelector('img.tnt-made-image')?.naturalWidth > 0, 6000)),
     'a picture shows large, with "Open large"'

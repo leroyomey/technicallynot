@@ -134,6 +134,14 @@ check(
   'a site needs a command',
   made.sitesIn(act('Wrote', 'http://localhost:1/'), null).length === 0
 );
+check(
+  "the app's own hook and show addresses are not a site",
+  sites(ran('cat .claude/settings.json', 1), {
+    more:
+      '"command": "http://127.0.0.1:64481/hook/325a735e3ce9dc90caada6124bb789ed"\n' +
+      'http://127.0.0.1:51711/s/789f21b5a03f4f3ef1e3b4d7636238a1/page.html',
+  }).length === 0
+);
 
 // a data file as a table, and its chart
 const csv = 'month,"sales, total",notes\nJan,120,"a ""good"" start"\nFeb,180,\nMar,90,dip\n';

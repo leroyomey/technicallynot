@@ -289,33 +289,27 @@ try {
   const heads = groups.map(g =>
     shown(g.querySelector('.tnt-grp-head')) ? g.querySelector('.tnt-grp-head').textContent : ''
   );
+
+  // the steps view (181, 59; user 2026-10-23): one level, no group heading inside a run
   check(
-    groups.map(g => g.dataset.verb).join() === 'Read,Ran,Edited' &&
-      heads.join('|') === 'Read 3 files|Ran 2 commands · 1 failed|',
-    'actions of one kind are one group with a count; a single action has no heading: "' +
-      heads.join('" | "') +
-      '"'
+    groups.map(g => g.dataset.verb).join() === 'Read,Ran,Edited' && heads.every(head => !head),
+    'inside a run every step is one flat line, no group heading: "' + heads.join('" | "') + '"'
   );
   const [reads, runs, edits] = groups;
   const readLines = [...reads.querySelectorAll('.tnt-act')];
-  check(
-    reads.dataset.folds === 'true' && readLines.every(line => !shown(line)),
-    'three files that were only read fold behind their heading'
-  );
-  reads.querySelector('.tnt-grp-head').click();
   const names = readLines.map(line => line.querySelector('.tnt-act-what').textContent);
   check(
     readLines.every(shown) &&
       names.join() === 'morning-brief.md,setup-notes.md,cart.js' &&
       readLines[2].querySelector('.tnt-act-what').title.endsWith('another-long-folder/cart.js'),
-    'a press shows them, each file by its name alone with its path on hover: ' + names.join(', ')
+    'the read files show at once, each by its name alone with its path on hover: ' +
+      names.join(', ')
   );
   const mono = el => /mono/i.test(getComputedStyle(el).fontFamily);
   const runLines = [...runs.querySelectorAll('.tnt-act')];
   const allLines = [...list().querySelectorAll('.tnt-act')];
   check(
-    !mono(reads.querySelector('.tnt-grp-head')) &&
-      allLines.every(line => !mono(line) && mono(line.querySelector('.tnt-act-what'))),
+    allLines.every(line => !mono(line) && mono(line.querySelector('.tnt-act-what'))),
     'the lines are in the reading face; only a name is in the code face'
   );
   check(
@@ -335,20 +329,21 @@ try {
     'nothing in the actions is cut with an ellipsis or runs off its line (' + cut.length + ')'
   );
   const more = runLines[0].nextElementSibling;
-  const open = runLines[0].querySelector('.tnt-act-open');
+  check(!shown(more), 'no box with the rest scrolls under a step');
+  runLines[0].click();
+  await wait(500);
+  const step = document.querySelector('.tsv');
   check(
-    shown(open) && !shown(more) && !!open.getAttribute('aria-label'),
-    'the command has a small button for the rest, closed at first'
+    window.TnaiStepViewer?.shown() &&
+      !!step &&
+      shown(step) &&
+      step.textContent.includes(COMMAND) &&
+      step.textContent.includes(PRINTED) &&
+      step.textContent.includes('What is left today'),
+    'a press slides the step in beside the thread with its whole command, description and output'
   );
-  open.click();
-  check(
-    shown(more) &&
-      more.textContent.includes('$ ' + COMMAND) &&
-      more.textContent.includes(PRINTED) &&
-      more.textContent.includes('What is left today') &&
-      open.getAttribute('aria-expanded') === 'true',
-    'a press shows the whole command, its description and everything it printed'
-  );
+  window.TnaiStepViewer?.close();
+  await wait(500);
   check(
     shown(edits.querySelector('.tnt-act')) &&
       edits.querySelector('.tnt-act-verb').textContent === 'Edited' &&

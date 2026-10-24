@@ -187,15 +187,15 @@ try {
   // land on different counts of screen pixels. What the eye sees is measured: the screen pixels
   // between two chips, with a usage chip like the one a signed-in agent adds.
   {
-    const group = document.querySelector('.top-right > .tnai-sys-chip:not(.off)');
+    // The System chip (81) stands first; Claude's chip (80) right after it.
+    const systemChip = document.getElementById('pgSysChip');
     let made = null;
-    if (group && !group.querySelector('.pg-chip[data-m="plan"]')) {
+    if (systemChip && !document.querySelector('.top-right > .pg-chip[data-m="plan"]')) {
       made = document.createElement('span');
       made.className = 'pg-chip';
       made.dataset.m = 'plan';
-      made.innerHTML =
-        '<span class="k">Claude</span><span class="v">5% <small>5h</small> 81% <small>wk</small></span>';
-      group.append(made);
+      made.innerHTML = '<span class="k">Claude</span><span class="v">5% <small>5h</small></span>';
+      systemChip.after(made);
     }
     for (const [width, height] of [
       [1440, 900],
@@ -219,7 +219,7 @@ try {
         .slice(1)
         .map((chip, index) => n(box(chip).left - box(chips[index]).right));
       check(
-        chips.length >= 4 && gaps.every(gap => gap === gaps[0]),
+        chips.length >= 3 && gaps.every(gap => gap === gaps[0]),
         width +
           ' x ' +
           height +

@@ -177,7 +177,7 @@ try {
   );
   check(rows()[0]?.id === ranRow?.id, 'newest first');
   check(
-    !!(await until(() => /Running npm test/.test(nowText()))),
+    !!(await until(() => /Running a test/.test(nowText()))),
     'the thread row says what the agent does now, from the hook ("' + nowText() + '")'
   );
   await main('event', paneId, { kind: 'tool', tool: 'Edit', detail: root + '/src/app.js' });
@@ -415,7 +415,7 @@ try {
         !window.TnaiTeam.busy(paneId) &&
         !F.asking(paneId) &&
         !F.doing(paneId) &&
-        !/Editing src\/router|Your answer|Waiting for you|Keep the old routes/.test(nowText())
+        !/Editing (src\/)?router|Your answer|Waiting for you|Keep the old routes/.test(nowText())
     )),
     'interrupted turn: not busy, no current tool or question on the thread row; the latest-file line may stay ("' +
       nowText() +

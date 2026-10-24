@@ -9,7 +9,7 @@
 .tnt-lst {
   --pad: 12px;
   --inset: 10px;
-  --face: 44px;
+  --face: 26px;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -110,14 +110,15 @@
   margin-top: 12px;
 }
 
-/* A thread is its agent: the device character, the name, a time, and one line of what it is and
-   does. The status color is set once per row and used by the screen, the dot and the line. */
+/* A thread is its agent: its letter, the name, a time, and one line of what it does now after a
+   status dot (user 2026-10-24, tab 3 of app-polish.html). The status color is set once per row and
+   used by the dot and the line. */
 .tnt-th {
   --tone: var(--pg-idle);
   position: relative;
   display: grid;
   grid-template-columns: var(--face) minmax(0, 1fr) auto;
-  column-gap: 12px;
+  column-gap: 10px;
   align-items: center;
   width: 100%;
   margin: 0;
@@ -188,6 +189,7 @@
 .tnt-th small {
   grid-column: 2 / 4;
   display: flex;
+  align-items: center;
   gap: 4px;
   min-width: 0;
   margin-top: 1px;
@@ -259,73 +261,40 @@
   }
 }
 
-/* The device character: stacked pictures of one size (960 x 780). The screen picture is a mask
-   filled with the status color, so a lit screen says how the agent is. It keeps its room before
-   its pictures have loaded. */
-.tnt-face {
-  position: relative;
+/* The agent's letter: the same tile as its letter under the prompt box (07 `.tnai-to-av`: its
+   color from 128 `agentColor`, set by 119 as --c, and the same dark ink), a little larger. Dimmed
+   like a stopped agent's letter there while nothing runs in the thread. */
+.tnt-av {
   grid-row: 1 / 3;
-  display: block;
+  display: grid;
+  place-items: center;
   width: var(--face);
-  aspect-ratio: 960 / 780;
+  height: var(--face);
+  border-radius: 8px;
+  background: var(--c, var(--pg-accent));
+  color: #1b1530;
+  font: 600 12px/1 var(--pg-sans);
 }
-.tnt-face img {
-  position: absolute;
-  inset: 0;
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-.tnt-face-screen {
-  position: absolute;
-  inset: 0;
-  background: var(--tone);
-  opacity: 0.6;
-  -webkit-mask: var(--tnt-screen) center / 100% 100% no-repeat;
-  mask: var(--tnt-screen) center / 100% 100% no-repeat;
+.tnt-av[data-asleep] {
+  opacity: 0.45;
+  filter: saturate(0.55);
 }
 
-/* the small status dot at the character's foot, ringed in the island's color */
-.tnt-face::after {
-  content: '';
-  position: absolute;
-  right: -1px;
-  bottom: 3px;
-
-  /* a whole number of screen pixels (100, --tnai-screen-px), so every row's dot is drawn the
-     same size */
-  width: round(9px, var(--tnai-screen-px, 1px));
-  height: round(9px, var(--tnai-screen-px, 1px));
-  border-radius: 50%;
-  background: var(--tone);
-  box-shadow: 0 0 0 round(2.5px, var(--tnai-screen-px, 1px)) var(--tnt-island);
-}
-
-/* asleep: nothing runs in this thread */
-.tnt-face[data-face$='asleep'] img,
-.tnt-face[data-face$='asleep'] .tnt-face-screen {
-  filter: saturate(0.4) brightness(0.75);
-}
-
-/* The closed eyes are drawn in a dark ink, for a lit screen. An asleep screen is dimmed, in both
-   looks, so the dark ink was lost on it: there the same picture is shown in a pale ink. */
-.tnt-face[data-face$='asleep'] .tnt-face-eyes {
-  filter: brightness(0) invert(1);
-  opacity: 0.85;
-}
-
-/* A sub-agent that runs in a panel of its own is a thread set in under its lead. */
-.tnt-th.tnt-kid {
-  --face: 34px;
-  padding-left: calc(var(--inset) + 20px);
-}
-
-/* A Claude Code sub-agent has no terminal of its own: a small row under its lead, in the text
-   column, with a dot for its state. */
+/* A helper is set in under its lead, with a smaller letter: one that runs in a panel of its own
+   (a thread), and Claude Code's own sub-agents (no terminal of their own, so a press opens the
+   lead's thread). */
+.tnt-th.tnt-kid,
 .tnt-th.tnt-sub {
-  grid-template-columns: 8px minmax(0, 1fr) auto;
-  column-gap: 10px;
-  padding: 4px var(--inset) 4px calc(var(--inset) + var(--face) + 12px);
+  --face: 20px;
+  padding-left: calc(var(--inset) + 18px);
+}
+.tnt-th:is(.tnt-kid, .tnt-sub) .tnt-av {
+  border-radius: 6px;
+  font-size: 10px;
+}
+.tnt-th.tnt-sub {
+  padding-top: 5px;
+  padding-bottom: 5px;
 }
 .tnt-th.tnt-sub b {
   color: var(--pg-text-2);
@@ -335,9 +304,13 @@
 .tnt-th.tnt-sub small {
   font-size: 12px;
 }
+
+/* the status dot at the start of the line under the name */
 .tnt-dot {
+  flex: none;
   width: round(8px, var(--tnai-screen-px, 1px));
   height: round(8px, var(--tnai-screen-px, 1px));
+  margin-right: 2px;
   border-radius: 50%;
   background: var(--tone);
 }
@@ -356,4 +329,27 @@
   color: var(--pg-text-2);
   font-size: 13.5px;
   font-weight: 500;
+}
+
+/* a thread with something new since the user last looked (174, 119): a dot after its name, and
+   its time brighter */
+.tnt-th[data-unread] b::after {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--pg-accent);
+  vertical-align: 2px;
+  content: '';
+}
+.tnt-th[data-unread] time {
+  color: var(--pg-text);
+  font-weight: 600;
+}
+
+/* a thread with a draft that was not sent (16, 119): "Draft:" in the accent */
+.tnt-th-draft {
+  color: var(--pg-accent);
+  font-style: normal;
 }

@@ -355,8 +355,11 @@ module.exports = (win, profile) => {
       await wait(300);
       return true;
     }
+
+    // The LIVE SCREEN's box. The detail also holds the CONVERSATION (152, since 2026-10-15), whose
+    // box has the same class and comes first.
     const f = far(),
-      term = f?.querySelector('.ap-term');
+      term = f?.querySelector('[data-sec="term"] .ap-term');
     return {
       onPage: !!threads?.visible?.(),
       groups: groups(),

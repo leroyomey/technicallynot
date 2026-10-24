@@ -1,0 +1,203 @@
+/* Messages between agents in a thread (182, mocks docs/plans/design-concepts/helper-brief.html and
+   tabs 1 and 6 of app-polish.html, approved 2026-10-24): a card with a colored edge and a head that
+   says who wrote to whom. A lead's words are violet, a helper's report teal (hues by kind, 07 and
+   31). Long paths are short chips; attached pictures are tiles under the user's words. */
+
+.tam-card {
+  --tam-tone: var(--pg-hue-violet);
+  position: relative;
+  align-self: stretch;
+  max-width: none;
+  padding: 12px 16px 12px 18px;
+  border-radius: var(--pg-r-sm);
+  background: color-mix(in srgb, var(--tam-tone) 7%, var(--pg-panel-2));
+  color: var(--pg-text-2);
+  white-space: normal;
+}
+.tam-card[data-tone='helper'] {
+  --tam-tone: var(--pg-hue-teal);
+}
+.tam-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--tam-tone);
+}
+
+/* the old bubble's look (30 .tnt-from) does not apply to the card */
+.tam-card.tnt-from {
+  max-width: none;
+  border-radius: var(--pg-r-sm);
+  background: color-mix(in srgb, var(--tam-tone) 7%, var(--pg-panel-2));
+  white-space: normal;
+}
+
+.tam-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12.5px;
+  color: var(--pg-text-3);
+}
+.tam-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--tam-tone);
+}
+.tam-av {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  font: 600 10px/1 var(--pg-sans);
+  color: #fff;
+  background: var(--tam-tone);
+}
+.tam-to {
+  font-weight: 600;
+  color: var(--pg-text);
+}
+.tam-kind {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tam-tone) 16%, transparent);
+  color: var(--tam-tone);
+  font-size: 11.5px;
+}
+.tam-time {
+  margin-left: auto;
+  font-size: 11.5px;
+}
+
+.tam-body .tam-headline {
+  margin: 0 0 10px;
+  font: 600 15px/1.45 var(--pg-sans);
+  color: var(--pg-text);
+}
+.tam-body h1,
+.tam-body h2,
+.tam-body h3,
+.tam-body h4,
+.tam-body h5,
+.tam-body h6 {
+  margin: 14px 0 6px;
+  font: 600 11px/1.3 var(--pg-sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tam-tone);
+}
+.tam-body strong,
+.tam-body b {
+  color: var(--pg-text);
+  font-weight: 600;
+}
+
+/* a path or web address as a short chip, its whole text on hover */
+.tam-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: var(--pg-panel);
+  font: 12px/1.7 var(--pg-mono);
+  color: var(--pg-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+.tam-chip.tam-web {
+  color: var(--pg-accent);
+  font-family: var(--pg-sans);
+}
+
+/* a long brief or report folds after its first part */
+.tam-folded .tam-body {
+  max-height: 330px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(#000 72%, transparent);
+  mask-image: linear-gradient(#000 72%, transparent);
+}
+.tam-more {
+  margin-top: 6px;
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--tam-tone);
+  font: 500 12.5px/1.4 var(--pg-sans);
+  cursor: pointer;
+}
+.tam-more:hover,
+.tam-more:focus-visible {
+  background: color-mix(in srgb, var(--tam-tone) 12%, transparent);
+}
+
+/* pictures attached to a prompt: tiles under the user's words */
+.tam-pics {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  align-self: flex-end;
+  max-width: 90%;
+}
+.tam-pic {
+  width: 150px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--pg-panel);
+  color: var(--pg-text-3);
+  font: 11px/1.4 var(--pg-sans);
+  text-align: left;
+  cursor: pointer;
+}
+.tam-pic:focus-visible {
+  outline: 2px solid var(--pg-accent);
+  outline-offset: 2px;
+}
+.tam-pic-frame {
+  display: block;
+  height: 84px;
+  background: color-mix(in srgb, var(--pg-text) 6%, transparent);
+}
+.tam-pic-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: left top;
+}
+.tam-pic-name {
+  display: block;
+  padding: 4px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tam-pic[data-gone='true'] .tam-pic-frame {
+  height: 0;
+}
+.tam-pic-large {
+  display: block;
+  max-width: 100%;
+  margin: 0 auto;
+  border-radius: var(--pg-r-sm);
+}
+.tam-pic-wait {
+  margin: 16px;
+  color: var(--pg-text-3);
+}

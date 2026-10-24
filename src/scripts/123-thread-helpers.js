@@ -87,6 +87,41 @@
   let chosen = '';
   let opened = false;
 
+  // The helper split (user 2026-10-23, mock docs/plans/design-concepts/helper-split.html): once
+  // the user asks for lead and helper side by side, they share the space evenly, and the split
+  // stays on as other threads open: one with helpers opens split with its first helper, one
+  // without shows alone at full width. Only the user's own close turns it off.
+  let splitMode = false;
+
+  // the side column's width before the split took half, given back when it closes
+  let widthBefore = null;
+  const layout = document.querySelector('.layout');
+
+  // how long the column takes to slide (as 179's page beside the thread)
+  const SLIDE_MS = 380;
+
+  function halfWidth() {
+    const list = layout?.querySelector(':scope > .tnt-list');
+    const room = (layout?.clientWidth || 0) - (list?.offsetWidth || 0);
+    return Math.max(320, Math.round(room / 2));
+  }
+
+  // The column slides between widths instead of jumping (57's transition; off under reduced
+  // motion). The width the user dragged to before the split comes back when it ends.
+  function splitWidth(on) {
+    if (!layout) return;
+    layout.classList.add('tnt-split-moving');
+    if (on) {
+      if (widthBefore == null) widthBefore = layout.style.getPropertyValue('--tnt-side-w') || '';
+      layout.style.setProperty('--tnt-side-w', halfWidth() + 'px');
+    } else if (widthBefore != null) {
+      if (widthBefore) layout.style.setProperty('--tnt-side-w', widthBefore);
+      else layout.style.removeProperty('--tnt-side-w');
+      widthBefore = null;
+    }
+    setTimeout(() => layout.classList.remove('tnt-split-moving'), SLIDE_MS + 60);
+  }
+
   // paneId -> Map(call id -> helper), from the cards the user pressed
   const fromCards = new Map();
 
@@ -321,6 +356,7 @@
     const frame = threads();
     const slot = frame?.slot('side');
     if (!slot) return;
+    const was = opened;
     opened = !!want && helpersOf(pane).length > 0;
     if (opened && key) chosen = key;
 
@@ -333,6 +369,8 @@
       frame.side(opened);
     }
     button.setAttribute('aria-pressed', String(opened));
+    button.title = opened ? 'Back to one thread' : 'Split evenly with its helpers';
+    if (opened !== was) splitWidth(opened);
     if (opened) paintSide();
     else {
       sideTalk.dataset.helper = '';
@@ -346,8 +384,8 @@
     if (!chip) return;
 
     // the bubble of the helper on show is the way back: the island closes, the lead stays
-    if (opened && !chip.dataset.more && chip.dataset.key === chosen) setOpen(false);
-    else setOpen(true, chip.dataset.key);
+    splitMode = !(opened && !chip.dataset.more && chip.dataset.key === chosen);
+    setOpen(splitMode, chip.dataset.key);
   });
 
   chips.addEventListener('click', event => {
@@ -362,8 +400,14 @@
     chosen = chip.dataset.key;
     paintSide();
   });
-  panel.querySelector('.tnt-side-head button').addEventListener('click', () => setOpen(false));
-  button.addEventListener('click', () => setOpen(!opened));
+  panel.querySelector('.tnt-side-head button').addEventListener('click', () => {
+    splitMode = false;
+    setOpen(false);
+  });
+  button.addEventListener('click', () => {
+    splitMode = !opened;
+    setOpen(splitMode);
+  });
 
   // ---------- following the open thread ----------
   function paint() {
@@ -372,6 +416,9 @@
     button.querySelector('span').textContent = count === 1 ? '1 helper' : count + ' helpers';
     if (opened && !count) setOpen(false);
     else if (opened) paintSide();
+
+    // the split is on and this thread has just got its first helper
+    else if (splitMode && count) setOpen(true);
     paintHead();
     paintShared();
     paintLine(ownLine, pane);
@@ -404,7 +451,9 @@
     if (next !== pane) {
       pane = next;
       chosen = '';
-      setOpen(false);
+
+      // with the split on, the next thread opens split when it has helpers, alone when not
+      setOpen(splitMode && helpersOf(pane).length > 0);
     }
     if (!stops.length) {
       const listen = (name, handler) => {
@@ -420,6 +469,7 @@
         fromCards
           .get(pane)
           .set(detail.sub, { key: detail.sub, sub: detail.sub, name: detail.title, tone: 'idle' });
+        splitMode = true;
         setOpen(true, detail.sub);
       });
       const offLocks = native?.locks?.onChange?.(readLocks);
@@ -440,9 +490,21 @@
   window.addEventListener('tnai:threads-removed', leave);
 
   window.TnaiThreadHelpers = {
-    open: key => setOpen(true, key),
-    close: () => setOpen(false),
-    state: () => ({ pane, opened, chosen, helpers: helpersOf(pane).map(helper => helper.key) }),
+    open: key => {
+      splitMode = true;
+      setOpen(true, key);
+    },
+    close: () => {
+      splitMode = false;
+      setOpen(false);
+    },
+    state: () => ({
+      pane,
+      opened,
+      chosen,
+      split: splitMode,
+      helpers: helpersOf(pane).map(helper => helper.key),
+    }),
 
     // for All threads (135): any thread's helpers, and their bubbles drawn as here
     list: paneId => helpersOf(paneId),

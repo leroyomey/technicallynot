@@ -571,16 +571,34 @@
         (a.kind === b.kind ? 0 : a.kind === 'directory' ? -1 : 1) ||
         a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
     );
+
+    // At the top level the project's own folders and files come first; the tool folders (names
+    // that start with a dot) follow, folded into one row (user 2026-10-24, tab 7 of
+    // app-polish.html).
+    const listed = (
+      isRoot
+        ? [...entries.filter(entry => !isToolFolder(entry)), ...entries.filter(isToolFolder)]
+        : entries
+    ).slice(0, ENTRY_LIMIT);
     const nodes = [];
+    const toolNodes = [];
     if (!entries.length) nodes.push(infoRow('Empty folder', depth));
-    for (const entry of entries.slice(0, ENTRY_LIMIT)) {
+    for (const entry of listed) {
       const path = base ? base + '/' + entry.name : entry.name;
       handles.set(path, entry);
-      nodes.push(
-        ...(entry.kind === 'directory'
-          ? folderRow(entry.name, path, depth)
-          : [fileRow(entry.name, path, depth)])
-      );
+      if (isRoot && isToolFolder(entry)) toolNodes.push(...folderRow(entry.name, path, depth + 1));
+      else
+        nodes.push(
+          ...(entry.kind === 'directory'
+            ? folderRow(entry.name, path, depth)
+            : [fileRow(entry.name, path, depth)])
+        );
+    }
+    if (toolNodes.length) {
+      const [row, children] = toolsRow(depth);
+      children.append(...toolNodes);
+      paintToolsRow(row, children);
+      nodes.push(row, children);
     }
     if (entries.length > ENTRY_LIMIT)
       nodes.push(
@@ -652,6 +670,50 @@
   }
   const rowFor = path => realTree.querySelector('[data-real-path="' + CSS.escape(path) + '"]');
 
+  // A folder whose name starts with a dot (.claude, .codex, .git, .github …) belongs to a tool
+  // that works in the project, not to the project itself.
+  const isToolFolder = entry => entry.kind === 'directory' && entry.name.startsWith('.');
+
+  // Whether the "Tool folders" row is open; kept while the tree is listed again.
+  let toolsOpen = false;
+
+  // The "Tool folders" row and the group its folders sit in. The group is a folder's children
+  // group (`.repo-folder-children`), so a search filter and the agents' file tags (13) treat it as
+  // one. The row has no path of its own.
+  function toolsRow(depth) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'repo-row repo-tools-row';
+    row.dataset.depth = depth;
+    row.setAttribute('role', 'treeitem');
+    row.setAttribute('aria-level', depth + 1);
+    indent(row, depth);
+    row.innerHTML =
+      '<span class="repo-chevron"></span><span class="repo-folder-icon">' +
+      window.TnaiIcon('folder', { size: 13 }) +
+      '</span><span class="repo-row-name">Tool folders</span><small class="repo-tools-names"></small>';
+    const children = document.createElement('div');
+    children.className = 'repo-folder-children repo-tools-children';
+    children.setAttribute('role', 'group');
+    children.dataset.loaded = '1';
+    return [row, children];
+  }
+
+  // The row's names, tip and open state, from the folders in its group.
+  function paintToolsRow(row, children = row.nextElementSibling) {
+    const names = [...children.querySelectorAll(':scope > .repo-folder')].map(
+      folder => folder.querySelector('.repo-row-name').textContent
+    );
+    row.querySelector('.repo-tools-names').textContent = names.join(' ');
+    row.title = 'Folders of the tools that work in this project: ' + names.join(', ');
+    row.setAttribute('aria-expanded', String(toolsOpen));
+    children.hidden = !toolsOpen;
+    row.querySelector('.repo-chevron').innerHTML = window.TnaiIcon(
+      toolsOpen ? 'chevron-down' : 'chevron-right',
+      { size: 12 }
+    );
+  }
+
   async function toggleFolder(row, quiet) {
     const path = row.dataset.realPath,
       children = row.nextElementSibling,
@@ -680,6 +742,12 @@
     }
   }
   realTree.addEventListener('click', event => {
+    const tools = event.target.closest('.repo-tools-row');
+    if (tools) {
+      toolsOpen = !toolsOpen;
+      paintToolsRow(tools);
+      return;
+    }
     const row = event.target.closest('[data-real-path]');
     if (!row) return;
     if (row.classList.contains('repo-folder')) {
@@ -786,36 +854,58 @@
   async function refillInPlace(container, handle, base, depth, isRoot) {
     const fragment = document.createElement('div');
     if (!(await fillFolder(handle, base, fragment, depth, isRoot))) return false;
+    mergeRows(container, [...fragment.children]);
+    return true;
+  }
+
+  // Puts the freshly listed rows into a container that already shows a listing: rows still there
+  // stay, new ones go in their place, gone ones go. The "Tool folders" row is kept the same way
+  // and its own folders are merged inside its group.
+  function mergeRows(container, fresh) {
     const key = n =>
-      n.dataset.realPath == null
-        ? null
-        : (n.classList.contains('repo-folder') ? 'd:' : 'f:') + n.dataset.realPath;
+      n.classList.contains('repo-tools-row')
+        ? 'tools'
+        : n.dataset.realPath == null
+          ? null
+          : (n.classList.contains('repo-folder') ? 'd:' : 'f:') + n.dataset.realPath;
+    const paired = n =>
+      n.classList.contains('repo-folder') || n.classList.contains('repo-tools-row');
+    const forget = gone => {
+      for (const p of [...handles.keys()])
+        if (p === gone || p.startsWith(gone + '/')) handles.delete(p);
+    };
     const old = new Map();
     for (const n of container.children) {
       const k = key(n);
-      if (k) old.set(k, n.classList.contains('repo-folder') ? [n, n.nextElementSibling] : [n]);
+      if (k) old.set(k, paired(n) ? [n, n.nextElementSibling] : [n]);
     }
-    const next = [],
-      fresh = [...fragment.children];
+    const next = [];
     for (let i = 0; i < fresh.length; i++) {
       const n = fresh[i],
         k = key(n),
-        folder = n.classList.contains('repo-folder'),
+        pair = paired(n),
         prev = k && old.get(k);
       if (prev) {
         next.push(...prev);
         old.delete(k);
+        if (k === 'tools') {
+          mergeRows(prev[1], [...fresh[i + 1].children]);
+          paintToolsRow(prev[0]);
+        }
       } else {
         next.push(n);
-        if (folder) next.push(fresh[i + 1]);
+        if (pair) next.push(fresh[i + 1]);
       }
-      if (folder) i++;
+      if (pair) i++;
     }
-    for (const k of old.keys()) {
-      const gone = k.slice(2);
-      for (const p of [...handles.keys()])
-        if (p === gone || p.startsWith(gone + '/')) handles.delete(p);
-    } // removed entries
+
+    // removed entries
+    for (const [k, pair] of old) {
+      if (k !== 'tools') forget(k.slice(2));
+      else
+        for (const row of pair[1].querySelectorAll(':scope > [data-real-path]'))
+          forget(row.dataset.realPath);
+    }
     const keep = new Set(next);
     for (const n of [...container.children]) if (!keep.has(n)) n.remove();
     let ref = container.firstElementChild;
@@ -823,7 +913,6 @@
       if (n === ref) ref = ref.nextElementSibling;
       else container.insertBefore(n, ref);
     }
-    return true;
   }
 
   // Used by the file tabs (24) and live agent activity (reload after files are added or removed).

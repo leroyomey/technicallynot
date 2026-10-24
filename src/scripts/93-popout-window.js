@@ -46,6 +46,12 @@
       ? (doc.documentElement.dataset.theme = theme)
       : doc.documentElement.removeAttribute('data-theme');
     doc.documentElement.dataset.accent = document.documentElement.dataset.accent || 'purple';
+
+    // the shade of the look (Dim, Paper, High contrast; 32), so a thread's own window matches
+    const look = document.documentElement.dataset.look;
+    look
+      ? (doc.documentElement.dataset.look = look)
+      : doc.documentElement.removeAttribute('data-look');
   }
   window.addEventListener('tnai:theme-changed', () => {
     for (const o of outs.values()) if (!o.win.closed) copyHead(o.win.document);

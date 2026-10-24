@@ -201,8 +201,8 @@ try {
     'the top row has no Readable / Terminal switch; its "..." menu has the row "CLI screen"'
   );
   check(
-    !shown(island.querySelector('[data-tnai-font]')),
-    'the text-size buttons of the terminal are not shown beside a conversation'
+    !window.TnaiThreadMore.rows().some(row => /^font-/.test(row.id)),
+    'the text-size rows of the terminal are not in the menu beside a conversation'
   );
   await until(() => readable().state()?.paneId === paneId && list(), 6000);
   await wait(800);
@@ -220,10 +220,10 @@ try {
   const row = rowOf();
   check(
     !!row &&
-      /Claude Code/.test(row.querySelector('small').textContent) &&
-      row.querySelector('.tnt-face')?.dataset.face?.startsWith('desktop'),
-    'its row names the tool and shows the desktop character (' +
-      (row?.querySelector('.tnt-face')?.dataset.face || '') +
+      /Claude Code/.test(row.title) &&
+      /^\S$/.test(row.querySelector('.tnt-av')?.textContent || ''),
+    "its row names the tool in its tip and shows the agent's letter (" +
+      (row?.querySelector('.tnt-av')?.textContent || '') +
       ')'
   );
   await shot('real-thread-ready');
@@ -705,11 +705,8 @@ try {
   await agents.stop(paneId);
   await until(() => !agents.sessions().find(s => s.paneId === paneId)?.running, 10000);
   check(
-    !!(await until(
-      () => rowOf()?.querySelector('.tnt-face')?.dataset.face?.endsWith('asleep'),
-      6000
-    )),
-    'stopped: its character falls asleep'
+    !!(await until(() => rowOf()?.querySelector('.tnt-av')?.hasAttribute('data-asleep'), 6000)),
+    'stopped: its letter dims'
   );
   localStorage.setItem('tnai.test.real-thread-pane', paneId);
 } catch (error) {

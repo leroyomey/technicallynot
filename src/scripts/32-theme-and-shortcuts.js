@@ -15,8 +15,10 @@
 //
 // In the desktop app the design is the thread layout's (118), always, with two looks: a neutral
 // Dark, where neutrals no longer follow the accent's hue, and an off-white Light, chosen with
-// TnaiTheme.set('light'). Their tokens are in src/styles/31-thread-pages.css. In a browser the
-// page is the old purple glass, always dark.
+// TnaiTheme.set('light'). Their tokens are in src/styles/31-thread-pages.css. Four more shades
+// (user 2026-10-23): 'dim' and 'hc-dark' on the Dark base, 'paper' and 'hc-light' on the Light
+// base; the base stays on data-theme and the shade goes on <html data-look> (tokens in
+// src/styles/58-thread-looks.css). In a browser the page is the old purple glass, always dark.
 (() => {
   const KEY = 'tnai.theme.v1',
     ACCENT_KEY = 'tnai.accent.v2',
@@ -25,8 +27,11 @@
   const root = document.documentElement;
   const media = window.matchMedia('(prefers-color-scheme: dark)');
 
+  // The shades of the thread layout, and which base each one is drawn on.
+  const SHADES = { dim: 'dark', 'hc-dark': 'dark', paper: 'light', 'hc-light': 'light' };
+
   // no saved choice → Dark (purple glass)
-  const readChoice = v => (v === 'light' || v === 'system' ? v : 'dark');
+  const readChoice = v => (v === 'light' || v === 'system' || SHADES[v] ? v : 'dark');
   let choice = 'dark';
   try {
     choice = readChoice(localStorage.getItem(KEY));
@@ -40,7 +45,11 @@
 
   // Purple glass is always dark; the old Light / Match system look is gone. Light is a choice only
   // in the thread layout.
-  const resolved = () => (threadLook && choice === 'light' ? 'light' : 'dark');
+  const resolved = () =>
+    threadLook && (choice === 'light' || SHADES[choice] === 'light') ? 'light' : 'dark';
+
+  // The shade on top of the base ('' for plain Dark or Light), only in the thread layout.
+  const shade = () => (threadLook && SHADES[choice] ? choice : '');
 
   // Accent: OKLab hue h and chroma c of the accent (Dark accent lightness 0.673 = #bd63ff), neutral
   // hue nh and neutral chroma scale n.
@@ -484,6 +493,8 @@ ${DARK} .set-chip input:not(:checked){background:${off}}
     mode = resolved();
     if (mode === 'dark') root.dataset.theme = 'dark';
     else root.removeAttribute('data-theme');
+    if (shade()) root.dataset.look = shade();
+    else root.removeAttribute('data-look');
     root.dataset.accent = accent;
     const next = lookKey();
     if (next !== state) {
@@ -496,13 +507,20 @@ ${DARK} .set-chip input:not(:checked){background:${off}}
   }
   let last = apply(),
     lastAccent = accent,
-    lastLook = threadLook;
+    lastLook = threadLook,
+    lastShade = shade();
+
+  // A change of shade alone (Dark to Dim) also tells the terminals, whose ground is the island's
+  // color of the shade.
   const changed = () => {
     const now = apply();
-    if (now !== last || accent !== lastAccent || threadLook !== lastLook) {
+    const nowShade = shade();
+    const moved = now !== last || accent !== lastAccent || threadLook !== lastLook;
+    if (moved || nowShade !== lastShade) {
       last = now;
       lastAccent = accent;
       lastLook = threadLook;
+      lastShade = nowShade;
       window.dispatchEvent(
         new CustomEvent('tnai:theme-changed', { detail: { theme: now, choice, accent } })
       );
@@ -539,14 +557,17 @@ ${DARK} .set-chip input:not(:checked){background:${off}}
   // around it are one tone: the style sheet's --tnt-island, read once the look is set (the
   // fallback is that token's value, for a terminal made before the sheet has loaded).
   function islandColor(fallback) {
-    const value = getComputedStyle(document.documentElement)
-      .getPropertyValue('--tnt-island')
-      .trim();
+    return tokenColor('--tnt-island', fallback);
+  }
+
+  // A color token of the look as a #rrggbb value, or the fallback when it is not set yet.
+  function tokenColor(name, fallback) {
+    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     return /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
   }
 
   function xtermDark() {
-    const cacheKey = (threadLook ? 'thread|' : '') + accent;
+    const cacheKey = (threadLook ? 'thread|' : '') + shade() + '|' + accent;
     if (xtermCache.has(cacheKey)) return xtermCache.get(cacheKey);
     const acc = tone(accent),
       n = (L, C) => col(polar(L, C * acc.n, acc.nh)),
@@ -561,7 +582,10 @@ ${DARK} .set-chip input:not(:checked){background:${off}}
       selectionBackground: col(polar(0.36, acc.c * 0.45, acc.h)),
       black: n(0.33, 0.05),
       red: '#ff7d8e',
-      green: '#5fe0a5',
+
+      // the app's text green (--pg-work-text, per shade), so green words read the same in a
+      // terminal as in a thread (user decision 2026-10-23)
+      green: threadLook ? tokenColor('--pg-work-text', '#9cdfbb') : '#5fe0a5',
       yellow: '#ffbf5e',
       blue: '#7fa8ff',
       magenta: '#d58cff',
@@ -569,8 +593,8 @@ ${DARK} .set-chip input:not(:checked){background:${off}}
       white: n(0.82, 0.045),
 
       // dim text: a step lighter on the island's color, which is lighter than the old terminal
-      // ground, so it stays above 4.5 to 1
-      brightBlack: n(threadLook ? 0.63 : 0.6, 0.055),
+      // ground, so it stays above 4.5 to 1; Dim's island is lighter again, so a step more there
+      brightBlack: n(threadLook ? (shade() === 'dim' ? 0.67 : 0.63) : 0.6, 0.055),
       brightRed: '#ff97a5',
       brightGreen: '#86ecbd',
       brightYellow: '#ffd088',
@@ -587,7 +611,7 @@ ${DARK} .set-chip input:not(:checked){background:${off}}
   // colors dark enough to read on it (each at least 4.5 to 1 on the island's color; the test
   // thread-ground measures them). Status hues keep their meaning.
   function xtermLight() {
-    const cacheKey = 'light|' + accent;
+    const cacheKey = 'light|' + shade() + '|' + accent;
     if (xtermCache.has(cacheKey)) return xtermCache.get(cacheKey);
     const acc = ACCENTS[accent],
       bg = islandColor('#f1efea');
@@ -599,7 +623,7 @@ ${DARK} .set-chip input:not(:checked){background:${off}}
       selectionBackground: col(polar(0.84, acc.c * 0.3, acc.h)),
       black: '#26232d',
       red: '#c4354d',
-      green: '#0f7a52',
+      green: tokenColor('--pg-work-text', '#206345'),
       yellow: '#9c5b06',
       blue: '#2a63c8',
       magenta: '#8b34d2',
@@ -710,6 +734,23 @@ ${DARK} .set-chip input:not(:checked){background:${off}}
               ]
             : [];
         })(),
+      ],
+    },
+    {
+      // the keys of the thread layout (175, 173, 169, 135, 119), user 2026-10-23
+      group: 'Threads',
+      items: [
+        [[MOD(), 'Alt', '↑', '↓'], 'Previous / next thread'],
+        [[MOD(), 'Alt', 'Shift', '↓'], 'Next thread with something new or a question for you'],
+        [[MOD(), 'F'], 'Find in this thread'],
+        [[MOD(), 'A'], "Select this thread's conversation (in a dialog: the dialog's words)"],
+        [[MOD(), 'P'], 'Find a file (Files tab)'],
+        [[MOD(), 'J'], 'Your terminal, and back to the prompt box'],
+        [['↑', '↓'], 'In the thread list (after a click in it): open the previous / next thread'],
+        [['Home', 'End'], 'In the thread list: open the first / last thread'],
+        [[MOD(), 'Alt', '←', '→'], 'All threads: previous / next card'],
+        [['←', '→'], 'All threads: previous / next card, when no text box has the keyboard'],
+        [['Delete'], 'Close the focused thread in the list'],
       ],
     },
     {

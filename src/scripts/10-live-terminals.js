@@ -2818,6 +2818,9 @@
     if (!result.ok) {
       view.running = false;
       view.error = result.error.message;
+
+      // main's word that the panel is still one another computer started (47 keeps it)
+      view.heldOnFail = result.held === true;
       say(view, 'Could not start: ' + view.error + ' Press Enter to try again.', 'error');
       paint(view);
       return;
@@ -3478,7 +3481,12 @@
         ...(request.remote ? { remote: request.remote } : null),
         ...(request.schedule ? { schedule: request.schedule } : null),
       }).then(() =>
-        request.resolve({ ok: view.running === true, paneId, error: view.error || undefined })
+        request.resolve({
+          ok: view.running === true,
+          paneId,
+          error: view.error || undefined,
+          held: view.running !== true && view.heldOnFail === true,
+        })
       );
     else if (autostart) start(view);
     else {

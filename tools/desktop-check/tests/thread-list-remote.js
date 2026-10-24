@@ -362,30 +362,35 @@ try {
     remoteRows().find(row => row.querySelector('b').textContent.startsWith(name));
   check(
     rowNamed('Wren').dataset.tone === 'work' &&
-      /Claude Code · Fix the login page/.test(rowNamed('Wren').textContent) &&
+      /Claude Code/.test(rowNamed('Wren').title) &&
+      /Fix the login page/.test(rowNamed('Wren').textContent) &&
       /^\d\d:\d\d$/.test(rowNamed('Wren').querySelector('time').textContent),
-    'a working agent: its tool, its task and since when, in the working color: ' + words[0]
+    'a working agent: its tool (in the tip), its task and since when, in the working color: ' +
+      words[0]
   );
   check(
     rowNamed('Fern').dataset.tone === 'needs' &&
-      /OpenCode · Needs you/.test(rowNamed('Fern').textContent),
+      /OpenCode/.test(rowNamed('Fern').title) &&
+      /Needs you/.test(rowNamed('Fern').textContent),
     'an agent that waits for the user says "Needs you" in that color: ' + words[2]
   );
   check(
-    rowNamed('Moss').dataset.tone === 'idle' && /Codex · Idle/.test(rowNamed('Moss').textContent),
+    rowNamed('Moss').dataset.tone === 'idle' &&
+      /Codex/.test(rowNamed('Moss').title) &&
+      /Idle/.test(rowNamed('Moss').textContent),
     'an idle agent says so: ' + words[1]
   );
   check(
-    rowNamed('Moss').querySelectorAll('img').length === 2 &&
+    rowNamed('Moss').querySelectorAll('img').length === 0 &&
       rowNamed('Moss').querySelector('b').children.length === 0 &&
       rowNamed('Moss').querySelector('b').textContent === 'Moss <img src=x onerror=1>',
-    "a name is drawn as text: markup in it is shown as its characters (only the character's two pictures are in the row)"
+    'a name is drawn as text: markup in it is shown as its characters (the row holds no picture)'
   );
   check(
     rowNamed('Odd').dataset.tone === 'idle' &&
-      /desktop-body/.test(rowNamed('Odd').querySelector('.tnt-face-body').src) &&
+      rowNamed('Odd').querySelector('.tnt-av').textContent === 'O' &&
       /Idle/.test(rowNamed('Odd').textContent),
-    'an unknown state is read as idle and an unknown tool gets the plain character: ' + words[3]
+    "an unknown state is read as idle and the row shows the agent's letter: " + words[3]
   );
   check(
     remoteRows().every(row => row.querySelector('.tnt-th-inf').hidden) &&

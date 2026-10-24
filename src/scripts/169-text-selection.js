@@ -112,6 +112,20 @@
     );
   }
 
+  // An open dialog on screen: the one the keyboard or the press is in, else the last one shown
+  // (the topmost). While one is open, Ctrl+A takes its words only (learned 2026-10-22: with a
+  // dialog open, Select all took the conversation behind it as well).
+  const DIALOGS = '[role="dialog"], [role="alertdialog"], [aria-modal="true"], dialog[open]';
+
+  function dialogNow(target) {
+    const own =
+      document.activeElement?.closest?.(DIALOGS) ||
+      (target?.nodeType === 1 ? target : target?.parentElement)?.closest?.(DIALOGS);
+    if (shows(own)) return own;
+    const open = [...document.querySelectorAll(DIALOGS)].filter(shows);
+    return open[open.length - 1] || null;
+  }
+
   // The conversation Ctrl+A selects: a card's on All threads, else the open thread's.
   // `null` on All threads with no card to pick: then nothing is selected, never the whole page.
   function conversationNow() {
@@ -129,6 +143,20 @@
       return;
     if (editable(document.activeElement) || editable(event.target)) return;
     if (event.target?.closest?.('.tnt-code')) return;
+
+    // A dialog is open: its own words, nothing behind it.
+    const dialog = dialogNow(event.target);
+    if (dialog) {
+      event.preventDefault();
+      markAt(dialog);
+      const range = document.createRange();
+      range.selectNodeContents(dialog);
+      const picked = window.getSelection();
+      picked.removeAllRanges();
+      picked.addRange(range);
+      return;
+    }
+
     const onAllThreads = !!document.querySelector('.layout.tat-on');
     const list = conversationNow();
     if (!list && !onAllThreads) return;

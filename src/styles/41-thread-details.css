@@ -99,7 +99,7 @@
   font-family: var(--pg-sans);
 }
 .ttd-total[data-age='ok'] {
-  color: var(--pg-work);
+  color: var(--pg-work-text);
 }
 .ttd-total[data-age='long'] {
   color: var(--pg-wait);
@@ -717,4 +717,123 @@ html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-link:not(#lp):hover,
 }
 .ttd-file-dir:empty {
   display: none;
+}
+
+/* ---------------------------------------------------------------- color by section
+   (user 2026-10-23: "no color, lots of white text, hard to tell what's going on ... color tab
+   things", mock docs/plans/design-concepts/helper-split.html part 2). Each section is a soft card
+   tinted by its own tone, its head a colored tab with a mark; the status on top is a card in its
+   state's color. Tones are the app's tokens; Working with and Skills take hues by kind (07, 31). */
+.ttd-sec {
+  --tone: var(--pg-text-3);
+  overflow: hidden;
+  margin: 0 0 8px;
+  border-radius: var(--pg-r-sm);
+  background: color-mix(in srgb, var(--tone) 5%, var(--pg-panel-2));
+}
+.ttd-sec[data-sec='queue'] {
+  --tone: var(--pg-accent);
+}
+.ttd-sec[data-sec='now'] {
+  --tone: var(--pg-work);
+}
+.ttd-sec[data-sec='changes'] {
+  --tone: var(--pg-ready);
+}
+.ttd-sec[data-sec='team'],
+.ttd-sec[data-sec='with'] {
+  --tone: var(--pg-hue-violet);
+}
+.ttd-sec[data-sec='files'] {
+  --tone: var(--pg-wait);
+}
+.ttd-sec[data-sec='skills'] {
+  --tone: var(--pg-hue-teal);
+}
+html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-head:not(#lp),
+.ttd button.ttd-head {
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--tone) 13%, transparent);
+  box-shadow: inset 3px 0 0 var(--tone);
+}
+.ttd-mark {
+  flex: none;
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--tone) 26%, transparent);
+  color: var(--tone);
+}
+.ttd-head > em:not(:empty) {
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tone) 30%, transparent);
+  color: var(--pg-text);
+  font-size: 11px;
+}
+.ttd-head::after {
+  margin-left: auto;
+}
+.ttd-sec > .ttd-body {
+  padding: 8px 10px 10px 13px;
+}
+
+/* names (branch, model, tool) as small chips in their section's tone */
+.ttd-kv dd:is([data-fact='Branch'], [data-fact='Model'], [data-fact='Connection']) > .ttd-clamp {
+  width: fit-content;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tone) 18%, transparent);
+}
+.ttd-plus {
+  color: var(--pg-work-text);
+  font-weight: 600;
+}
+.ttd-minus {
+  color: var(--pg-err);
+  font-weight: 600;
+}
+
+/* the status on top: a card in its state's color */
+.ttd-now {
+  --tone: var(--pg-idle);
+  background: color-mix(in srgb, var(--tone) 14%, var(--pg-panel-2));
+  box-shadow: inset 3px 0 0 var(--tone);
+}
+.ttd-now[data-status='working'],
+.ttd-now[data-status='background'],
+.ttd-now[data-status='starting'] {
+  --tone: var(--pg-work);
+}
+.ttd-now[data-status='waiting'],
+.ttd-now[data-status='waiting-agents'] {
+  --tone: var(--pg-ready);
+}
+.ttd-now[data-status='needs-you'] {
+  --tone: var(--pg-wait);
+}
+.ttd-now[data-status='exited'],
+.ttd-now[data-status='error'] {
+  --tone: var(--pg-err);
+}
+.ttd-now-dot {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--tone) 25%, transparent);
+}
+
+/* quiet lines and labels stay readable on the tinted sections */
+.ttd-sec .ttd-note,
+.ttd-sec .ttd-kv dt {
+  color: var(--pg-text-2);
 }

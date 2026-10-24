@@ -508,14 +508,43 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
   // hands the work to, or else to the asking agent, held while it works. Only when nobody can take
   // it (the agent is stopped, or the option asks for the user's own words) does it go into the
   // prompt box. A decision with no saved result still gets its answer, as the same words.
+  // The saved option a card's button stands for, by its words, or -1. The card shows the options in
+  // the order the agent wrote them; the saved result has the recommended one moved first
+  // (desktop/agent-context.js), so a button's place on the card is not its place there (learned
+  // 2026-10-23: pressing "Yes, run it now" sent the recommended "Later ..." because the place was
+  // used). Only one option may match; a near match never stands in.
+  function optionIndexFor(decision, label) {
+    const pressed = words(label);
+    if (!pressed) return -1;
+    const matches = [];
+    (decision?.options || []).forEach((option, at) => {
+      const own = words(option.label);
+      if (!own) return;
+      if (pressed === own || pressed.startsWith(own + ' ') || own.startsWith(pressed + ' '))
+        matches.push(at);
+    });
+    return matches.length === 1 ? matches[0] : -1;
+  }
+
   function decideInThread(paneId, question, index, label, since = 0) {
     window.TnaiLiveTasks?.setTarget?.(paneId);
-    const found = findDecision(paneId, question, since);
-    if (found && found.done) return false;
+    const seen = findDecision(paneId, question, since);
+    if (seen && seen.done) return false;
+
+    // The saved option the button stands for, found by its words (never by its place, see
+    // optionIndexFor). When it cannot be found for sure, the pressed words go as they are.
+    const entry = seen ? data.entries.find(e => e.id === seen.id) : null;
+    const pick = seen ? optionIndexFor(decisionsOf(entry)[seen.n], label) : -1;
+    const found = seen && pick >= 0 ? seen : null;
+
+    // the button's place (`index`) is never used to pick a saved option
+    index = pick;
     const routing = window.TnaiDecisionRouting;
+
+    // the saved decision is answered whichever way the answer went
     const markAnswered = () => {
-      if (!found) return;
-      const key = markKey(found.id, 'choices', found.n);
+      if (!seen) return;
+      const key = markKey(seen.id, 'choices', seen.n);
       answered.add(key);
 
       // by then the mark is back from main (an Undo there opens it again), as in `decide`
@@ -538,27 +567,31 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
         ? decide(found.id + '#' + found.n, index, 'send')
         : routing.sendPlain(paneId, question, label);
       if (sent) {
-        if (!found && since) sentEarly.push({ paneId, question, since, at: Date.now() });
+        if (!seen && since) sentEarly.push({ paneId, question, since, at: Date.now() });
+
+        // sent as the pressed words because its saved option was not found for sure
+        if (seen && !found) markAnswered();
         rememberChoice(paneId, question, label);
         return true;
       }
     }
 
     // Nobody can take it now (the agent is stopped, or the option asks for the user's own
-    // words): the answer goes into the prompt box for the user to finish and send.
-    if (found) {
-      if (!decide(found.id + '#' + found.n, index)) return false;
-    } else {
-      const prompt = document.getElementById('prompt');
-      if (!prompt) return false;
-      const add = 'Decision on "' + question + '": go with ' + label + '.';
-      prompt.value = prompt.value.trim() ? prompt.value.replace(/\s+$/, '') + '\n\n' + add : add;
-      prompt.dispatchEvent(new Event('input', { bubbles: true }));
-      prompt.focus();
-      prompt.setSelectionRange(prompt.value.length, prompt.value.length);
-    }
-    rememberChoice(paneId, question, label);
-    return true;
+    // words): the answer goes into the prompt box for the user to finish and send. Nothing is
+    // marked chosen or answered here: the card counts it once the user sends it (122 reads the
+    // sent words, `typedChoice`) (learned 2026-10-23: with the agent off, the card said "your
+    // choice" although the answer was never sent).
+    const prompt = document.getElementById('prompt');
+    if (!prompt) return false;
+    const add = 'Decision on "' + question + '": go with ' + label + '.';
+    prompt.value = prompt.value.trim() ? prompt.value.replace(/\s+$/, '') + '\n\n' + add : add;
+    prompt.dispatchEvent(new Event('input', { bubbles: true }));
+    prompt.focus();
+    prompt.setSelectionRange(prompt.value.length, prompt.value.length);
+    try {
+      toast('The agent is not running, so your answer is in the prompt box. Send it when ready.');
+    } catch {}
+    return 'composer';
   }
 
   // Answer a decision with option i: typed into the asking agent's panel (only while it runs), or

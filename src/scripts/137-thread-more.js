@@ -9,6 +9,12 @@
  *   Team          the team box of 88 (`TnaiAgentTeams.open`); an agent in a project only
  *   CLI screen    the tool's own terminal for this thread (120 `setMode`); while it is shown the
  *                 row reads "Back to the conversation". Only for a tool with a conversation.
+ *   Smaller text / Larger text   the CLI screen's text size, while it shows (10 `stepFont`)
+ *   Pop out into its own window / Back into the app   (162)
+ *   Past conversations, Handoff history, Blur this thread, Commit, pull request, review…
+ *                 were icons of the top row until 2026-10-24 (user, tab 5 of app-polish.html:
+ *                 the top row keeps Preview, Split, Stop or Start and "..."); each is done by the
+ *                 file that owns it (138, 102, 120 `TnaiThreadBlur`, 154)
  *   Stop / Start  Stop while the session runs (it asks first, as the old page does), Start while
  *                 it is stopped (10 `TnaiAgents.stop` / `start`)
  *   Open in VS Code / Cursor / File Explorer   the thread's own folder (its worktree when it has
@@ -187,6 +193,32 @@
       );
   }
 
+  // ---------- the rows that were icons of the top row ----------
+  // A popover of its own opens under the "..." button the menu stood under (`button`, still set
+  // after the menu closed): the past conversations (138) and the thread actions' menu (154).
+  const openPast = () => window.TnaiThreadHistory?.open?.(button || menuButton());
+  const openActions = paneId => window.TnaiThreadActions?.open?.(button || menuButton(), paneId);
+  const openHandoffs = paneId => window.TnaiHandoffHistory?.open?.(paneId || '');
+
+  // Smaller and Larger text for the CLI screen (10's text size of the thread view, "focus"): a
+  // row is greyed at its limit, and says the size it is at now.
+  function fontRows() {
+    const terminals = window.TnaiAgents;
+    if (!terminals?.stepFont || !terminals.fontFor) return [];
+    const size = terminals.fontFor('focus');
+    const step = by => () => terminals.stepFont('focus', by);
+    return [
+      { id: 'font-down', label: 'Smaller text · ' + size + ' px', icon: 'minus', go: step(-1) },
+      {
+        id: 'font-up',
+        label: 'Larger text',
+        icon: 'plus',
+        go: step(1),
+        off: size >= terminals.maxFont ? 'at its largest' : '',
+      },
+    ];
+  }
+
   // The rows for one thread, as it is now. `keepFocus` rows put the keyboard somewhere themselves
   // (the name's field); after every other row it goes back to the menu's button.
   function rowsFor(paneId) {
@@ -210,6 +242,9 @@
         rows.push({ id: 'screen', label: 'CLI screen', icon: 'square-terminal', go: showScreen });
     }
 
+    // the CLI screen's text size, while it shows (the A− and A+ of the top row until 2026-10-24)
+    if (!card && screenShown()) rows.push(...fontRows());
+
     // a window of its own for this thread, and the way back (162)
     const popout = window.TnaiThreadPopout;
     if (popout?.isOut?.(paneId))
@@ -225,6 +260,30 @@
         label: 'Pop out into its own window',
         icon: 'external-link',
         go: id => popout.open(id),
+      });
+
+    // What were icons of the top row until 2026-10-24 (user, tab 5 of app-polish.html: fewer
+    // buttons there, the rest named here), each done by the file that owns it. An All threads
+    // card has its own buttons for the handoffs, the blur and the thread actions.
+    if (!card && window.TnaiPastThreads)
+      rows.push({ id: 'past', label: 'Past conversations', icon: 'file-text', go: openPast });
+    if (!card && window.TnaiHandoffHistory?.open)
+      rows.push({ id: 'handoffs', label: 'Handoff history', icon: 'clock', go: openHandoffs });
+    if (!card && window.TnaiThreadBlur) {
+      const blurred = !!window.TnaiThreadBlur.on(paneId);
+      rows.push({
+        id: 'blur',
+        label: blurred ? 'Show this thread again' : 'Blur this thread',
+        icon: blurred ? 'eye-off' : 'eye',
+        go: id => window.TnaiThreadBlur.toggle(id),
+      });
+    }
+    if (!card && window.TnaiThreadActions?.shows?.(paneId))
+      rows.push({
+        id: 'actions',
+        label: 'Commit, pull request, review…',
+        icon: 'git-branch',
+        go: openActions,
       });
 
     // the thread's own folder in an editor found on this computer, or the file manager

@@ -260,6 +260,57 @@ const settle = async () => {
     (again.list().find(one => one.id === saved.id)?.runs || []).length > 0
   );
 
+  // Board round 2: the column order the user dragged, and groups in a column.
+  const ids = list => list.map(column => column.id).join(',');
+  check('no saved order: the usual one', ids(columns.ordered()) === 'next,work,needs,review,done');
+  check(
+    'a saved order is kept',
+    ids(columns.ordered(['done', 'work', 'next', 'needs', 'review'])) ===
+      'done,work,next,needs,review'
+  );
+  check(
+    'unknown and doubled ids dropped, a missing column comes back in its place',
+    ids(columns.ordered(['work', 'gone', 'work', 'done', 'next'])) === 'work,needs,review,done,next'
+  );
+  const thread = (id, name, tool, lead = '') => ({ thread: { id, name, tool, lead } });
+  const working = [
+    thread('h1', 'Ion', 'Claude Code', 'L'),
+    thread('L', 'Lead', 'Claude Code'),
+    thread('h2', 'Pulse', 'Claude Code', 'L'),
+    thread('p', 'Pinball', 'Claude Code'),
+    thread('n', 'Nyx', 'Codex'),
+  ];
+  const team = columns.groupsOf(working, 'team');
+  check('a lead and its helpers make one group', team[0].label === 'Lead and helpers');
+  check(
+    'the lead comes first in its group',
+    team[0].cards.map(card => card.thread.name).join(',') === 'Lead,Ion,Pulse'
+  );
+  check('threads on their own stay single cards', team.length === 3 && !team[1].key);
+  const helperAlone = columns.groupsOf([thread('h1', 'Ion', 'Claude Code', 'L')], 'team');
+  check('a helper whose lead is elsewhere is a single card', !helperAlone[0].key);
+  const tools = columns.groupsOf(working, 'tool');
+  check(
+    'by tool: one group of four, Codex alone',
+    tools[0].cards.length === 4 && tools[0].label === 'Claude Code' && !tools[1].key
+  );
+  check(
+    'none: every card on its own',
+    columns.groupsOf(working, 'none').every(g => !g.key)
+  );
+
+  // the page uses them, and keeps the layout per user
+  const pageCode = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'scripts', '157-board-page.js'),
+    'utf8'
+  );
+  check(
+    'the page draws columns in the saved order and groups their cards',
+    /columnsKit\s*\.ordered\(board\.order\)/.test(pageCode) &&
+      /columnsKit\.groupsOf\(list, board\.groupBy\)/.test(pageCode) &&
+      /LAYOUT_KEY/.test(pageCode)
+  );
+
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log((failed ? 'FAILED' : 'OK') + ': ' + passed + ' passed, ' + failed + ' failed');
   process.exit(failed ? 1 : 0);

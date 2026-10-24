@@ -43,7 +43,69 @@
     return '';
   }
 
-  const api = { COLUMNS, columnOf, sameDay, WORKING };
+  // Board round 2 (user 2026-10-23, mock docs/plans/design-concepts/board-r2.html): the columns
+  // in the order the user dragged their tabs into. Unknown ids are dropped and missing ones are
+  // added in their usual place, so a saved order never loses a column.
+  function ordered(savedIds) {
+    const known = new Map(COLUMNS.map(column => [column.id, column]));
+    const list = [];
+    for (const id of Array.isArray(savedIds) ? savedIds : []) {
+      if (known.has(id) && !list.includes(known.get(id))) list.push(known.get(id));
+    }
+    COLUMNS.forEach((column, at) => {
+      if (list.includes(column)) return;
+      const before = COLUMNS.slice(0, at)
+        .filter(earlier => list.includes(earlier))
+        .pop();
+      list.splice(before ? list.indexOf(before) + 1 : 0, 0, column);
+    });
+    return list;
+  }
+
+  // A column's thread cards in groups. `by`: 'team' (a lead and its helpers in this column),
+  // 'tool' (each agent CLI), or 'none'. cards: [{ thread: { id, name, tool, lead } }].
+  // → [{ key, label, cards }] where a group of one has key '' and is drawn as a plain card.
+  function groupsOf(cards, by) {
+    if (by !== 'team' && by !== 'tool')
+      return cards.map(card => ({ key: '', label: '', cards: [card] }));
+    const ids = new Set(cards.map(card => card.thread.id));
+    const keyOf = card => {
+      if (by === 'tool') return card.thread.tool || '';
+      if (card.thread.lead && ids.has(card.thread.lead)) return card.thread.lead;
+      return cards.some(other => other.thread.lead === card.thread.id) ? card.thread.id : '';
+    };
+    const groups = [];
+    const byKey = new Map();
+    for (const card of cards) {
+      const key = keyOf(card);
+      if (!key) {
+        groups.push({ key: '', label: '', cards: [card] });
+        continue;
+      }
+      if (!byKey.has(key)) {
+        const lead = cards.find(other => other.thread.id === key);
+        const label = by === 'tool' ? key : (lead?.thread.name || 'Lead') + ' and helpers';
+        const group = { key, label, cards: [] };
+        byKey.set(key, group);
+        groups.push(group);
+      }
+      byKey.get(key).cards.push(card);
+    }
+
+    // a team's lead comes first in its group
+    if (by === 'team') {
+      for (const group of byKey.values()) {
+        group.cards.sort((a, b) => (b.thread.id === group.key) - (a.thread.id === group.key));
+      }
+    }
+
+    // a group of one is just its card
+    return groups.flatMap(group =>
+      group.key && group.cards.length < 2 ? [{ key: '', label: '', cards: group.cards }] : [group]
+    );
+  }
+
+  const api = { COLUMNS, columnOf, sameDay, WORKING, ordered, groupsOf };
   if (typeof window !== 'undefined') window.TnaiBoardColumns = api;
   if (typeof module === 'object' && module.exports) module.exports = api;
 })();

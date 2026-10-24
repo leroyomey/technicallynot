@@ -61,6 +61,20 @@ function subFile(folder, sub) {
   if (!/^[A-Za-z0-9_-]{1,80}$/.test(sub)) return '';
   const direct = path.join(folder, 'agent-' + sub + '.jsonl');
   if (fs.existsSync(direct)) return direct;
+
+  // a helper of a workflow keeps its record one level down, in workflows/<run id>/ (171)
+  if (/^a[0-9a-f]{6,40}$/.test(sub)) {
+    let runs = [];
+    try {
+      runs = fs
+        .readdirSync(path.join(folder, 'workflows'))
+        .filter(name => /^wf_[\w-]+$/.test(name));
+    } catch {}
+    for (const run of runs.slice(-200)) {
+      const file = path.join(folder, 'workflows', run, 'agent-' + sub + '.jsonl');
+      if (fs.existsSync(file)) return file;
+    }
+  }
   let names = [];
   try {
     names = fs.readdirSync(folder).filter(name => name.endsWith('.meta.json'));
@@ -125,6 +139,14 @@ function describeTool(name, input, cwd) {
       return { verb: 'Searched the web for', what: oneLine(data.query, WHAT_MAX) };
     case 'Skill':
       return { verb: 'Read the skill', what: oneLine(data.skill, 120) };
+    case 'Workflow': {
+      const meta = workflowMeta(data.script);
+      return {
+        verb: 'Started a workflow',
+        what: oneLine(meta.name || data.name || 'a workflow', WHAT_MAX),
+        workflow: { ...meta, script: clip(String(data.script || ''), MORE_MAX) },
+      };
+    }
     default:
       return {
         verb: 'Used',
@@ -133,6 +155,57 @@ function describeTool(name, input, cwd) {
           .replace(/__/g, ' · '),
       };
   }
+}
+
+// A workflow script starts with `export const meta = { name, description, phases: [{ title }] }`,
+// a plain literal (Claude Code refuses any other). Its strings are read by pattern, never run.
+// The index just past the bracket that closes the one at `open`, skipping text in quotes (a "]" or
+// "}" inside a phase's words does not end it); -1 when it is not closed.
+function closingOf(text, open) {
+  const pairs = { '{': '}', '[': ']' };
+  const stack = [];
+  let quote = '';
+  for (let index = open; index < text.length && index < open + 20000; index++) {
+    const char = text[index];
+    if (quote) {
+      if (char === '\\') index++;
+      else if (char === quote) quote = '';
+    } else if (char === "'" || char === '"' || char === '`') quote = char;
+    else if (pairs[char]) stack.push(pairs[char]);
+    else if (char === stack[stack.length - 1]) {
+      stack.pop();
+      if (!stack.length) return index + 1;
+    }
+  }
+  return -1;
+}
+
+function workflowMeta(script) {
+  const text = String(script || '');
+  const start = text.indexOf('export const meta');
+  const brace = start < 0 ? -1 : text.indexOf('{', start);
+  const end = brace < 0 ? -1 : closingOf(text, brace);
+  if (end < 0) return { name: '', description: '', phases: [] };
+
+  // only the meta block itself: a "description:" later in the script is not the workflow's
+  const head = text.slice(brace, end);
+  const quoted = '(?:\'((?:[^\'\\\\]|\\\\.)*)\'|"((?:[^"\\\\]|\\\\.)*)"|`([^`]*)`)';
+  const field = key => {
+    const found = new RegExp('\\b' + key + '\\s*:\\s*' + quoted).exec(head);
+    return found ? clip(found[1] ?? found[2] ?? found[3] ?? '', 300) : '';
+  };
+  const phases = [];
+  const at = /\bphases\s*:\s*\[/.exec(head);
+  const listEnd = at ? closingOf(head, at.index + at[0].length - 1) : -1;
+  const list = listEnd > 0 ? [null, head.slice(at.index + at[0].length, listEnd - 1)] : null;
+  const title = new RegExp('\\btitle\\s*:\\s*' + quoted, 'g');
+  for (
+    let found = title.exec(list?.[1] || '');
+    found && phases.length < 20;
+    found = title.exec(list[1])
+  )
+    phases.push(clip(found[1] ?? found[2] ?? found[3] ?? '', 80));
+  return { name: field('name'), description: field('description'), phases };
 }
 
 // A question the agent puts to the user with its own tool: the words and the choices.
@@ -201,8 +274,37 @@ function resultOf(block, line) {
     if (out.interrupted) entry.text = 'Interrupted';
   }
   if (out.status === 'async_launched' || out.isAsync) entry.text = 'Runs in the background';
+
+  // a workflow's run: its folder under the session's sub-agents holds the journal (171)
+  if (out.taskType === 'local_workflow' && /^wf_[\w-]{1,80}$/.test(String(out.runId || ''))) {
+    entry.runId = String(out.runId);
+    entry.taskId = String(out.taskId || '');
+  }
   if (entry.failed && !entry.text) entry.text = oneLine(blockText(block.content), RESULT_MAX);
   return entry;
+}
+
+// A helper's report handed back to its lead. Claude Code gives it to the lead as a prompt:
+// <agent-message from="ID">, a fixed frame line ("[Subagent hand-back] … The report follows:"),
+// then the report with every line indented by two spaces, then </agent-message>. Returns
+// { fromId, text } with the frame taken off and the lines put back at their own indent, or null.
+const HAND_BACK =
+  /^\s*(?:Another Claude session sent a message:\s*)?<agent-message from="([\w-]{1,80})">\s*([\s\S]*?)\s*<\/agent-message>\s*$/;
+
+function handBackOf(raw) {
+  const match = HAND_BACK.exec(raw);
+  if (!match) return null;
+  let body = match[2];
+
+  // the frame: a first line in square brackets, up to "The report follows:" when it says so
+  const follows = body.indexOf('The report follows:');
+  if (/^\[[^\]\n]{1,60}\]/.test(body) && follows >= 0 && follows < 2000)
+    body = body.slice(follows + 'The report follows:'.length);
+  else body = body.replace(/^\[[^\]\n]{1,60}\][^\n]*\n/, '');
+  const lines = body.replace(/^\n+/, '').split('\n');
+  const indented = lines.filter(line => line.trim()).every(line => line.startsWith('  '));
+  const text = (indented ? lines.map(line => line.slice(2)) : lines).join('\n').trim();
+  return text ? { fromId: match[1], text: clip(text, TEXT_MAX) } : null;
 }
 
 // A prompt as the user wrote it. The app's own marks and the CLI's own notes are not the user's
@@ -229,8 +331,14 @@ function userEntries(text, at) {
     const args = /<command-args>([^<]*)<\/command-args>/.exec(raw);
     return [{ kind: 'note', text: ('You ran ' + command[1] + ' ' + (args?.[1] || '')).trim(), at }];
   }
-  if (/^\s*<task-notification>/.test(raw))
-    return [{ kind: 'note', text: 'A background task finished', at }];
+  const handBack = handBackOf(raw);
+  if (handBack) return [{ kind: 'report', ...handBack, at }];
+  if (/^\s*<task-notification>/.test(raw)) {
+    // which task, and how it ended: a workflow's card (171) turns done from this
+    const taskId = /<task-id>([\w-]{1,80})<\/task-id>/.exec(raw)?.[1] || '';
+    const status = /<status>([a-z_]{1,30})<\/status>/.exec(raw)?.[1] || '';
+    return [{ kind: 'note', text: 'A background task finished', at, taskId, status }];
+  }
   return promptEntries(raw.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, ''), at);
 }
 

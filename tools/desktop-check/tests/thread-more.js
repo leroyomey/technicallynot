@@ -241,7 +241,13 @@ try {
     menu()
       .querySelector('.tnt-menu-row[data-row="' + id + '"]')
       .click();
-  const fonts = () => [...island.querySelectorAll('[data-tnai-font]')];
+
+  // the CLI screen's text size: rows of the menu while it shows (137; A- and A+ of the top row
+  // until 2026-10-24)
+  const fontRows = () =>
+    more()
+      .rows()
+      .filter(row => /^font-/.test(row.id));
   const talk = () => island.querySelector('.tnt-talk');
   const key = name =>
     document.activeElement.dispatchEvent(
@@ -258,10 +264,7 @@ try {
       !!said && view().mode() === 'read' && shown(talk()) && !shown(view().term()?.element),
       'the thread opens as its conversation'
     );
-    check(
-      fonts().length === 2 && fonts().every(one => !shown(one)),
-      'the text size buttons are not shown beside a conversation'
-    );
+    check(fontRows().length === 0, 'the menu has no text size rows beside a conversation');
   }
   check(
     !island.querySelector('.tnt-seg') && !island.querySelector('.tnt-head [data-mode]'),
@@ -271,6 +274,21 @@ try {
   check(
     shown(button()) && acts.lastElementChild === button(),
     'the "..." button is the last one of the top row'
+  );
+
+  // Few buttons (user 2026-10-24, tab 5 of app-polish.html): Preview and Split with their names,
+  // Stop or Start, "..." (and "N helpers" while there are helpers); the rest are menu rows.
+  const topParts = [...acts.children].filter(shown);
+  const movedAway =
+    '.tnt-head-handoff, .tnt-head-blur, .tnh-open, .tnt-head-popout, .tnt-head-work, [data-tnai-font]';
+  check(
+    topParts.length <= 5 &&
+      /Preview/.test(island.querySelector('.tnt-head-page')?.textContent || '') &&
+      /Split/.test(island.querySelector('.tnt-fold-side')?.textContent || '') &&
+      !acts.querySelector(movedAway),
+    'the top row has Preview and Split with their names, Stop and "..." (' +
+      topParts.map(part => part.textContent.trim() || part.getAttribute('aria-label')).join(', ') +
+      ')'
   );
 
   // ---- opening and closing ----
@@ -363,14 +381,8 @@ try {
     await until(() => view().shown() === first, 6000);
     await wait(300);
     const found = [];
-    found.push(['all', "the top row's All threads", island.querySelector('.tnt-head-page')]);
-    found.push(['side', "the top row's side column", island.querySelector('.tnt-fold-side')]);
-    found.push(['past', "the top row's Past conversations", island.querySelector('.tnh-open')]);
-    found.push([
-      'handoff',
-      "the top row's Handoff history",
-      island.querySelector('.tnt-head-handoff'),
-    ]);
+    found.push(['all', "the top row's Preview", island.querySelector('.tnt-head-page')]);
+    found.push(['side', "the top row's Split", island.querySelector('.tnt-fold-side')]);
     found.push(['past', "the list's Past conversations", document.querySelector('.tnh-foot-btn')]);
     readPageColors(tone, found);
     const neutral = island.querySelector('.tnt-head-menu svg');
@@ -389,6 +401,18 @@ try {
       mutedColor !== PAGE_COLORS[tone].all,
       tone + ': a disabled All threads button is not drawn in its color (' + mutedColor + ')'
     );
+
+    // the thread's "..." menu: Past conversations and Handoff history (top-row icons until
+    // 2026-10-24)
+    more().open();
+    await wait(250);
+    const menuRow = id => menu()?.querySelector('.tnt-menu-row[data-row="' + id + '"]');
+    readPageColors(tone, [
+      ['past', 'the "..." menu\'s Past conversations', menuRow('past')],
+      ['handoff', 'the "..." menu\'s Handoff history', menuRow('handoffs')],
+    ]);
+    more().close();
+    await wait(150);
 
     // the thread's "..." menu: CLI screen
     if (withTalk) {
@@ -588,8 +612,8 @@ try {
     );
     check(!!onScreen && !shown(talk()), 'CLI screen shows the tool’s own terminal');
     check(
-      fonts().every(one => shown(one)),
-      'the text size buttons show while the CLI screen is shown'
+      fontRows().length === 2,
+      'the menu has Smaller and Larger text while the CLI screen is shown'
     );
     await wait(400);
     button().click();
@@ -604,8 +628,8 @@ try {
     press('conversation');
     const onTalk = await until(() => view().mode() === 'read' && shown(talk()), 6000);
     check(
-      !!onTalk && fonts().every(one => !shown(one)) && !shown(island.querySelector('.tnt-term')),
-      'and it shows the conversation again, without the text size buttons'
+      !!onTalk && fontRows().length === 0 && !shown(island.querySelector('.tnt-term')),
+      'and it shows the conversation again, without the text size rows'
     );
 
     // ---- Team ----
@@ -665,7 +689,7 @@ try {
     };
     measure('420 px, conversation');
     view().setMode('term');
-    await until(() => view().mode() === 'term' && shown(fonts()[0]), 6000);
+    await until(() => view().mode() === 'term' && fontRows().length === 2, 6000);
     await wait(400);
     measure('420 px, CLI screen');
     button().click();

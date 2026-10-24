@@ -1,12 +1,13 @@
-// Technically Not · 129-token-chip.js — Desktop only: the top bar's Tokens/min chip
-// (#pgTokChip). Every 3 seconds, while the window is not hidden, it adds up the tokens each
-// agent's turn reports gained (42 `TnaiTurns`: input + output + cache writes), keeps the last 60
-// seconds per panel, and shows the sum with a small line of the last 14 readings. Moved out of the
-// old Overview (94-overview-purple.js) on 2026-10-12, the counting unchanged, so that file could
-// go. "Your usual at this hour" (the usage history, 59's source) is asked for when the pointer
-// first comes over the chip, at most every 10 minutes, and then named in the tooltip only (its
-// faint band behind the line read as a drawing fault and was removed).
-// `window.TnaiTokenChip` (`tokensPerMinute`). Look: src/styles/07-purple-glass.css.
+// Technically Not · 129-token-chip.js — Desktop only: the Tokens/min meter (#pgTokChip), the last
+// row of the top bar's System chip popover (81 moves it there; user 2026-10-24). Every 3
+// seconds, while the window is not hidden, it adds up the tokens each agent's turn reports gained
+// (42 `TnaiTurns`: input + output + cache writes), keeps the last 60 seconds per panel, and shows
+// the sum with a small line of the last 14 readings. Moved out of the old Overview
+// (94-overview-purple.js) on 2026-10-12, the counting unchanged, so that file could go. "Your usual
+// at this hour" (the usage history, 59's source) is asked for when the pointer first comes over the
+// chip, at most every 10 minutes, and then named in the tooltip only (its faint band behind the
+// line read as a drawing fault and was removed). `window.TnaiTokenChip` (`tokensPerMinute`). Look:
+// src/styles/07-purple-glass.css.
 (() => {
   const native = window.tnaiNative;
   const chip = document.getElementById('pgTokChip');
@@ -85,7 +86,7 @@
     chip.title =
       "Tokens per minute across all agents (last 60 s, from each agent's turn reports: input + output + cache writes)" +
       (usual ? '\nYour usual at this hour: ' + short(usual) + '/min (last 30 days)' : '');
-    drawLine(chip.querySelector('svg'), readings.length > 1 ? readings : [0, 0], 44, 14);
+    drawLine(chip.querySelector('svg'), readings.length > 1 ? readings : [0, 0], 76, 14);
 
     // painted: the full look (a flag with no class; 83 takes the title off on hover, so the title
     // cannot mark it)

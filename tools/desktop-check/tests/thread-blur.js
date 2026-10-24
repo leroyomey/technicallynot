@@ -1,7 +1,7 @@
 // Technically Not tools · desktop-check/tests/thread-blur.js — the blur of one thread
 // (src/scripts/120-thread-view.js, its card on All threads in 135) in the real app with a
-// throwaway profile and two real PowerShell threads. The blur button stands in the open
-// thread's top-right controls, left of "...", in a color no other top-row button has. Pressing it
+// throwaway profile and two real PowerShell threads. The blur is a row of the open thread's "..."
+// menu (an icon of the top row until 2026-10-24), its icon in a color no other row has. Pressing it
 // blurs what the thread says (not its top row), only for that thread, keeps the choice, blurs
 // the same thread's card on All threads, and a second press brings it back. Checked in Dark and
 // Light. Pictures: thread-blur-on, thread-blur-light, thread-blur-card. Returns {ok, log}.
@@ -77,34 +77,39 @@ try {
   const island = threads.slot('main');
   const head = island.querySelector('.tnt-head');
   const term = island.querySelector('.tnt-term');
-  const button = head.querySelector('.tnt-head-blur');
-  const acts = [...head.querySelectorAll('.tnt-head-acts > button')].filter(
-    one => one.getClientRects().length
-  );
 
-  // ---- the button: in the top row, before "...", in a color of its own ----
-  check(!!button && button.getClientRects().length > 0, 'the blur button is shown in the top row');
-  check(
-    acts.indexOf(button) > 0 &&
-      acts.indexOf(button) < acts.length - 1 &&
-      acts.at(-1).classList.contains('tnt-head-menu') &&
-      button.getBoundingClientRect().left > head.querySelector('h1').getBoundingClientRect().right,
-    'it stands among the top-right controls, left of "..." (' +
-      acts.map(one => one.className.replace('tnt-icon-btn ', '')).join(', ') +
-      ')'
-  );
-  const others = acts.filter(one => one !== button).map(one => getComputedStyle(one).color);
-  const own = getComputedStyle(button).color;
+  // The blur is a row of the thread's "..." menu (137; an icon of the top row until 2026-10-24):
+  // "Blur this thread", or "Show this thread again" while it is blurred, its icon in the lime that
+  // belongs to the blur alone.
+  const blurRow = () => {
+    window.TnaiThreadMore.close();
+    head.querySelector('.tnt-head-menu').click();
+    return document.querySelector('.tnt-menu-thread .tnt-menu-row[data-row="blur"]');
+  };
+  const rowSays = () => {
+    const words = blurRow()?.textContent || '';
+    window.TnaiThreadMore.close();
+    return words;
+  };
+
+  // ---- the row: in the "..." menu, its icon in a color of its own ----
+  const row = blurRow();
+  const iconColor = one =>
+    one?.querySelector('svg') ? getComputedStyle(one.querySelector('svg')).color : '';
+  const others = [...document.querySelectorAll('.tnt-menu-thread .tnt-menu-row')]
+    .filter(one => one !== row)
+    .map(iconColor);
+  const own = iconColor(row);
+  check(!!row && /Blur this thread/.test(row.textContent), 'the "..." menu has "Blur this thread"');
   check(
     !others.includes(own),
-    'its color (' + own + ") is none of the other buttons' (" + [...new Set(others)] + ')'
+    'its icon color (' + own + ") is none of the other rows' (" + [...new Set(others)] + ')'
   );
-  check(button.getAttribute('aria-pressed') === 'false', 'it starts off');
 
   // ---- on: the thread is blurred, its top row is not ----
-  button.click();
+  row?.click();
   await wait(400);
-  check(button.getAttribute('aria-pressed') === 'true', 'pressed, it says it is on');
+  check(/Show this thread again/.test(rowSays()), 'pressed, the row says how to show it again');
   check(/blur\(9px\)/.test(blurOf(term)), 'the thread is blurred: ' + blurOf(term));
   check(blurOf(head) === 'none', 'the top row stays sharp');
   check(getComputedStyle(term).pointerEvents === 'none', 'nothing under the blur can be pressed');
@@ -120,20 +125,24 @@ try {
     !island.querySelector('.tnt-view').classList.contains('tnt-blurred'),
     'another thread is not blurred (filter now: ' + blurOf(term) + ')'
   );
-  check(button.getAttribute('aria-pressed') === 'false', 'its button is off');
+  check(/Blur this thread/.test(rowSays()), 'its row offers the blur');
   threads.show(first);
   await until(() => view().shown() === first, 6000);
   await wait(400);
   check(/blur/.test(blurOf(term)), 'back on the first thread, it is blurred again');
 
-  // ---- Light: the button keeps a color of its own ----
+  // ---- Light: the row's icon keeps a color of its own ----
   const wasTheme = document.documentElement.getAttribute('data-theme');
   document.documentElement.removeAttribute('data-theme');
   await wait(300);
-  const lightOwn = getComputedStyle(button).color;
-  const lightOthers = acts.filter(one => one !== button).map(one => getComputedStyle(one).color);
+  const lightRow = blurRow();
+  const lightOwn = iconColor(lightRow);
+  const lightOthers = [...document.querySelectorAll('.tnt-menu-thread .tnt-menu-row')]
+    .filter(one => one !== lightRow)
+    .map(iconColor);
   check(!lightOthers.includes(lightOwn), 'in Light its color (' + lightOwn + ') is its own too');
   await shot('thread-blur-light');
+  window.TnaiThreadMore.close();
   if (wasTheme) document.documentElement.setAttribute('data-theme', wasTheme);
 
   // ---- All threads: the same thread's card is blurred, and its button turns it off ----
@@ -151,10 +160,7 @@ try {
   cardButton?.click();
   await wait(400);
   check(!card.classList.contains('tat-blurred'), 'the card button shows the thread again');
-  check(
-    head.querySelector('.tnt-head-blur').getAttribute('aria-pressed') === 'false',
-    'the top row button follows'
-  );
+  check(/Blur this thread/.test(rowSays()), "the thread's menu row follows");
   check(
     !JSON.parse(localStorage.getItem('tnai.thread-blur.v1') || '[]').includes(first),
     'the kept choice is cleared'

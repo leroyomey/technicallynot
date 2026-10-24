@@ -129,7 +129,7 @@
 
   // ---------- what a digest says (the Overview card's sources, 11 updateCard) ----------
   // The words for one session, also used by the Terminal page's agent list (105): { task, taskTip,
-  // now, nowTip, inferred, last, tone, why }.
+  // now, nowRaw, nowFolder, nowTip, inferred, last, tone, why }.
   function describe(pane, s) {
     const id = s.paneId,
       sent = window.TnaiLiveTasks?.get?.(id),
@@ -155,8 +155,15 @@
     let now,
       tip,
       inferred = false;
+
+    // The call as the tool reported it and the folder a command runs in (53, 183): the thread list
+    // and the Working line show the plain words and keep this raw text as their tip.
+    let raw = '',
+      folder = '';
     if (doing && !asking) {
       now = doing.text;
+      raw = doing.raw || '';
+      folder = doing.folder || '';
       tip = doing.tip || '';
       inferred = /inferred/i.test(tip);
     } else if (!s.running) {
@@ -168,7 +175,11 @@
       now = 'Waiting for you';
       tip = 'Stopped on a question for you';
     } else if (fresh) {
-      now = action.verb.charAt(0).toUpperCase() + action.verb.slice(1) + ' ' + action.path;
+      const plain = window.TnaiPlainWords?.file?.(action.verb, action.path);
+      now =
+        plain?.text ||
+        action.verb.charAt(0).toUpperCase() + action.verb.slice(1) + ' ' + action.path;
+      raw = plain?.raw || '';
       inferred = s.agent !== 'Claude Code';
       tip =
         'Latest file this agent touched (from Claude Code’s hook events, or inferred from other CLIs’ output)';
@@ -204,7 +215,18 @@
       text = plain(result.result);
       why = 'The final answer of its last finished task';
     }
-    return { task, taskTip, now, nowTip: tip, inferred, last: text, tone, why };
+    return {
+      task,
+      taskTip,
+      now,
+      nowRaw: raw,
+      nowFolder: folder,
+      nowTip: tip,
+      inferred,
+      last: text,
+      tone,
+      why,
+    };
   }
 
   function paint(pane, s) {

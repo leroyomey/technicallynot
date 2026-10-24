@@ -85,6 +85,10 @@ html[data-theme='dark'] {
   --pg-text-3: #8e85ab;
   --pg-text-4: #655d81;
   --pg-work: #5fe0a5;
+  /* green for words only (user decision 2026-10-23, mock green-text.html): the dot green with
+     less color, so a green word sits with the gray text instead of glowing; dots and bars keep
+     --pg-work. Light in 31, the shades in 58. */
+  --pg-work-text: #9cdfbb;
   --pg-wait: #ffbf5e;
   --pg-ready: #7fa8ff;
   --pg-idle: #7d7596;
@@ -94,9 +98,6 @@ html[data-theme='dark'] {
   --pg-handoff: #5fd0c8;
   /* a thread kept blurred (120): lime, a color no status, accent or other control uses */
   --pg-privacy: #b6e36a;
-  --pg-tel-cpu: #b3a3ff;
-  --pg-tel-ram: #8fd3ff;
-  --pg-tel-gpu: #7fe0c0;
   /* Page colors: one color per place, on the icon of every control that leads there, so a place
      is known by its color alone. Only the glyph takes it (44-page-colors.css). The Light values
      are in 31-thread-pages.css, where the Light look sets its tokens. */
@@ -107,6 +108,20 @@ html[data-theme='dark'] {
   --pg-page-past: #bb9ce8;
   --pg-page-handoff: #d590cf;
   --pg-page-preview: #e4869d;
+
+  /* Hues by kind (user decision 2026-10-23, see tnai-modern-ui "Hues by kind"): each from a mockup
+     the user approved, defined only here (Dark) and in 31 (Light), never as hex in a feature sheet.
+     Two chart series (thread-charts.html), the Details sections Working with and Skills
+     (helper-split.html), and the kinds of what an agent made (made-chips.html). */
+  --pg-hue-chart-1: #9085e9;
+  --pg-hue-chart-2: #199e70;
+  --pg-hue-violet: #b07ce8;
+  --pg-hue-teal: #2fb5a5;
+  --pg-hue-document: #6f7cf0;
+  --pg-hue-picture: #d0609e;
+  --pg-hue-page: #d9853b;
+  --pg-hue-site: #2fa79a;
+  --pg-hue-data: #9a6bdc;
   --pg-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
   --pg-scrim: rgba(8, 5, 18, 0.62);
   --pg-grain: 0.06;
@@ -126,6 +141,7 @@ html:not([data-theme='dark']) {
   --pg-text-3: #756c8f;
   --pg-text-4: #9d95b5;
   --pg-work: #16a066;
+  --pg-work-text: #206345;
   --pg-wait: #c97a08;
   --pg-ready: #2f6fdc;
   --pg-idle: #8a83a0;
@@ -133,9 +149,6 @@ html:not([data-theme='dark']) {
   --pg-agents: #7a3fc0;
   --pg-handoff: #0f8a82;
   --pg-privacy: #4f7010;
-  --pg-tel-cpu: #6f5ae8;
-  --pg-tel-ram: #1f8fd0;
-  --pg-tel-gpu: #119a78;
   --pg-shadow: 0 20px 50px rgba(40, 20, 90, 0.16);
   --pg-scrim: rgba(40, 28, 70, 0.32);
   --pg-grain: 0.035;
@@ -560,20 +573,8 @@ html:not([data-theme='dark']):not(#pg) {
   color: var(--pg-text);
   border-color: var(--pg-accent);
 }
-/* Telemetry chips (81-system-stats.js renders them inside .tnai-sys-chip; #pgTokChip is filled by
-   the Overview script) */
-:root:not(#pg) .top-right > .tnai-sys-chip {
-  /* the same room as between any two things in the bar (.top-right), so the chips sit evenly */
-  gap: var(--pg-bar-gap, 5px);
-  padding: 0;
-  border: 0;
-  background: transparent;
-  cursor: default;
-}
-:root:not(#pg) .top-right > .tnai-sys-chip[hidden],
-:root:not(#pg) .top-right > #pgTokChip[hidden] {
-  display: none;
-}
+/* The top bar's chips (.pg-chip): the System chip (81), Claude's 5-hour use (80) and the computers
+   chip (81). The meters themselves are rows of the System chip's popover (.pg-sys-pop, below). */
 .pg-chip {
   display: inline-flex;
   align-items: center;
@@ -619,15 +620,6 @@ html:not([data-theme='dark']):not(#pg) {
   overflow: visible;
   flex: none;
 }
-.pg-chip[data-m='cpu'] svg {
-  color: var(--pg-tel-cpu);
-}
-.pg-chip[data-m='ram'] svg {
-  color: var(--pg-tel-ram);
-}
-.pg-chip[data-m='gpu'] svg {
-  color: var(--pg-tel-gpu);
-}
 .pg-chip.tok .v {
   color: var(--pg-accent-2);
 }
@@ -640,20 +632,135 @@ html:not([data-theme='dark']):not(#pg) {
 .pg-chip[data-level='full'] .v {
   color: var(--pg-err);
 }
-/* Room in the bar (fit-zoomed CSS px, as measured for 81): sparklines from 1600, numbers from 1340,
-   hidden below. */
-@media (max-width: 1599px) {
-  .pg-chip svg {
+/* The System chip (81): a button in the chip look with a word ("OK", "High") and a small bar of the
+   fullest meter. It turns amber while any meter is high (80 % and up). */
+:root:not(#pg) .top-right > .pg-sys {
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+:root:not(#pg) .top-right > .pg-sys:is(:hover, [aria-expanded='true']) {
+  border-color: var(--pg-line-2);
+}
+:root:not(#pg) .top-right > .pg-sys[data-level='high'] {
+  border-color: color-mix(in srgb, var(--pg-wait) 55%, transparent);
+}
+:root:not(#pg) .top-right > :is(.pg-sys, .pg-chip[data-m='plan']) .v {
+  min-width: 0;
+}
+
+/* A narrow window (under 1100 page pixels, the smallest window is about 900) keeps room for the
+   project's name: the System chip drops its bar and Claude's chip its "5h" (both stay in the tips
+   and the popover). */
+@media (max-width: 1099px) {
+  :root:not(#pg) .top-right > .pg-sys .pg-meter-bar,
+  :root:not(#pg) .top-right > .pg-chip[data-m='plan'] .v small {
     display: none;
-  }
-  .pg-chip .v {
-    min-width: 0;
   }
 }
-@media (max-width: 1339px) {
-  :root:not(#pg) .top-right > .tnai-sys-chip {
-    display: none;
+
+/* A meter's bar: a track with a fill scaled to the value (--v, from 0 to 1). */
+.pg-meter-bar {
+  display: block;
+  flex: none;
+  width: 44px;
+  height: 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--pg-text) 10%, transparent);
+  overflow: hidden;
+}
+.pg-meter-bar i {
+  display: block;
+  height: 100%;
+  background: var(--pg-work);
+  transform: scaleX(var(--v, 0));
+  transform-origin: left center;
+  transition:
+    transform 0.3s var(--pg-ease),
+    background-color 0.2s;
+}
+.pg-chip[data-level='high'] .pg-meter-bar i {
+  background: var(--pg-wait);
+}
+.pg-chip[data-level='full'] .pg-meter-bar i {
+  background: var(--pg-err);
+}
+@media (prefers-reduced-motion: reduce) {
+  .pg-meter-bar i {
+    transition: none;
   }
+}
+
+/* The System chip's popover, right under it (TnaiFloat): one row per meter, its name, a bar and
+   its value. It floats over the page, so it takes the fill of every popover (--tnt-over). */
+.pg-sys-pop {
+  position: fixed;
+  z-index: 70;
+  box-sizing: border-box;
+  width: 280px;
+  max-width: calc(100vw - 24px);
+  padding: 12px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--tnt-over, var(--pg-panel-solid));
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  box-shadow: var(--pg-shadow);
+  color: var(--pg-text);
+}
+.pg-sys-pop[hidden] {
+  display: none;
+}
+.pg-sys-list {
+  display: grid;
+  gap: 10px;
+}
+.pg-sys-list > .pg-chip {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr) 76px;
+  grid-template-areas: 'k bar v';
+  align-items: center;
+  gap: 10px;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.pg-sys-list > .pg-chip[hidden] {
+  display: none;
+}
+.pg-sys-list > .pg-chip .k {
+  grid-area: k;
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--pg-text-2);
+}
+.pg-sys-list > .pg-chip .v {
+  grid-area: v;
+  justify-self: end;
+  min-width: 0;
+  font-size: 12px;
+}
+.pg-sys-list > .pg-chip :is(.pg-meter-bar, svg) {
+  grid-area: bar;
+  width: 100%;
+}
+.pg-sys-list > [data-m='cpu'] {
+  order: 1;
+}
+.pg-sys-list > [data-m='ram'] {
+  order: 2;
+}
+.pg-sys-list > [data-m='gpu'] {
+  order: 3;
+}
+.pg-sys-list > [data-m='plan-week'] {
+  order: 4;
+}
+.pg-sys-list > .tok {
+  order: 5;
 }
 
 /* ---------------------------------------------------------------- left nav: glass rail that slides
@@ -862,12 +969,12 @@ html:not([data-theme='dark']):not(#pg) {
   flex: none;
   background: var(--pg-accent-2);
 }
-/* concept order: telemetry, tokens/min, status chip, then bell, Ctrl K, account (11/80 still read
+/* concept order: System, Claude's 5-hour use, the computers chip, then bell, Ctrl K, account (11/80 still read
    the first .status; only the visual order moves) */
 :root:not(#pg) .top-right > * {
   order: 2;
 }
-:root:not(#pg) .top-right > :is(.tnai-sys-chip, #pgTokChip) {
+:root:not(#pg) .top-right > :is(.pg-sys, .pg-chip[data-m='plan']) {
   order: 0;
 }
 :root:not(#pg) .top-right > :is(.prototype-status, .tnai-limit-chip) {
@@ -881,9 +988,6 @@ html:not([data-theme='dark']):not(#pg) {
 .pg-chip.off,
 #pgTokChip:not([data-on]) {
   opacity: 0.7;
-}
-.tnai-sys-chip.off {
-  cursor: default;
 }
 #pgTokChip:not([data-on]) svg {
   display: none;

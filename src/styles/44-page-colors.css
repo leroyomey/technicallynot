@@ -46,17 +46,24 @@
   color: var(--pg-page-terminal);
 }
 
-/* Past conversations: the thread's top-row button and the button at the foot of the thread
-   list (138) */
-.tnh-open:not(:disabled, [aria-disabled='true']) > svg,
+/* Past conversations: the row of the thread's "..." menu (137) and the button at the foot of the
+   thread list (138) */
+.tnt-menu-row[data-row='past']:not(:disabled, [aria-disabled='true']) > svg,
 .tnh-foot-btn:not(:disabled, [aria-disabled='true']) > svg {
   color: var(--pg-page-past);
 }
 
-/* Handoff history: the thread's top-row button (120) and an All threads card's button (135) */
-.tnt-view .tnt-head-handoff:not(:disabled, [aria-disabled='true']) > svg,
+/* Handoff history: the row of the thread's "..." menu (137) and an All threads card's button
+   (135) */
+.tnt-menu-row[data-row='handoffs']:not(:disabled, [aria-disabled='true']) > svg,
 .tat-act-handoff:not(:disabled, [aria-disabled='true']) > svg {
   color: var(--pg-page-handoff);
+}
+
+/* The blur: its row of the thread's "..." menu (137) keeps the blur button's own lime
+   (--pg-privacy, which belongs to the blur control alone; 38 colors an All threads card's) */
+.tnt-menu-row[data-row='blur']:not(:disabled, [aria-disabled='true']) > svg {
+  color: var(--pg-privacy);
 }
 
 /* Live preview: the three-dots menu's row, the button that shows or hides the Live preview

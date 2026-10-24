@@ -1,15 +1,21 @@
 /*
- * Technically Not · 81-system-stats.js — Desktop app only: this PC's load as telemetry chips in the
- * top bar after the agent status (and the plan-limit chip, 80): CPU %, RAM used/total and GPU %,
- * each with a sparkline of the last ~90 s (0–100 % scale; the number turns amber from 80 %, red
- * from 95 %). The tooltip adds the CPU model, video memory and Technically Not's own memory. The
- * chips are read-only (not clickable). Stats are pushed by
- * desktop/system-stats.js every 3 s, only while this window is visible and not minimized (watch on
- * visibilitychange; main also pauses on minimize/hide). GPU shows only where nvidia-smi exists
- * (NVIDIA cards). The history is only what this window received; nothing is sampled here. Top bar
- * room (fit-zoomed CSS px): sparklines from 1600, numbers only from 1340, hidden below
- * (07-purple-glass.css). Look: .pg-chip in 07. Browser build: greyed CPU/RAM/GPU chips with a dash
- * (.off), nothing sampled.
+ * Technically Not · 81-system-stats.js — the top bar's System chip and what it opens (user
+ * 2026-10-24, tab 4 of docs/plans/design-concepts/app-polish.html). One chip, "System OK" with a
+ * small bar, stands where six meters stood; a press (or Enter or Space) opens a popover right under
+ * it with every meter as a row: its name, a bar and its value. The rows are CPU, RAM and GPU (this
+ * file), the plan's longer window, "Claude week" (80), and Tokens/min (129's #pgTokChip, moved into
+ * the popover here). The chip turns amber when any row with a bar is high: 80 % and up, the same
+ * line the meters and the account gauges (98) always used; a row from 95 % shows its number red.
+ * Tokens/min has no top, so it shows its small line and never turns the chip amber. Esc closes the
+ * popover and the keyboard goes back to the chip. Claude's 5-hour use stays its own chip (80).
+ *
+ * The load numbers are pushed by desktop/system-stats.js every 3 s, only while this window is
+ * visible and not minimized (watch on visibilitychange; main also pauses on minimize/hide). GPU
+ * shows only where nvidia-smi exists (NVIDIA cards). Nothing is sampled here, and an open popover
+ * asks for nothing more: it shows the same rows, patched in place as readings arrive.
+ * `window.TnaiSystemChip` (`meter(key, data)`, `open`, `close`, `isOpen`, `button`, `list`).
+ * Look: .pg-sys and .pg-sys-pop in src/styles/07-purple-glass.css. Browser build: the chip greyed
+ * with a dash, nothing sampled.
  */
 (() => {
   const native = window.tnaiNative;
@@ -90,130 +96,197 @@
     });
   })();
 
-  // Browser build (no native stats): the same chips, greyed with a dash, so the bar keeps its shape
-  // and says where the numbers come from.
+  // A meter is high from 80 % and full from 95 %: the lines the top bar's meters and the account
+  // gauges (98) have always used.
+  const level = pct => (pct >= 95 ? 'full' : pct >= 80 ? 'high' : 'ok');
+
+  // ---------- the System chip and its popover
+  const system = (() => {
+    const bar = document.querySelector('.top .top-right');
+    if (!bar) return null;
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'pg-chip pg-sys';
+    button.id = 'pgSysChip';
+    button.setAttribute('aria-expanded', 'false');
+    button.setAttribute('aria-controls', 'pgSysPop');
+    button.innerHTML =
+      '<span class="k">System</span><span class="v">—</span>' +
+      '<span class="pg-meter-bar" aria-hidden="true"><i></i></span>';
+    const value = button.querySelector('.v');
+    const fill = button.querySelector('.pg-meter-bar i');
+    const status = bar.querySelector('.prototype-status');
+    if (status) status.after(button);
+    else bar.prepend(button);
+
+    // The popover stays in the page's body: the top bar is the window's drag area, and a part
+    // inside it would take no presses.
+    const pop = document.createElement('section');
+    pop.className = 'pg-sys-pop';
+    pop.id = 'pgSysPop';
+    pop.hidden = true;
+    pop.setAttribute('aria-label', 'System meters');
+    const list = document.createElement('div');
+    list.className = 'pg-sys-list';
+    pop.append(list);
+    document.body.append(pop);
+
+    // Tokens/min (129 paints it in place) is the popover's last row.
+    const tokens = document.getElementById('pgTokChip');
+    if (tokens) list.append(tokens);
+
+    // The chip's word, bar and color from the rows that have a bar: the bar shows the fullest one,
+    // and any row at "high" or "full" turns the chip amber and is named in its tip.
+    function refresh() {
+      const rows = [...list.querySelectorAll('.pg-chip[data-pct]')];
+      let top = 0;
+      const high = [];
+      for (const row of rows) {
+        const pct = Number(row.dataset.pct) || 0;
+        top = Math.max(top, pct);
+        if (row.dataset.level !== 'ok')
+          high.push(row.querySelector('.k').textContent + ' ' + pct + '%');
+      }
+      const word = !rows.length ? '—' : high.length ? 'High' : 'OK';
+      if (value.textContent !== word) value.textContent = word;
+      button.dataset.level = high.length ? 'high' : 'ok';
+      fill.style.setProperty('--v', String(top / 100));
+      const said = !rows.length
+        ? 'no readings yet'
+        : high.length
+          ? 'running high: ' + high.join(', ')
+          : 'all meters are fine';
+      button.title = 'System: ' + said + '. Press to see every meter.';
+      button.setAttribute('aria-label', 'System, ' + said + '. Shows every meter.');
+    }
+
+    // One row of the popover, made once and patched in place after that, so a whole-number
+    // percent rolls to its new value (21: .tn-count, @property --tn-n) and a level color fades
+    // instead of jumping. data: { label, pct, value (HTML), count (a whole percent to roll),
+    // title }, or null to take the row out.
+    function meter(key, data) {
+      let row = list.querySelector(`.pg-chip[data-m="${key}"]`);
+      if (!data) {
+        if (row) {
+          row.remove();
+          refresh();
+        }
+        return null;
+      }
+      if (!row) {
+        row = document.createElement('div');
+        row.className = 'pg-chip';
+        row.dataset.m = key;
+        row.innerHTML =
+          '<span class="k"></span><span class="pg-meter-bar" aria-hidden="true"><i></i></span>' +
+          '<span class="v"></span>';
+        list.append(row);
+      }
+      const pct = Math.max(0, Math.min(100, Number(data.pct) || 0));
+      row.querySelector('.k').textContent = data.label;
+      row.dataset.pct = String(Math.round(pct));
+      row.dataset.level = level(pct);
+      row.querySelector('.pg-meter-bar i').style.setProperty('--v', String(pct / 100));
+      const shown = row.querySelector('.v');
+      if (data.count != null) {
+        shown.className = 'v tn-count';
+        shown.dataset.unit = '%';
+        shown.style.setProperty('--tn-n', Math.round(data.count));
+        shown.innerHTML = '';
+      } else {
+        shown.className = 'v';
+        shown.innerHTML = data.value;
+      }
+      row.title = data.title || '';
+      refresh();
+      return row;
+    }
+
+    function setOpen(show) {
+      if (show === !pop.hidden) return;
+      pop.hidden = !show;
+      button.setAttribute('aria-expanded', String(show));
+      if (show) window.TnaiFloat?.attach(button, pop, { placement: 'bottom-start' });
+    }
+
+    // Enter and Space press the button by themselves.
+    button.addEventListener('click', () => setOpen(pop.hidden));
+    document.addEventListener(
+      'pointerdown',
+      event => {
+        if (!pop.hidden && !pop.contains(event.target) && !button.contains(event.target))
+          setOpen(false);
+      },
+      true
+    );
+
+    // Esc closes it first, before anything else that listens for Esc, and the keyboard goes back
+    // to the chip.
+    document.addEventListener(
+      'keydown',
+      event => {
+        if (event.key !== 'Escape' || pop.hidden) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setOpen(false);
+        button.focus({ preventScroll: true });
+      },
+      true
+    );
+
+    refresh();
+    return {
+      button,
+      list,
+      meter,
+      open: () => setOpen(true),
+      close: () => setOpen(false),
+      isOpen: () => !pop.hidden,
+    };
+  })();
+  if (system) window.TnaiSystemChip = system;
+
+  // Browser build (no native stats): the chip greyed with a dash, so the bar keeps its shape and
+  // says where the numbers come from.
   if (!native?.system?.watch) {
-    const top = document.querySelector('.top-right .status');
-    if (!top) return;
-    const off = document.createElement('span');
-    off.className = 'status tnai-sys-chip off';
-    off.title = "This PC's CPU, memory and GPU load show in the Technically Not desktop app.";
-    off.innerHTML = ['CPU', 'RAM', 'GPU']
-      .map(
-        k =>
-          `<span class="pg-chip off" data-m="${k.toLowerCase()}"><span class="k">${k}</span><span class="v">—</span></span>`
-      )
-      .join('');
-    top.after(off);
+    if (!system) return;
+    system.button.classList.add('off');
+    system.button.disabled = true;
+    system.button.title =
+      "This PC's CPU, memory and GPU load show in the Technically Not desktop app.";
     return;
   }
+  if (!system) return;
+
   const esc = text =>
     String(text ?? '').replace(
       /[&<>"]/g,
       c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]
     );
-
-  const GB = 2 ** 30,
-    KEEP = 30,
-    W = 58,
-    H = 20;
+  const GB = 2 ** 30;
   const gb = bytes => {
     const v = bytes / GB;
     return v >= 10 ? String(Math.round(v)) : v.toFixed(1);
   };
-  const level = pct => (pct >= 95 ? 'full' : pct >= 80 ? 'high' : 'ok');
-  const hist = { cpu: [], ram: [], gpu: [] };
-  const push = (key, v) => {
-    const h = hist[key];
-    h.push(Math.max(0, Math.min(100, v)));
-    if (h.length > KEEP) h.shift();
-  };
-
-  // Smooth sparkline on a fixed 0–100 scale, drawn in currentColor (the chip sets the color from
-  // the --pg-tel-* tokens).
-  let gradSeq = 0;
-
-  function spark(values) {
-    if (values.length < 2) return `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true"></svg>`;
-    const step = W / (KEEP - 1),
-      x0 = W - (values.length - 1) * step;
-    const pts = values.map((v, i) => [x0 + i * step, H - 2 - (v / 100) * (H - 4)]);
-    let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
-    for (let i = 1; i < pts.length; i++) {
-      const [ax, ay] = pts[i - 1],
-        [bx, by] = pts[i],
-        xm = ((ax + bx) / 2).toFixed(1);
-      d += ` C${xm},${ay.toFixed(1)} ${xm},${by.toFixed(1)} ${bx.toFixed(1)},${by.toFixed(1)}`;
-    }
-    const [lx, ly] = pts[pts.length - 1],
-      id = 'pgsp' + (++gradSeq % 1000);
-    return (
-      `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".35"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>` +
-      `<path d="${d} L${lx.toFixed(1)},${H} L${pts[0][0].toFixed(1)},${H} Z" fill="url(#${id})"/><path d="${d}" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="2.2" fill="currentColor"/></svg>`
-    );
-  }
-
-  // Each chip is patched in place (not rebuilt), so a whole-number percent rolls to its new value
-  // (21: .tn-count, @property --tn-n) and a level color fades instead of jumping.
-  function paintChip(key, label, pct, valueHtml, count) {
-    let c = chip.querySelector(`.pg-chip[data-m="${key}"]`);
-    if (!c) {
-      c = document.createElement('span');
-      c.className = 'pg-chip';
-      c.dataset.m = key;
-      c.innerHTML = `<span class="k">${label}</span><span class="v"></span>`;
-      chip.append(c);
-    }
-    c.dataset.level = level(pct);
-    const v = c.querySelector('.v');
-    if (count != null) {
-      v.className = 'v tn-count';
-      v.dataset.unit = '%';
-      v.style.setProperty('--tn-n', Math.round(count));
-      v.innerHTML = '';
-    } else v.innerHTML = valueHtml;
-    c.querySelector('svg')?.remove();
-    c.insertAdjacentHTML('beforeend', spark(hist[key]));
-  }
-
-  let chip = null,
-    staleTimer = 0;
-
-  function place() {
-    const top = document.querySelector('.top-right .status:not(.tnai-sys-chip)');
-    if (!top) return null;
-    if (!chip) {
-      chip = document.createElement('span');
-      chip.className = 'status tnai-sys-chip';
-      chip.hidden = true;
-    }
-
-    // after the plan-limit chip when it's there
-    const after = document.querySelector('.top-right .tnai-limit-chip') || top;
-    if (chip.previousElementSibling !== after) after.after(chip);
-    return chip;
-  }
+  const STALE_MS = 10e3;
+  let staleTimer = 0;
 
   function show(s) {
-    if (!s || !Number.isFinite(s.cpu) || !place()) return;
+    if (!s || !Number.isFinite(s.cpu)) return;
     const memPct = Math.round((100 * s.memUsed) / s.memTotal);
-    push('cpu', s.cpu);
-    push('ram', memPct);
-    if (s.gpu) push('gpu', s.gpu.util);
-    else hist.gpu.length = 0;
-    if (!chip.querySelector('.pg-chip')) chip.textContent = '';
-    paintChip('cpu', 'CPU', s.cpu, '', s.cpu);
-    paintChip(
-      'ram',
-      'RAM',
-      memPct,
-      esc(gb(s.memUsed)) + '<small>/' + esc(gb(s.memTotal)) + ' GB</small>'
-    );
-    if (s.gpu) paintChip('gpu', 'GPU', s.gpu.util, '', s.gpu.util);
-    else chip.querySelector('.pg-chip[data-m="gpu"]')?.remove();
-    const lines = [
-      'CPU ' + s.cpu + '% · ' + s.cpuModel + ' · ' + s.cores + ' threads',
-      'Memory ' +
+    system.meter('cpu', {
+      label: 'CPU',
+      pct: s.cpu,
+      count: s.cpu,
+      title: 'CPU ' + s.cpu + '% · ' + s.cpuModel + ' · ' + s.cores + ' threads',
+    });
+    system.meter('ram', {
+      label: 'RAM',
+      pct: memPct,
+      value: esc(gb(s.memUsed)) + '<small>/' + esc(gb(s.memTotal)) + ' GB</small>',
+      title:
+        'Memory ' +
         gb(s.memUsed) +
         ' of ' +
         gb(s.memTotal) +
@@ -222,8 +295,14 @@
         '%) · Technically Not uses ' +
         gb(s.appMem) +
         ' GB',
-      s.gpu
-        ? 'GPU ' +
+    });
+    if (s.gpu)
+      system.meter('gpu', {
+        label: 'GPU',
+        pct: s.gpu.util,
+        count: s.gpu.util,
+        title:
+          'GPU ' +
           Math.round(s.gpu.util) +
           '% · ' +
           s.gpu.name +
@@ -232,25 +311,21 @@
           ' of ' +
           gb(s.gpu.vramTotal) +
           ' GB' +
-          (s.gpu.count > 1 ? ' (busiest of ' + s.gpu.count + ' GPUs)' : '')
-        : 'GPU: shown for NVIDIA cards only',
-      'This PC, updated every 3 s while this window is open; lines show the last 90 s.',
-    ];
-    chip.title = lines.join('\n');
-    chip.setAttribute('aria-label', lines.slice(0, 3).join('. ') + '.');
-    chip.hidden = false;
+          (s.gpu.count > 1 ? ' (busiest of ' + s.gpu.count + ' GPUs)' : ''),
+      });
+    else system.meter('gpu', null);
+
+    // No fresh reading: take the rows out rather than show old numbers.
     clearTimeout(staleTimer);
     staleTimer = setTimeout(() => {
-      if (chip) chip.hidden = true;
-    }, 10e3); // no fresh reading: hide rather than show old numbers
+      for (const key of ['cpu', 'ram', 'gpu']) system.meter(key, null);
+    }, STALE_MS);
   }
 
   native.system.on(show);
 
-  // Hidden or minimized: no readings arrive, so the history restarts instead of drawing a line
-  // across the gap.
+  // Hidden or minimized: no readings are asked for.
   const sync = () => {
-    if (document.hidden) for (const k in hist) hist[k].length = 0;
     native.system.watch(!document.hidden).catch(() => {});
   };
   document.addEventListener('visibilitychange', sync);

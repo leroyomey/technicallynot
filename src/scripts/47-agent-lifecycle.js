@@ -224,7 +224,11 @@
         if (pick) window.TnaiLaunchPrefs?.once(req.agent, null);
       }
       if (!opened?.ok) {
-        await dropPanel(record.id).catch(() => {});
+        // A panel another computer started stays when main still counts it as one (`held`): its
+        // "Could not start" line tells this computer's user what happened, and it counts among
+        // that computer's three until they close it (remote-protocol.md 6, Medium 3). Every
+        // other failed start leaves no empty thread.
+        if (!(req.remote && opened?.held === true)) await dropPanel(record.id).catch(() => {});
         return { error: opened?.error || req.agent + ' could not start.' };
       }
       paneId = record.id;

@@ -270,22 +270,22 @@ try {
         ')'
     );
     {
-      // The five that 120 builds for a thread on its CLI screen; other files add theirs (the
-      // helpers, the side column), so the row may hold more, all of the one size. The pencil
-      // beside the name (.tnt-head-rename) is not one of them: it stands in the name's own line at
-      // 24px so that line keeps its height, and `thread-more` measures it.
-      const own = [
-        '[data-tnai-font="-1"]',
-        '[data-tnai-font="1"]',
-        '.tnt-head-handoff',
-        '.tnt-head-page',
-        '.tnt-head-menu',
-      ].map(selector => head.querySelector('.tnt-icon-btn' + selector));
+      // The icon buttons of the top row (user 2026-10-24, tab 5 of app-polish.html: Preview and
+      // Split carry their names and are measured by `thread-more` and `thread-side`; the text
+      // size is a row of the "..." menu): the on/off button and "...", all of the one size. The
+      // pencil beside the name (.tnt-head-rename) is not one of them: it stands in the name's own
+      // line at 24px so that line keeps its height, and `thread-more` measures it.
+      const own = ['.tnt-head-power', '.tnt-head-menu'].map(selector =>
+        head.querySelector('.tnt-icon-btn' + selector)
+      );
       const buttons = [...head.querySelectorAll('.tnt-icon-btn')].filter(
-          b => b.getClientRects().length && !b.closest('.tnt-head-line')
+          b =>
+            b.getClientRects().length &&
+            !b.closest('.tnt-head-line') &&
+            !b.classList.contains('tnt-head-named')
         ),
         sizes = [...new Set(buttons.map(b => n(box(b).width) + 'x' + n(box(b).height)))],
-        page = head.querySelector('.tnt-head-page'),
+        page = head.querySelector('.tnt-head-menu'),
         icon = box(page.querySelector('svg')),
         b = box(page);
       check(
@@ -295,7 +295,7 @@ try {
           near(b.left + b.width / 2, icon.left + icon.width / 2, 1) &&
           near(b.top + b.height / 2, icon.top + icon.height / 2, 1) &&
           icon.width <= b.width * 0.6,
-        'the top-row buttons (text smaller, text larger, handoff history, the Terminal page, the "..." menu last; ' +
+        'the top-row icon buttons (on/off, the "..." menu last; ' +
           buttons.length +
           ' shown) of one size (' +
           sizes.join(', ') +

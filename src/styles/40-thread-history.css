@@ -57,12 +57,6 @@
   white-space: nowrap;
 }
 
-/* the button in the thread's top row is 29's icon button; open, it keeps the hover fill */
-.tnt-view .tnt-icon-btn.tnh-open[aria-expanded='true'] {
-  background: var(--pg-panel-2);
-  color: var(--pg-text);
-}
-
 /* ---------------------------------------------------------------- the popover */
 /* Compact on purpose, so the list stays small: long first words end in "…",
    and a long list scrolls inside the popover instead of reaching the bottom of the window. The

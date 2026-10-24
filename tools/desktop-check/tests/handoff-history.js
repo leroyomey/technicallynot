@@ -61,7 +61,8 @@ const thread = async id => {
   window.TnaiThreads.show(id);
   await wait(400);
 };
-const headButton = () => document.querySelector('.tnt-head-handoff');
+const headButton = () =>
+  document.querySelector('.tnt-menu-thread:not([hidden]) .tnt-menu-row[data-row="handoffs"]');
 const dlg = () => document.querySelector('.tnai-hoh-overlay');
 const realStart = window.TnaiTeam?.startLead,
   realSend = G.send;
@@ -224,31 +225,25 @@ try {
     'old panel closed once the new agent finished its next task'
   );
 
-  // The Handoff history button in the top row of the agent's thread opens the history at that
-  // agent's own chain. Where it is counts too: inside the window, nothing lying over it.
+  // The row "Handoff history" of the "..." menu of the agent's thread (137; an icon of the top
+  // row until 2026-10-24) opens the history at that agent's own chain.
   await thread(B);
-  const head = headButton(),
-    hr = head?.getBoundingClientRect(),
-    over = hr && document.elementFromPoint(hr.left + hr.width / 2, hr.top + hr.height / 2);
+  window.TnaiThreadMore.close();
+  document.querySelector('.tnt-view .tnt-head-menu').click();
+  await wait(100);
+  const head = headButton();
   check(
     window.TnaiThreads.selected() === B &&
       !!head &&
       head.offsetParent !== null &&
-      hr.width > 0 &&
-      hr.left >= 0 &&
-      hr.right <= innerWidth &&
-      hr.top >= 0 &&
-      over?.closest('.tnt-head-handoff') === head &&
-      /Handoff history/.test(head.getAttribute('aria-label') || ''),
-    'the thread of the agent that took over has the Handoff history button, with a spoken label and nothing over it (' +
-      (hr && Math.round(hr.left) + ',' + Math.round(hr.top) + ' ' + hr.width + '×' + hr.height) +
-      ')'
+      /Handoff history/.test(head.textContent || ''),
+    'the thread of the agent that took over has the Handoff history row in its "..." menu'
   );
   head.click();
   await wait(300);
   check(
     !dlg().hidden && window.TnaiThreads.selected() === B,
-    'the button opens the history, and the thread stays the open one'
+    'the row opens the history, and the thread stays the open one'
   );
   const txt = () => dlg().textContent;
   check(
@@ -297,10 +292,12 @@ try {
   await wait(150);
   check(dlg().hidden, 'Esc closes');
 
-  // From the button once more, then a click outside closes.
-  headButton().click();
+  // From the menu's row once more, then a click outside closes.
+  document.querySelector('.tnt-view .tnt-head-menu').click();
+  await wait(100);
+  headButton()?.click();
   await wait(250);
-  check(!dlg().hidden, 'the button opens it again');
+  check(!dlg().hidden, 'the row opens it again');
   dlg().dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await wait(150);
   check(dlg().hidden, 'click outside closes');

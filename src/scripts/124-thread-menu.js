@@ -256,6 +256,31 @@
     ['light', 'Light'],
   ];
 
+  // The shades of each look (user 2026-10-23), in the Shade row under the Look row. The first of
+  // each is the look itself. Tokens: src/styles/58-thread-looks.css; 32 keeps the choice.
+  const SHADES = {
+    dark: [
+      ['dark', 'Standard'],
+      ['dim', 'Dim'],
+      ['hc-dark', 'High contrast'],
+    ],
+    light: [
+      ['light', 'Standard'],
+      ['paper', 'Paper'],
+      ['hc-light', 'High contrast'],
+    ],
+  };
+  const SHADE_NOTES = {
+    dark: 'Dim is a softer dark with less glare. High contrast is black with white text.',
+    light: 'Paper is a warm cream. High contrast is white with black text.',
+  };
+
+  // Switching Dark and Light keeps High contrast on, so it is not lost by a change of look.
+  const chooseLook = base => {
+    const choice = theme()?.get?.() || '';
+    setLook(choice.startsWith('hc-') ? 'hc-' + base : base);
+  };
+
   let menu = null;
   let button = null;
   let search = null;
@@ -410,9 +435,36 @@
 
   // ---------- the look that is chosen, marked on the row in Settings ----------
   function paintAppearance() {
-    const choice = theme()?.get?.() === 'light' ? 'light' : 'dark';
+    const base = theme()?.resolved?.() === 'light' ? 'light' : 'dark';
     document.querySelectorAll('[data-look]').forEach(el => {
-      el.setAttribute('aria-pressed', String(el.dataset.look === choice));
+      el.setAttribute('aria-pressed', String(el.dataset.look === base));
+    });
+    paintShades(base);
+  }
+
+  // The Shade row offers the shades of the look that is on, and marks the one chosen.
+  function paintShades(base) {
+    if (!shadeRow) return;
+    const seg = shadeRow.querySelector('.tnt-menu-seg');
+    if (seg.dataset.base !== base) {
+      seg.dataset.base = base;
+      seg.innerHTML = SHADES[base]
+        .map(
+          ([value, label]) =>
+            '<button type="button" data-shade="' +
+            value +
+            '" aria-pressed="false">' +
+            label +
+            '</button>'
+        )
+        .join('');
+      shadeRow.querySelector('small').textContent = SHADE_NOTES[base];
+    }
+    const choice = theme()?.get?.();
+    const known = SHADES[base].some(([value]) => value === choice);
+    seg.querySelectorAll('[data-shade]').forEach((el, index) => {
+      const on = known ? el.dataset.shade === choice : index === 0;
+      el.setAttribute('aria-pressed', String(on));
     });
   }
 
@@ -473,6 +525,7 @@
 
   // ---------- Settings › General › Color: Dark or Light, only while the setting is on ----------
   let lookRow = null;
+  let shadeRow = null;
 
   function addLookRow() {
     const card = document.querySelector('#tnaiAppearanceMount .set-card');
@@ -494,14 +547,28 @@
     card.prepend(lookRow);
     lookRow.addEventListener('click', event => {
       const look = event.target.closest('[data-look]');
-      if (look) setLook(look.dataset.look);
+      if (look) chooseLook(look.dataset.look);
+    });
+
+    // The Shade row, right under the Look row: its buttons are drawn by paintShades.
+    shadeRow = document.createElement('div');
+    shadeRow.className = 'set-row tnt-shade-row';
+    shadeRow.innerHTML =
+      '<span class="set-text"><b>Shade</b><small></small></span>' +
+      '<div class="tnt-menu-seg" role="group" aria-label="Shade"></div>';
+    lookRow.after(shadeRow);
+    shadeRow.addEventListener('click', event => {
+      const shade = event.target.closest('[data-shade]');
+      if (shade) setLook(shade.dataset.shade);
     });
     paintAppearance();
   }
 
   function removeLookRow() {
     lookRow?.remove();
+    shadeRow?.remove();
     lookRow = null;
+    shadeRow = null;
   }
 
   // ---------- the setting ----------

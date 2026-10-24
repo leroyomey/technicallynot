@@ -1007,7 +1007,7 @@
   font-weight: 500;
 }
 :root:not(#pg) .uz-verdict.good b {
-  color: var(--pg-work);
+  color: var(--pg-work-text);
 }
 :root:not(#pg) .uz-verdict.fair b {
   color: var(--pg-wait);

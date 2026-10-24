@@ -88,10 +88,13 @@ try {
     );
   } else log.push('skip Codex gauge: Codex not installed on this PC');
 
-  // Top bar chip beside CPU / RAM / GPU: the plan usage of the agent last
-  // clicked into; it switches with the agent and goes away for one with no plan reading. The
-  // sessions are stand-ins (no real CLI runs here); the readings are the ones above.
+  // Top bar chip right after the System chip: the shortest plan window (5 hours) of the agent last
+  // clicked into, its longer window a row of the System chip's popover; it switches with the agent
+  // and goes away for one with no plan reading. The sessions are stand-ins (no real CLI runs
+  // here); the readings are the ones above.
   {
+    const weekRow = () =>
+      window.TnaiSystemChip?.list.querySelector('.pg-chip[data-m="plan-week"]') || null;
     const realSessions = window.TnaiAgents.sessions,
       fake = [
         { paneId: 'chip-claude', agent: 'Claude Code', accountId: '', name: 'Ada' },
@@ -102,23 +105,22 @@ try {
     const pick = async id => {
       window.dispatchEvent(new CustomEvent('tnai:target-changed', { detail: { paneId: id } }));
       await wait(100);
-      return document.querySelector('.top-right>.tnai-sys-chip .pg-chip[data-m="plan"]');
+      return document.querySelector('.top-right > .pg-chip[data-m="plan"]');
     };
-    if (
-      await until(
-        () => document.querySelector('.top-right>.tnai-sys-chip:not(.off) .pg-chip[data-m="cpu"]'),
-        6000
-      )
-    ) {
+    if (await until(() => window.TnaiSystemChip && !window.TnaiSystemChip.button.disabled, 6000)) {
       let c = await pick('chip-claude');
       check(
         !!c &&
-          c.previousElementSibling?.dataset.m &&
+          c.previousElementSibling?.id === 'pgSysChip' &&
           /Claude/.test(c.querySelector('.k').textContent) &&
-          /47%\s*5h\s*91%\s*wk/.test(c.textContent) &&
+          /47%\s*5h/.test(c.textContent) &&
+          !/91%/.test(c.textContent) &&
+          /Claude week\s*91%/.test(weekRow()?.textContent || '') &&
           /Ada/.test(c.title),
-        'top bar chip after the telemetry chips shows the clicked Claude Code agent: ' +
-          (c?.textContent || 'none')
+        "the chip after System shows the clicked Claude Code agent's 5 hours, its week in the popover: " +
+          (c?.textContent || 'none') +
+          ' / ' +
+          (weekRow()?.textContent || 'no week row')
       );
       await (window.TnaiTest?.shot?.('plan-limits-chip') ?? wait(500));
       c = await pick('chip-codex');
@@ -126,21 +128,21 @@ try {
         check(
           !!c &&
             /Codex/.test(c.querySelector('.k').textContent) &&
-            /84%/.test(c.textContent) &&
+            /84%/.test(c.textContent + (weekRow()?.textContent || '')) &&
             !/47%/.test(c.textContent),
           'clicking a Codex agent switches the chip to its account: ' + (c?.textContent || 'none')
         );
       else check(!c, 'a Codex agent with no reading: no chip (Codex not installed on this PC)');
-      check(!(await pick('chip-shell')), 'a PowerShell panel has no plan usage: the chip is gone');
+      check(
+        !(await pick('chip-shell')) && !weekRow(),
+        'a PowerShell panel has no plan usage: the chip and the week row are gone'
+      );
       check(!!(await pick('chip-claude')), 'back on the Claude Code agent: the chip is back');
       window.dispatchEvent(
         new CustomEvent('tnai:terminal-pane-closed', { detail: { paneId: 'chip-claude' } })
       );
       await wait(100);
-    } else
-      log.push(
-        'skip top bar chip: no CPU / RAM / GPU chips in this window (too narrow or no stats)'
-      );
+    } else log.push('skip top bar chip: no working System chip in this window (browser build)');
     window.TnaiAgents.sessions = realSessions;
   }
 

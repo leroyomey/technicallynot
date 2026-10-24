@@ -249,6 +249,37 @@ check(
   const BUSY =
     '[New task while you work on "the cart"] If it belongs to that work, fold it in. If it is unrelated, handle it the way you judge best without dropping your current work. New task: ';
   const OWN = '[This task builds on your own earlier result, from "Fix the cart total"] ';
+
+  // an attached picture is a tile under the words, not its path in them (182, 2026-10-24)
+  const [withPicture] = promptEntries(
+    '[TN.ai] Look here [Attached image: C:\\Users\\me\\attachments\\shot-1.png] please',
+    0
+  );
+  check(
+    withPicture.text === 'Look here please' &&
+      withPicture.pictures?.join() === 'C:\\Users\\me\\attachments\\shot-1.png',
+    'an attached picture is kept apart from the words: ' + JSON.stringify(withPicture)
+  );
+
+  // a helper's report handed back to its lead is a report, not the user's words (182)
+  const handBack = {
+    type: 'attachment',
+    timestamp: '2026-10-24T10:00:00Z',
+    attachment: {
+      type: 'queued_command',
+      commandMode: 'prompt',
+      prompt:
+        '<agent-message from="aa3d92409b">\n[Subagent hand-back] The text below is the final report of a subagent. The report follows:\n  **Done:** the guide.\n  1. One (https://example.com/a)\n     - nested\n</agent-message>',
+    },
+  };
+  const [report] = claude.entries([JSON.stringify(handBack)], null);
+  check(
+    report?.kind === 'report' &&
+      report.fromId === 'aa3d92409b' &&
+      report.text === '**Done:** the guide.\n1. One (https://example.com/a)\n   - nested',
+    'a hand-back is a report without its frame and indent: ' + JSON.stringify(report)
+  );
+
   const [plain] = promptEntries('[TN.ai] test\n\n' + LEFTOVER, 0);
   check(
     plain.kind === 'you' && plain.text === 'test' && plain.added.join() === LEFTOVER,

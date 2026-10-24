@@ -3,8 +3,9 @@
  * used + reset time) for every signed-in Claude Code and Codex account, shown as fuel gauges on
  * each account card in Settings › Accounts (15 reads get() and paints them with 98; it re-renders
  * on the `tnai:plan-limits` event) and on the Overview's AI accounts card (98). No composer chip
- * (removed); a top bar chip beside CPU / RAM / GPU follows the agent the user last
- * clicked into (paintChip below). Claude Code: window.tnaiNative.usage.limits()
+ * (removed); a top bar chip after the System chip (81) follows the agent the user last clicked
+ * into and shows its shortest window; the longer one is a row of the System chip's popover
+ * (paintChip below). Claude Code: window.tnaiNative.usage.limits()
  * (desktop/plan-limits.js asks Anthropic per account folder, cached 60 s in main). Codex: live from
  * each panel's token_count rate_limits (agent-turns `limits`, pushed on agent:turn) keyed by the
  * panel's account; before any reply this session, the newest session-file reading goes to the
@@ -128,12 +129,14 @@
     if (event.target.closest('#tnaiAccountsMount button[data-acct=refresh]')) load(true);
   });
 
-  // ---------- top bar chip, next to CPU / RAM / GPU: the plan usage of
-  // the account behind the agent the user last clicked into (a terminal panel, or the agent picked
-  // in the composer), so it switches with the agent. Hidden for an agent with no plan reading (a
-  // PowerShell panel, a CLI without plan limits) and with the telemetry chips on a narrow window
-  // (it sits in 81's .tnai-sys-chip).
+  // ---------- top bar chip, after 81's System chip: the plan usage of the account behind the agent
+  // the user last clicked into (a terminal panel, or the agent picked in the composer), so it
+  // switches with the agent. The chip shows the shortest window (Claude's 5 hours), because that
+  // one decides when work stops; a longer window (the week) is a row of the System chip's popover
+  // (user 2026-10-24, tab 4 of app-polish.html). Both go for an agent with no plan reading (a
+  // PowerShell panel, a CLI without plan limits).
   let chipPane = '';
+  const level = pct => (pct >= 95 ? 'full' : pct >= 80 ? 'high' : 'ok');
   const span = m =>
     m >= 10080
       ? 'wk'
@@ -149,16 +152,17 @@
       : '';
 
   function paintChip() {
-    const box = document.querySelector('.top-right>.tnai-sys-chip:not(.off)');
-    if (!box) return;
-    let chip = box.querySelector('.pg-chip[data-m="plan"]');
+    const system = window.TnaiSystemChip;
+    if (!system) return;
+    let chip = document.querySelector('.top-right > .pg-chip[data-m="plan"]');
     const s = window.TnaiAgents?.sessions?.().find(
       x => x.paneId === (chipPane || window.TnaiLiveTasks?.target?.())
     );
     const r = s ? get(s.agent, s.accountId) : null,
-      windows = (r?.windows || []).slice(0, 2);
+      windows = (r?.windows || []).slice(0, 2).sort((a, b) => a.minutes - b.minutes);
     if (!windows.length) {
       chip?.remove();
+      system.meter('plan-week', null);
       return;
     }
     if (!chip) {
@@ -166,12 +170,27 @@
       chip.className = 'pg-chip';
       chip.dataset.m = 'plan';
       chip.innerHTML = '<span class="k"></span><span class="v"></span>';
-      box.append(chip);
+      system.button.after(chip);
     }
-    chip.querySelector('.k').textContent = s.agent === 'Claude Code' ? 'Claude' : s.agent;
-    chip.querySelector('.v').innerHTML = windows
-      .map(w => Math.round(w.used) + '% <small>' + span(w.minutes) + '</small>')
-      .join(' ');
+    const name = s.agent === 'Claude Code' ? 'Claude' : s.agent;
+    const [first, longer] = windows;
+    chip.querySelector('.k').textContent = name;
+    chip.querySelector('.v').innerHTML =
+      Math.round(first.used) + '% <small>' + span(first.minutes) + '</small>';
+    chip.dataset.level = level(first.used);
+    if (longer)
+      system.meter('plan-week', {
+        label: name + ' ' + (longer.minutes >= 10080 ? 'week' : span(longer.minutes)),
+        pct: longer.used,
+        value: Math.round(longer.used) + '%',
+        title:
+          span(longer.minutes) +
+          ' window: ' +
+          Math.round(longer.used) +
+          '% used' +
+          when(longer.resetsAt),
+      });
+    else system.meter('plan-week', null);
     chip.title =
       s.agent +
       (s.accountId ? ' · account ' + s.accountId : ' · default account') +
@@ -202,6 +221,10 @@
     else paintChip();
   });
   window.addEventListener('tnai:plan-limits', paintChip);
+
+  // The System chip (81) is made after this file runs; a reading that came before it is painted
+  // once every script has run.
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', paintChip);
   window.addEventListener('tnai:terminal-pane-closed', event => {
     if (event.detail?.paneId === chipPane) {
       chipPane = '';

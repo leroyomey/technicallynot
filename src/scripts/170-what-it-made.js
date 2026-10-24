@@ -71,6 +71,12 @@
     try {
       const address = new URL(/^[a-z]+:\/\//i.test(text) ? text : 'http://' + text);
       if (!['localhost', '127.0.0.1', '[::1]'].includes(address.hostname)) return '';
+
+      // the app's own local addresses are not a site the agent made: its hook server
+      // (/hook/<key>, written in every agent's settings) and the pages `tnai show` serves
+      // (/s/<key>/, a design card's job, 159) (learned 2026-10-21: the hook address showed as
+      // "Site running")
+      if (/^\/(hook|s)\/[0-9a-f]{16,}/i.test(address.pathname)) return '';
       return address.origin + (address.pathname === '/' ? '/' : address.pathname);
     } catch {
       return '';
@@ -342,7 +348,9 @@
   function headWords(view) {
     const things = view.task.made.length + view.task.sites.length;
     const parts = ['made ' + plural(things, 'thing', 'things')];
-    if (view.changed) parts.push('changed ' + plural(view.changed, 'file', 'files'));
+
+    // with the file list, the count is the pill at the right of the line, so it is said once
+    if (view.changed && !view.files) parts.push('changed ' + plural(view.changed, 'file', 'files'));
     return ' · ' + parts.join(', ');
   }
 
@@ -356,31 +364,32 @@
     head.innerHTML = icon('chevron-right', 14);
     head.append(make('span', '', worked), make('em', '', headWords(view)));
     head.addEventListener('click', () => fold(view, view.node.dataset.folded !== 'true'));
-    first?.replaceWith(head);
     view.head = head;
 
-    const body = make('div', 'tnt-made-body');
-    const news = view.task.sites.length + view.task.made.length;
-    if (news) {
-      body.append(make('h5', 'tnt-made-group', 'New'));
-      const thumbs = make('div', 'tnt-made-thumbs');
-      const chips = make('div', 'tnt-made-chips');
-      for (const site of view.task.sites) thumbs.append(siteThumb(view, site));
-      for (const item of view.task.made) {
-        if (item.kind === 'picture' || item.kind === 'video' || item.kind === 'page')
-          thumbs.append(fileThumb(view, item));
-        else chips.append(fileChip(view, item));
-      }
-      if (thumbs.childElementCount) body.append(thumbs);
-      if (chips.childElementCount) body.append(chips);
-    }
+    // Round 3 (user 2026-10-21: "presentation for this is terrible"; mock
+    // docs/plans/design-concepts/what-it-made-r3.html): the head line with the changed files as one
+    // pill at its right, then every new thing as a card across the width that shows what it is.
+    const top = make('div', 'tnt-made-top');
+    top.append(head, make('span', 'tnt-made-grow'));
     if (view.files) {
-      body.append(make('h5', 'tnt-made-group', 'Changed'));
-      const chips = make('div', 'tnt-made-chips');
-      chips.append(changesChip(view));
-      body.append(chips);
+      top.append(changesChip(view));
       view.files.hidden = true;
     }
+    first ? first.replaceWith(top) : node.prepend(top);
+
+    const body = make('div', 'tnt-made-body');
+    const grid = make('div', 'tnt-made-grid');
+    for (const site of view.task.sites)
+      grid.append(withSplit(siteThumb(view, site), () => site.url, 'Site'));
+    for (const item of view.task.made) {
+      if (item.kind === 'page')
+        grid.append(
+          withSplit(fileThumb(view, item), () => pageUrl(view, item), baseName(item.file))
+        );
+      else if (item.kind === 'picture' || item.kind === 'video') grid.append(fileThumb(view, item));
+      else grid.append(textThumb(view, item));
+    }
+    if (grid.childElementCount) body.append(grid);
     view.preview = make('div', 'tnt-made-preview');
     view.preview.hidden = true;
     body.append(view.preview);
@@ -459,12 +468,71 @@
       item.kind === 'video' ? 'play' : item.kind === 'page' ? 'file-text' : 'eye',
       18
     );
-    const words = make('span', '', name);
-    words.append(
-      make('small', '', item.kind === 'video' ? 'video' : item.kind === 'page' ? 'page' : 'picture')
-    );
-    thumb.append(picture, words);
+    const kind = item.kind === 'video' ? 'video' : item.kind === 'page' ? 'page' : 'picture';
+    thumb.dataset.kind = kind;
+    thumb.append(picture, cardWords(name, item.how === 'made' ? 'made by a command' : '', kind));
     if (view.state.paneId) loadThumb(view, item, thumb, picture);
+    return thumb;
+  }
+
+  // the icon of each kind's tile; the tile and the badge take the kind's tint (51)
+  const KIND_ICON = {
+    document: 'file-text',
+    picture: 'image',
+    video: 'play',
+    page: 'app-window',
+    site: 'globe',
+    data: 'table',
+  };
+
+  // A card's words under its picture: the kind's tile, the name, one fact, and the kind as a small
+  // badge (user 2026-10-23 chose "Proposed" in docs/plans/design-concepts/made-chips.html).
+  function cardWords(name, fact, kind) {
+    const words = make('span', 'tnt-made-words');
+    const tile = make('span', 'tnt-made-tile');
+    tile.innerHTML = icon(KIND_ICON[kind] || 'file', 16);
+    words.append(tile);
+    const text = make('span', 'tnt-made-wtext');
+    const title = make('b', '', name);
+    title.title = name;
+    text.append(title);
+    if (fact) text.append(make('small', '', fact));
+    words.append(text, make('em', 'tnt-made-kind', kind));
+    return words;
+  }
+
+  // A document or data file as a card: its own first lines where a picture would be, read once
+  // the card is near the screen.
+  function textThumb(view, item) {
+    const name = baseName(item.file);
+    const kind = item.kind === 'data' ? 'data' : 'document';
+    const thumb = pressable('tnt-made-thumb', name + ' · ' + HOW[item.how], press =>
+      toggle(view, 'file ' + item.file, press, box => fillFile(view, item, box))
+    );
+    const picture = make('i', 'tnt-made-ttext');
+    picture.innerHTML = icon(item.kind === 'data' ? 'chart-pie' : 'file-text', 18);
+    thumb.dataset.kind = kind;
+    thumb.append(picture, cardWords(name, item.how === 'made' ? 'made by a command' : '', kind));
+    thumb.tntMadeLoad = () =>
+      native.made
+        .text(view.state.paneId, item.file)
+        .then(found => {
+          if (!found?.ok) {
+            if (item.how === 'made') thumb.remove();
+            else thumb.dataset.gone = 'true';
+            return;
+          }
+          const lines = String(found.text || '')
+            .split(/\r?\n/)
+            .filter(line => line.trim())
+            .slice(0, 12);
+          if (!lines.length) return;
+          const first = make('b', '', lines[0].replace(/^#+\s*/, '').slice(0, 80));
+          const rest = make('span', '', lines.slice(1).join('\n'));
+          picture.replaceChildren(first, rest);
+        })
+        .catch(() => {});
+    if (view.state.paneId) nearScreen.observe(thumb);
     return thumb;
   }
 
@@ -508,26 +576,6 @@
     nearScreen.observe(thumb);
   }
 
-  function fileChip(view, item) {
-    const name = baseName(item.file);
-    const chip = pressable('tnt-made-chip', name + ' · ' + HOW[item.how], press =>
-      toggle(view, 'file ' + item.file, press, box => fillFile(view, item, box))
-    );
-    chip.innerHTML = icon(item.kind === 'data' ? 'chart-pie' : 'file-text');
-    chip.append(
-      make('span', '', name),
-      make('small', '', item.kind === 'data' ? 'data' : 'document')
-    );
-    if (item.how === 'made')
-      native.made
-        .check(view.state.paneId, item.file, item.since)
-        .then(found => {
-          if (!found?.ok) chip.remove();
-        })
-        .catch(() => {});
-    return chip;
-  }
-
   function changesChip(view) {
     const count = view.changed;
     const chip = pressable('tnt-made-chip', 'The files this task changed', press =>
@@ -548,6 +596,11 @@
     );
     chip.innerHTML = icon('git-branch');
     chip.append(make('span', '', plural(count, 'file changed', 'files changed')));
+
+    // the added and removed line counts beside the words, in the diff colors (51)
+    view.files
+      .querySelectorAll(':scope > .tnt-files-head > :is(u, s)')
+      .forEach(part => chip.append(part.cloneNode(true)));
     return chip;
   }
 
@@ -600,7 +653,20 @@
       .catch(() => box.replaceChildren(make('p', 'tnt-made-none', 'This file could not be read.')));
   }
 
+  // ---------- 179: a page or site beside the thread ----------
+  // The address a page file is served at (desktop/thread-designs.js `page`), asked when pressed.
+  const pageUrl = (view, item) =>
+    native.designs
+      .page(view.state.paneId, item.file)
+      .then(found => (found?.ok && found.url) || '')
+      .catch(() => '');
+  const withSplit = (card, getUrl, title) =>
+    safe(() => window.TnaiPreviewSplit?.cell?.(card, getUrl, title), null) || card;
+  const splitButton = (getUrl, title) =>
+    safe(() => window.TnaiPreviewSplit?.button?.(getUrl, title), null);
+
   function fillPage(view, item, box, name, how) {
+    const split = splitButton(() => pageUrl(view, item), name);
     const open = action('Open large', press =>
       window.TnaiThreadDesigns?.openLarge?.({
         kind: 'page',
@@ -626,7 +692,7 @@
               found?.ok ? 'Open it large to see it.' : 'This file is no longer there.'
             )
           );
-        box.replaceChildren(previewTop(name, how, [open]), body);
+        box.replaceChildren(previewTop(name, how, split ? [split, open] : [open]), body);
       })
       .catch(() => box.replaceChildren(make('p', 'tnt-made-none', 'This file could not be read.')));
   }
@@ -778,11 +844,19 @@
     const thumb = pressable('tnt-made-thumb', 'The site at ' + site.url, press =>
       toggle(view, 'site ' + site.url, press, box => fillSite(view, site, box))
     );
+
+    // no still picture of a running site exists, so the card draws a browser's frame with the
+    // site's own address in it, never a made-up page
     const picture = make('i', 'tnt-made-tsite');
-    picture.innerHTML = icon('monitor-play', 18);
-    const words = make('span', '', 'Site');
+    const bar = make('span', 'tnt-made-tbar');
+    bar.append(make('span', '', shortAddress(site.url)));
+    const middle = make('span', 'tnt-made-tmid');
+    middle.innerHTML = icon('monitor-play', 22);
+    picture.append(bar, middle);
+    thumb.dataset.kind = 'site';
+    const words = cardWords('Site', '', 'site');
     const state = make('small', '');
-    words.append(state);
+    words.querySelector('.tnt-made-wtext').append(state);
     thumb.append(picture, words);
     site.paint = () => paintSiteState(view, site, state);
     site.thumb = thumb;
@@ -844,7 +918,12 @@
             Promise.resolve(lp().start(id)).then(() => again());
           })
         );
-      if (running) actions.push(action('Open in Live preview', () => toLivePreview(site.url)));
+      if (running) {
+        // 179: the site beside the thread
+        const split = splitButton(() => site.url, 'Site');
+        if (split) actions.push(split);
+        actions.push(action('Open in Live preview', () => toLivePreview(site.url)));
+      }
       const body = make('div', 'tnt-made-pbody tnt-made-site');
       body.append(
         make(

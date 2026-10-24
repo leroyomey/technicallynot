@@ -19,6 +19,12 @@
 //   coming run opens it in Settings › Agents › Scheduled prompts (155 `edit`).
 // - Drawn only while the page shows, from pushed events (no polling); the view switch fades
 //   (TnaiMotion, off under reduced motion). Look: src/styles/45-board.css.
+// - Round 2 (user 2026-10-23: "It's easy for the board to get clustered and fall off the screen
+//   ... more colored tabs that are collapsible and expandable in an organizable way", mock
+//   docs/plans/design-concepts/board-r2.html): each column is a colored tab that folds and can
+//   be dragged into another order; a lead and its helpers (or one tool's threads) sit in a
+//   group that folds; thread cards are two lines that open for what the agent is doing now, or
+//   all open with Roomy. The layout is kept per user (LAYOUT_KEY).
 // window.TnaiBoard = { open, visible, view(name), state() } (the desktop test `board`).
 (() => {
   'use strict';
@@ -29,6 +35,9 @@
 
   const MODE = 'board-mode';
   const VIEW_KEY = 'tnai.board-view.v1';
+
+  // Board round 2: the user's column order, folded columns, grouping, card size and closed groups.
+  const LAYOUT_KEY = 'tnai.board-layout.v1';
   const DAY_MS = 24 * 60 * 60 * 1000;
 
   // The CLIs a new thread can start with, in the app's order (140, `tnai new`); the schedules'
@@ -102,6 +111,14 @@
     '<button type="button" data-view="board" aria-pressed="true">Board</button>' +
     '<button type="button" data-view="week" aria-pressed="false">Week</button></div>' +
     '<span class="bd-head-note" aria-live="polite"></span>' +
+    '<span class="bd-head-label" id="bdGroupLabel">Group by</span>' +
+    '<div class="bd-views bd-group-by" role="group" aria-labelledby="bdGroupLabel">' +
+    '<button type="button" data-group-by="team">Team</button>' +
+    '<button type="button" data-group-by="tool">Tool</button>' +
+    '<button type="button" data-group-by="none">None</button></div>' +
+    '<div class="bd-views bd-density" role="group" aria-label="Card size">' +
+    '<button type="button" data-density="compact">Compact</button>' +
+    '<button type="button" data-density="roomy">Roomy</button></div>' +
     `<button type="button" class="bd-add">${icon('plus')}<span>Idea</span></button></div>` +
     // The empty screen: a project with nothing on its board yet (no thread, idea or schedule).
     '<section class="bd-empty set-empty" hidden><p>Nothing on the board yet: add an idea or schedule a prompt.</p>' +
@@ -116,18 +133,72 @@
   const headNote = page.querySelector('.bd-head-note');
   const emptyEl = page.querySelector('.bd-empty');
 
-  // One column element per column, made once; their cards are drawn into `[data-cards]`.
-  boardEl.innerHTML = columnsKit.COLUMNS.map(
-    column =>
-      `<div class="bd-col" data-col="${column.id}" role="group" aria-label="${esc(column.title)}">` +
-      `<div class="bd-col-head">${esc(column.title)} <em data-count></em></div>` +
-      // what a start from here costs, said where it happens (tnai-modern-ui 5d.7)
-      (column.id === 'next'
-        ? '<p class="bd-col-note">Starting one opens a new thread and uses your plan.</p>'
-        : '') +
-      '<div data-cards></div></div>'
-  ).join('');
+  // The saved layout (per user, not per project); a broken or missing value gives the defaults.
+  function readLayout() {
+    const saved = safe(() => JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}'), {}) || {};
+    return {
+      order: Array.isArray(saved.order) ? saved.order : [],
+      folded: new Set(Array.isArray(saved.folded) ? saved.folded : []),
+      groupBy: ['team', 'tool', 'none'].includes(saved.groupBy) ? saved.groupBy : 'team',
+      density: saved.density === 'roomy' ? 'roomy' : 'compact',
+      closed: new Set(Array.isArray(saved.closed) ? saved.closed.slice(-200) : []),
+    };
+  }
+  const board = readLayout();
+
+  function saveLayout() {
+    const value = {
+      order: [...boardEl.querySelectorAll(':scope > .bd-col')].map(column => column.dataset.col),
+      folded: [...board.folded],
+      groupBy: board.groupBy,
+      density: board.density,
+      closed: [...board.closed],
+    };
+    safe(() => localStorage.setItem(LAYOUT_KEY, JSON.stringify(value)), null);
+  }
+
+  // One column element per column, made once; their cards are drawn into `[data-cards]`. Its head
+  // is a colored tab: the count, a fold button, and a handle to drag the column elsewhere.
+  boardEl.innerHTML = columnsKit
+    .ordered(board.order)
+    .map(
+      column =>
+        `<div class="bd-col" data-col="${column.id}" role="group" aria-label="${esc(column.title)}">` +
+        `<div class="bd-col-head" draggable="true" data-tab="${column.id}" title="Drag to move the column">` +
+        `<span class="bd-col-name">${esc(column.title)}</span> <em data-count></em>` +
+        `<button type="button" class="bd-fold" data-fold="${column.id}"></button></div>` +
+        '<div class="bd-col-body">' +
+        // what a start from here costs, said where it happens (tnai-modern-ui 5d.7)
+        (column.id === 'next'
+          ? '<p class="bd-col-note">Starting one opens a new thread and uses your plan.</p>'
+          : '') +
+        '<div data-cards></div></div></div>'
+    )
+    .join('');
   const cardsOf = id => boardEl.querySelector(`[data-col="${id}"] [data-cards]`);
+
+  // The tabs, the head's two switches and the card size, as the saved layout says.
+  function paintLayout() {
+    for (const column of boardEl.querySelectorAll(':scope > .bd-col')) {
+      const id = column.dataset.col;
+      const folded = board.folded.has(id);
+      const title = column.getAttribute('aria-label');
+      column.classList.toggle('bd-folded', folded);
+      const fold = column.querySelector('.bd-fold');
+      fold.innerHTML = icon(folded ? 'chevrons-right' : 'chevrons-left');
+      fold.setAttribute('aria-expanded', String(!folded));
+      fold.setAttribute('aria-label', (folded ? 'Open ' : 'Fold ') + title);
+      fold.title = folded ? 'Open the column' : 'Fold the column';
+    }
+    page.querySelectorAll('[data-group-by]').forEach(button => {
+      button.setAttribute('aria-pressed', String(button.dataset.groupBy === board.groupBy));
+    });
+    page.querySelectorAll('[data-density]').forEach(button => {
+      button.setAttribute('aria-pressed', String(button.dataset.density === board.density));
+    });
+    page.dataset.density = board.density;
+  }
+  paintLayout();
 
   // ---------------------------------------------------------------- what the page knows
   let shown = false;
@@ -139,6 +210,9 @@
 
   // A drag under way: { kind: 'idea' | 'schedule', id }.
   let dragged = null;
+
+  // Thread cards opened to show what their agent is doing now (pane ids).
+  const openCards = new Set();
 
   // Ideas and schedules being started now (their cards say so until the answer).
   const startingIdeas = new Set();
@@ -262,8 +336,8 @@
           : column === 'review'
             ? 'ready'
             : 'idle';
-    const tool = thread.tool + (thread.time ? ' · ' + thread.time : '');
     let body = '';
+    let more = '';
     if (column === 'needs') {
       const decision = facts.decision;
       body = `<p>${esc(decision?.question || thread.now || 'Waiting for you')}</p>`;
@@ -289,19 +363,47 @@
         '<button type="button" data-act="pull-request">Open pull request</button>' +
         '<button type="button" data-act="review">Review</button></div>';
     } else {
-      body = `<p>${esc(thread.task || thread.label || '')}</p>`;
+      body = `<p class="bd-task">${esc(thread.task || thread.label || '')}</p>`;
+
+      // what it is doing now and what started it: shown when the card is opened, or Roomy
       if (column === 'work' && thread.now)
-        body += `<div class="bd-meta">Now: ${esc(thread.now)}${thread.inferred ? ' (inferred)' : ''}</div>`;
+        more += `<div class="bd-meta">Now: ${esc(thread.now)}${thread.inferred ? ' (inferred)' : ''}</div>`;
       const by = projectSchedules().find(item => item.lastRun?.paneId === thread.id);
       if (by && column === 'work')
-        body += `<span class="bd-when">${icon('clock', 12)}Started by its schedule, ${esc(clock(by.lastRun.at))}</span>`;
+        more += `<span class="bd-when">${icon('clock', 12)}Started by its schedule, ${esc(clock(by.lastRun.at))}</span>`;
     }
+    const open = openCards.has(thread.id);
+    const opener = more
+      ? `<button type="button" class="bd-more-btn" data-act="more" aria-expanded="${open}" ` +
+        `aria-label="${open ? 'Hide' : 'Show'} what ${esc(thread.name)} is doing">${icon('chevron-down', 14)}</button>`
+      : '';
     return (
-      `<article class="bd-card" tabindex="0" data-kind="thread" data-pane="${esc(thread.id)}"${facts.decision ? ` data-since="${facts.decision.at}"` : ''}>` +
-      cardTop(tone, thread.name, tool) +
+      `<article class="bd-card bd-thread" tabindex="0" data-kind="thread" data-pane="${esc(thread.id)}" data-open="${open}"${facts.decision ? ` data-since="${facts.decision.at}"` : ''}>` +
+      `<div class="bd-card-top"><i class="bd-dot" data-tone="${tone}"></i><b title="${esc(thread.tool || '')}">${esc(thread.name)}</b>` +
+      `<small class="bd-tool">${esc(thread.tool || '')}</small>` +
+      (thread.time ? `<small class="bd-time">${esc(thread.time)}</small>` : '') +
+      opener +
+      '</div>' +
       body +
+      (more ? `<div class="bd-more">${more}</div>` : '') +
       '</article>'
     );
+  }
+
+  // A column's thread cards in their groups (156 `groupsOf`): a group is a head that folds and
+  // its cards; a card on its own is drawn as it is.
+  function groupedCards(columnId, list) {
+    return columnsKit.groupsOf(list, board.groupBy).map(group => {
+      if (!group.key) return threadCard(group.cards[0]);
+      const id = columnId + ':' + board.groupBy + ':' + group.key;
+      const open = !board.closed.has(id);
+      return (
+        `<div class="bd-group" data-open="${open}">` +
+        `<button type="button" class="bd-group-head" data-group="${esc(id)}" aria-expanded="${open}">` +
+        `${icon('chevron-down', 13)}<span>${esc(group.label)}</span><em>${group.cards.length}</em></button>` +
+        `<div class="bd-group-cards">${group.cards.map(threadCard).join('')}</div></div>`
+      );
+    });
   }
 
   // ---------------------------------------------------------------- drawing
@@ -330,14 +432,21 @@
     const html = { next: [], work: [], needs: [], review: [], done: [] };
     ideas.forEach(idea => html.next.push(ideaCard(idea)));
     projectSchedules().forEach(item => html.next.push(scheduleCard(item)));
-    cards.forEach(card => {
-      if (card.column) html[card.column].push(threadCard(card));
-    });
+    const counts = { next: html.next.length, work: 0, needs: 0, review: 0, done: 0 };
+    for (const id of ['work', 'needs', 'review', 'done']) {
+      const list = cards.filter(card => card.column === id);
+      counts[id] = list.length;
+      html[id].push(...groupedCards(id, list));
+    }
 
     // Another computer's threads in the open project, after this computer's own (165): each
     // { column, html } in Working, Needs you or Done today.
     const remoteCards = safe(() => window.TnaiRemoteFeatures?.boardCards?.() || [], []);
-    remoteCards.forEach(card => html[card.column]?.push(card.html));
+    remoteCards.forEach(card => {
+      if (!html[card.column]) return;
+      html[card.column].push(card.html);
+      counts[card.column]++;
+    });
     for (const column of columnsKit.COLUMNS) {
       const box = cardsOf(column.id);
       const markup = html[column.id].join('');
@@ -350,7 +459,7 @@
         if (typing) ideaInput.focus({ preventScroll: true });
       }
       const count = boardEl.querySelector(`[data-col="${column.id}"] [data-count]`);
-      const total = String(html[column.id].length);
+      const total = String(counts[column.id]);
       if (count.textContent !== total) count.textContent = total;
     }
 
@@ -625,7 +734,10 @@
         ),
       false
     );
-    if (done) say('Sent: ' + option.label);
+
+    // 'composer': the agent is not running, the answer waits in the prompt box, not sent (49)
+    if (done === 'composer') say('In the prompt box, not sent yet: ' + option.label);
+    else if (done) say('Sent: ' + option.label);
     refresh();
   }
 
@@ -635,7 +747,12 @@
     if (act === 'start') startIdea(id);
     else if (act === 'delete') removeIdea(id);
     else if (act === 'run') runSchedule(id);
-    else if (act === 'decide') decide(card, button);
+    else if (act === 'more') {
+      const pane = card.dataset.pane;
+      if (openCards.has(pane)) openCards.delete(pane);
+      else openCards.add(pane);
+      refresh();
+    } else if (act === 'decide') decide(card, button);
     else if (act === 'pull-request' || act === 'review')
       window.TnaiThreadActions?.send?.(card.dataset.pane, act);
   }
@@ -650,6 +767,28 @@
   }
 
   page.addEventListener('click', event => {
+    // Board round 2: fold a column, fold a group, group by, card size (all remembered)
+    const fold = event.target.closest('[data-fold]');
+    const group = event.target.closest('[data-group]');
+    const groupBy = event.target.closest('[data-group-by]');
+    const density = event.target.closest('[data-density]');
+    if (fold || group || groupBy || density) {
+      if (fold) {
+        const id = fold.dataset.fold;
+        if (board.folded.has(id)) board.folded.delete(id);
+        else board.folded.add(id);
+      } else if (group) {
+        const id = group.dataset.group;
+        if (board.closed.has(id)) board.closed.delete(id);
+        else board.closed.add(id);
+      } else if (groupBy) board.groupBy = groupBy.dataset.groupBy;
+      else board.density = density.dataset.density;
+      saveLayout();
+      paintLayout();
+      refresh();
+      return;
+    }
+
     // "+ Idea" (head and empty screen) and the link to Settings › Agents › Scheduled prompts
     if (event.target.closest('.bd-add')) return newIdea();
     if (event.target.closest('[data-go="schedules"]'))
@@ -682,6 +821,37 @@
   });
 
   // ---------------------------------------------------------------- dragging
+  // Board round 2: a column's tab dragged onto another column puts it there.
+  let draggedTab = '';
+  page.addEventListener('dragstart', event => {
+    const tab = event.target.closest?.('.bd-col-head[data-tab]');
+    if (!tab) return;
+    draggedTab = tab.dataset.tab;
+    tab.parentElement.classList.add('bd-dragging');
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', draggedTab);
+  });
+  page.addEventListener('dragover', event => {
+    if (draggedTab && event.target.closest?.('.bd-col')) event.preventDefault();
+  });
+  page.addEventListener('drop', event => {
+    const onto = event.target.closest?.('.bd-col');
+    if (!draggedTab || !onto) return;
+    event.preventDefault();
+    const moving = boardEl.querySelector(`:scope > [data-col="${draggedTab}"]`);
+    if (moving && onto !== moving) {
+      const columns = [...boardEl.children];
+      const after = columns.indexOf(onto) > columns.indexOf(moving);
+      onto.insertAdjacentElement(after ? 'afterend' : 'beforebegin', moving);
+      saveLayout();
+    }
+  });
+  page.addEventListener('dragend', () => {
+    if (!draggedTab) return;
+    draggedTab = '';
+    boardEl.querySelector('.bd-col.bd-dragging')?.classList.remove('bd-dragging');
+  });
+
   page.addEventListener('dragstart', event => {
     const card = event.target.closest?.('.bd-card[draggable="true"]');
     if (!card) return;

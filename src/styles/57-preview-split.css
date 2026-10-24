@@ -1,0 +1,129 @@
+/* Technically Not · 57-preview-split.css — a page beside the thread (179-preview-split.js): the
+   split icon on a page or site card and in its preview's head, the page's own bar in the side
+   column, and the column sliding to its new width. From the approved mock
+   docs/plans/design-concepts/preview-split.html, with the thread design's tokens only. */
+
+/* the column slides instead of jumping (no hard cuts) */
+html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode.tnt-split-moving {
+  transition: grid-template-columns 0.38s var(--pg-ease);
+}
+
+/* a card with its icon: the cell holds the card and the icon over its top right corner */
+.tnt-split-cell {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+.tnt-split-cell > .tnt-made-thumb {
+  flex: 1;
+}
+.tnt-split-push {
+  display: inline-grid;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+  cursor: pointer;
+  place-items: center;
+}
+.tnt-split-push:hover {
+  border-color: var(--pg-accent);
+  color: var(--pg-text);
+}
+.tnt-split-push[aria-pressed='true'] {
+  border-color: var(--pg-accent);
+  color: var(--pg-accent);
+}
+.tnt-split-push:focus-visible,
+.tnt-split-back:focus-visible {
+  outline: 2px solid var(--pg-accent);
+  outline-offset: 2px;
+}
+
+/* on a card: shown while the card is under the pointer or has the keyboard, or while its page is
+   beside the thread */
+.tnt-split-oncard {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  background: var(--pg-panel-2);
+  opacity: 0;
+  transition: opacity 0.15s var(--pg-ease);
+}
+.tnt-split-cell:hover .tnt-split-oncard,
+.tnt-split-cell:focus-within .tnt-split-oncard,
+.tnt-split-oncard[aria-pressed='true'] {
+  opacity: 1;
+}
+
+/* the page in the side column: its name and the push-back icon over Live preview's own view */
+.tnt-split {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.tnt-split-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+}
+.tnt-split-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font: 600 13px/1.3 var(--pg-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tnt-split-back {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  color: var(--pg-accent);
+  cursor: pointer;
+  place-items: center;
+}
+.tnt-split-back:hover {
+  background: var(--pg-panel-2);
+}
+.tnt-split-body {
+  flex: 1;
+  min-height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode.tnt-split-moving,
+  .tnt-split-oncard {
+    transition: none;
+  }
+}
+
+/* under touch the icons are always there, 44 by 44 */
+@media (pointer: coarse) {
+  .tnt-split-push,
+  .tnt-split-back {
+    width: 44px;
+    height: 44px;
+  }
+  .tnt-split-oncard {
+    opacity: 1;
+  }
+}
+
+/* a chart beside the thread (178's card drawn large): it scrolls when taller than the column */
+.tnt-split-chart {
+  overflow: auto;
+}

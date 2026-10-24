@@ -550,7 +550,7 @@ div.skills-target {
   text-overflow: ellipsis;
   border-color: transparent;
   background: color-mix(in srgb, var(--pg-work) 16%, transparent);
-  color: var(--pg-work);
+  color: var(--pg-work-text);
 }
 .skill-badge.used {
   min-width: 0;
@@ -1030,7 +1030,7 @@ div.skills-target {
   font: 11.5px var(--pg-sans);
 }
 .sk-d-user.live small {
-  color: var(--pg-work);
+  color: var(--pg-work-text);
 }
 .sk-d-user .sk-x {
   margin-left: auto;

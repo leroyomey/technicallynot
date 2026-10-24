@@ -13,6 +13,17 @@
     height: 44px;
   }
 
+  /* The System chip (81) keeps its chip height in the bar; a clear layer over and under it takes
+     the finger across the bar's whole 44. */
+  html.tnt-on:not(#tnt):not(#pg) .top .top-right > .pg-sys:not(#lp) {
+    position: relative;
+  }
+  html.tnt-on:not(#tnt):not(#pg) .top .top-right > .pg-sys:not(#lp)::after {
+    content: '';
+    position: absolute;
+    inset: -9px 0;
+  }
+
   /* ------------------------------------------------------------ the three-dots menu */
   /* Every row and the search field are one height (--row). */
   .tnt-menu.tnt-menu-full {
@@ -64,6 +75,19 @@
   html.tnt-on:not(#tnt):not(#pg) .tnt-view :is(.tnt-icon-btn, .tnt-fold):not(#lp) {
     width: 44px;
     height: 44px;
+  }
+
+  /* Preview and Split keep their names: as wide as their words, 44 high (29); in a narrow island
+     they are their icons, 44 by 44 */
+  html.tnt-on:not(#tnt):not(#pg) .tnt-view .tnt-head-named.tnt-head-named:not(#lp) {
+    width: auto;
+    padding: 0 14px;
+  }
+  @container tnt-main (max-width: 680px) {
+    html.tnt-on:not(#tnt):not(#pg) .tnt-view .tnt-head-named.tnt-head-named:not(#lp) {
+      width: 44px;
+      padding: 0;
+    }
   }
   /* At 44 the top row's buttons need some 100px more than with a mouse, so the row takes the
      narrow island's layout of 29 (the buttons in a row of their own under the name) earlier:

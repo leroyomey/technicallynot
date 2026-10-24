@@ -1,0 +1,253 @@
+/* Technically Not · 56-thread-charts.css — charts in threads (178-thread-charts.js). From the
+   approved mock docs/plans/design-concepts/thread-charts.html. One series uses the user's accent; two
+   use violet and aqua, chosen with the dataviz method and checked with its validator (dark: CVD
+   ΔE 17.3, normal 24.6; light: CVD ΔE 27.1, normal 32.8, aqua under 3:1 on the light surface, so
+   values stay printed beside the bars and every chart has a Table view). */
+
+.tnt-chart {
+  --tnt-chart-1: var(--pg-hue-chart-1);
+  --tnt-chart-2: var(--pg-hue-chart-2);
+  margin: 10px 0 14px;
+  padding: 14px 16px 12px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 12px;
+  background: var(--pg-panel-2);
+}
+.tnt-chart-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.tnt-chart-head b {
+  flex: 1;
+  min-width: 0;
+  font: 600 14px/1.3 var(--pg-sans);
+}
+.tnt-chart-head small {
+  color: var(--pg-text-2);
+  font-size: 12px;
+}
+.tnt-chart-switch {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--pg-panel);
+}
+.tnt-chart-switch button {
+  height: 24px;
+  margin: 0;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pg-text-2);
+  font: 500 12px/1 var(--pg-sans);
+  cursor: pointer;
+}
+.tnt-chart-switch button[aria-pressed='true'] {
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+}
+.tnt-chart-switch button:focus-visible,
+.tnt-chart-row:focus-visible {
+  outline: 2px solid var(--pg-accent);
+  outline-offset: 2px;
+}
+
+/* bars: a label line with the value in text ink, then a thin track per series */
+.tnt-chart-row {
+  position: relative;
+  padding: 5px 0;
+  border-radius: 6px;
+}
+.tnt-chart-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+.tnt-chart-label span:last-child {
+  flex: none;
+  color: var(--pg-text-2);
+  font-variant-numeric: tabular-nums;
+}
+.tnt-chart-label b {
+  color: var(--pg-text);
+  font-weight: 500;
+}
+.tnt-chart-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--pg-line);
+}
+.tnt-chart-track + .tnt-chart-track {
+  margin-top: 2px;
+}
+.tnt-chart-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--pg-accent);
+}
+.tnt-chart-fill.s1 {
+  background: var(--tnt-chart-1);
+}
+.tnt-chart-fill.s2 {
+  background: var(--tnt-chart-2);
+}
+.tnt-chart-tip {
+  position: absolute;
+  top: -26px;
+  right: 0;
+  z-index: 2;
+  display: none;
+  padding: 3px 8px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 7px;
+  background: var(--pg-bg);
+  color: var(--pg-text);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.tnt-chart-row:hover .tnt-chart-tip,
+.tnt-chart-row:focus-visible .tnt-chart-tip {
+  display: block;
+}
+.tnt-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 0 0 8px;
+  color: var(--pg-text-2);
+  font-size: 12px;
+}
+.tnt-chart-key {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 3px;
+  vertical-align: -1px;
+}
+.tnt-chart-key.s1 {
+  background: var(--tnt-chart-1);
+}
+.tnt-chart-key.s2 {
+  background: var(--tnt-chart-2);
+}
+
+/* the table view */
+.tnt-chart-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.tnt-chart-table th,
+.tnt-chart-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--pg-line);
+  text-align: left;
+}
+.tnt-chart-table th {
+  color: var(--pg-text-2);
+  font-weight: 600;
+}
+.tnt-chart-table td:not(:first-child),
+.tnt-chart-table th:not(:first-child) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.tnt-chart-note {
+  margin-top: 8px;
+  color: var(--pg-text-2);
+  font-size: 11.5px;
+}
+
+@media (pointer: coarse) {
+  .tnt-chart-switch button {
+    height: 44px;
+  }
+}
+
+/* the split icon in the head (179 makes it): pushes the chart beside the thread */
+.tnt-chart-head .tnt-chart-push {
+  margin-left: 2px;
+}
+
+/* a series in order as a line (data-charts.html mock): faint grid, a 2 px line, points with a
+   ring of the card's surface, the last value at the line's end */
+.tnt-chart-line {
+  position: relative;
+}
+.tnt-chart-line svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.tnt-chart-line .tnt-cl-grid {
+  stroke: var(--pg-line);
+  stroke-width: 1;
+}
+.tnt-chart-line .tnt-cl-axis {
+  fill: var(--pg-text-2);
+  font: 11px var(--pg-sans);
+}
+.tnt-chart-line .tnt-cl-end {
+  fill: var(--pg-text);
+  font: 600 11.5px var(--pg-sans);
+}
+.tnt-chart-line .tnt-cl-path {
+  fill: none;
+  stroke: var(--pg-accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tnt-chart-line .tnt-cl-dot {
+  fill: var(--pg-accent);
+  stroke: var(--pg-panel-2);
+  stroke-width: 2;
+}
+.tnt-chart-line .tnt-cl-path.s1 {
+  stroke: var(--tnt-chart-1);
+}
+.tnt-chart-line .tnt-cl-path.s2 {
+  stroke: var(--tnt-chart-2);
+}
+.tnt-chart-line .tnt-cl-dot.s1 {
+  fill: var(--tnt-chart-1);
+}
+.tnt-chart-line .tnt-cl-dot.s2 {
+  fill: var(--tnt-chart-2);
+}
+.tnt-chart-line .tnt-cl-cross {
+  display: none;
+  stroke: var(--pg-line-2);
+  stroke-width: 1;
+}
+.tnt-chart-line .tnt-cl-cross.on {
+  display: inline;
+}
+.tnt-chart-line .tnt-cl-hit {
+  fill: transparent;
+  outline: none;
+}
+.tnt-chart-line > .tnt-chart-tip {
+  right: auto;
+  pointer-events: none;
+  transform: translate(-50%, -130%);
+}
+.tnt-chart-line > .tnt-chart-tip.on {
+  display: block;
+}
+
+/* the card drawn again beside the thread: no frame of its own, thicker bars */
+.tnt-chart-big {
+  margin: 4px 14px 14px;
+}
+.tnt-chart-big .tnt-chart-track {
+  height: 12px;
+}

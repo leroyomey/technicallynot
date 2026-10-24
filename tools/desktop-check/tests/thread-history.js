@@ -80,7 +80,17 @@ const said = [];
 
 const pop = () => document.querySelector('.tnt-menu.tnh-pop');
 const popOpen = () => !!pop() && !pop().hidden && onScreen(pop());
-const headButton = () => threads.slot('main')?.querySelector('.tnt-view .tnt-head-acts .tnh-open');
+
+// The open thread's "..." button: Past conversations is a row of its menu (137; an icon of the
+// top row until 2026-10-24), and the list opens under it.
+const headButton = () =>
+  threads.slot('main')?.querySelector('.tnt-view .tnt-head-acts .tnt-head-menu');
+const openFromMenu = async () => {
+  window.TnaiThreadMore.close();
+  headButton()?.click();
+  await wait(30);
+  document.querySelector('.tnt-menu-thread .tnt-menu-row[data-row="past"]')?.click();
+};
 const footButton = () => threads.slot('list')?.querySelector('.tnh-foot .tnh-foot-btn');
 const rowEls = () => [...(pop()?.querySelectorAll('.tnh-rows .tnh-row') || [])];
 const note = () => pop()?.querySelector('.tnh-note')?.textContent || '';
@@ -330,24 +340,17 @@ try {
   threads.show(home);
   const head = await until(() => (onScreen(headButton()) ? headButton() : null), 6000);
   {
-    const acts = head?.parentElement;
-    const at = head ? rect(head) : null;
-    const others = acts ? [...acts.querySelectorAll('.tnt-icon-btn')].filter(onScreen) : [];
-    const sizes = new Set(
-      others.map(button => round(rect(button).width) + 'x' + round(rect(button).height))
-    );
+    window.TnaiThreadMore.close();
+    head?.click();
+    const row = document.querySelector('.tnt-menu-thread .tnt-menu-row[data-row="past"]');
     check(
-      !!head &&
-        acts.classList.contains('tnt-head-acts') &&
-        head.classList.contains('tnt-icon-btn') &&
-        head.getAttribute('aria-label') === 'Past conversations' &&
-        !!head.querySelector('svg'),
-      'with a thread open, an icon button "Past conversations" stands in the top row of the thread'
+      !!row &&
+        onScreen(row) &&
+        /Past conversations/.test(row.textContent) &&
+        !!row.querySelector('svg'),
+      'with a thread open, its "..." menu has the row "Past conversations"'
     );
-    check(
-      !!at && sizes.size === 1 && round(at.width) === 30 && round(at.height) === 30,
-      'it is the same button as the others of that row: ' + [...sizes].join(', ')
-    );
+    window.TnaiThreadMore.close();
     check(
       onScreen(footButton()),
       'the button at the foot of the list is still there with a thread open'
@@ -356,11 +359,10 @@ try {
   const starts0 = (await main('got')).starts.length;
 
   // ---- the list ----
-  const restFill = getComputedStyle(head).backgroundColor;
-  head.click();
+  await openFromMenu();
   await until(() => rowEls().length === rows.length);
   check(
-    popOpen() && (await main('got')).lists === 2 && head.getAttribute('aria-expanded') === 'true',
+    popOpen() && (await main('got')).lists === 2,
     'a press on it asks once more and opens the list'
   );
   await frame();
@@ -382,10 +384,6 @@ try {
         round(rect(head).bottom)
     );
   }
-  check(
-    getComputedStyle(head).backgroundColor !== restFill,
-    'the button looks pressed while the list is open'
-  );
   check(
     !rowEls()[0].dataset.pane &&
       rowEls()[0].draggable !== true &&
@@ -437,9 +435,9 @@ try {
   press('Escape');
   check(
     !popOpen() && !past.shown() && document.activeElement === head,
-    'Escape closes the list and the keyboard is back on the button of the top row'
+    'Escape closes the list and the keyboard is back on the "..." button of the top row'
   );
-  head.click();
+  await openFromMenu();
   await until(() => popOpen() && rowEls().length === rows.length);
   document
     .querySelector('.tnt-view .tnt-head h1')
@@ -450,13 +448,9 @@ try {
     document.activeElement === head,
     'and the keyboard is back on the button when the press took it nowhere'
   );
-  head.click();
-  await until(() => popOpen() && rowEls().length === rows.length);
-  head.click();
-  check(!popOpen(), 'a second press on the button closes it');
 
   // ---- one conversation, read-only ----
-  head.click();
+  await openFromMenu();
   await until(() => popOpen() && rowEls().length === rows.length);
   rowEls()[0].click();
   await until(() => one() && /Both are fixed/.test(one().textContent));
@@ -565,7 +559,7 @@ try {
 
   // ---- a conversation that is in a thread now ----
   const headNow = await until(() => (onScreen(headButton()) ? headButton() : null), 6000);
-  headNow.click();
+  await openFromMenu();
   await until(() => popOpen() && rowEls().length === rows.length);
   check(
     /^In a thread now · /.test(rowEls()[0].querySelector('small').textContent),
@@ -656,7 +650,8 @@ try {
   }
   const small = await main('size', 768, 680);
   await frame();
-  (onScreen(headButton()) ? headButton() : footButton()).click();
+  if (onScreen(headButton())) await openFromMenu();
+  else footButton().click();
   await until(() => popOpen() && rowEls().length === rows.length);
   await frame();
   await wait(250);

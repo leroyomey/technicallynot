@@ -133,14 +133,21 @@ try {
         b.querySelector('b').textContent +
         ')'
     );
-    const pictures = [...a.querySelectorAll('.tnt-face img')];
+
+    // the agent's letter in the color of its letter under the prompt box (128 agentColor)
+    const letter = a.querySelector('.tnt-av');
     check(
-      !!(await until(
-        () => pictures.length === 2 && pictures.every(p => p.complete && p.naturalWidth > 0),
-        5000
-      )),
-      'the device character has loaded its pictures (' +
-        (a.querySelector('.tnt-face')?.dataset.face || 'none') +
+      !!letter &&
+        letter.textContent === a.querySelector('b').textContent.trim()[0].toUpperCase() &&
+        letter.style.getPropertyValue('--c') ===
+          window.TnaiAgentMarks.agentColor(
+            window.TnaiThreadList.thread(first)?.session?.name ||
+              window.TnaiThreadList.thread(first)?.name
+          ),
+      "the row shows the agent's letter in its own color (" +
+        (letter?.textContent || 'none') +
+        ', ' +
+        (letter?.style.getPropertyValue('--c') || 'no color') +
         ')'
     );
     check(
@@ -182,13 +189,13 @@ try {
       shown(heading) && near(box(heading).height, 28) && /open/.test(heading.textContent),
       'a group heading of 28 names the group and counts it: "' + heading.textContent + '"'
     );
-    const faces = [box(a.querySelector('.tnt-face')), box(b.querySelector('.tnt-face'))],
+    const faces = [box(a.querySelector('.tnt-av')), box(b.querySelector('.tnt-av'))],
       names = [box(a.querySelector('b')), box(b.querySelector('b'))];
     check(
       one(faces.map(f => f.left)).length === 1 &&
         one(names.map(t => t.left)).length === 1 &&
         one(faces.map(f => f.width)).length === 1,
-      'characters stand in one column (' +
+      'letters stand in one column (' +
         n(faces[0].left - island.left) +
         ') and names in one (' +
         n(names[0].left - island.left) +
@@ -261,10 +268,10 @@ try {
     await agents.stop(second);
     check(
       !!(await until(
-        () => rowOf(second)?.querySelector('.tnt-face')?.dataset.face?.endsWith('asleep'),
+        () => rowOf(second)?.querySelector('.tnt-av')?.hasAttribute('data-asleep'),
         8000
       )),
-      'the character of a stopped session falls asleep (tone ' +
+      'the letter of a stopped session dims (tone ' +
         (rowOf(second)?.dataset.tone || 'row gone') +
         ')'
     );

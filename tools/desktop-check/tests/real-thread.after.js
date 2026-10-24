@@ -114,8 +114,8 @@ try {
     );
   }
   check(
-    rowOf()?.querySelector('.tnt-face')?.dataset.face?.endsWith('asleep'),
-    'its character is asleep (tone ' + (rowOf()?.dataset.tone || 'none') + ')'
+    rowOf()?.querySelector('.tnt-av')?.hasAttribute('data-asleep'),
+    'its letter is dimmed (tone ' + (rowOf()?.dataset.tone || 'none') + ')'
   );
   {
     const state = island.querySelector('.tnt-head-state');

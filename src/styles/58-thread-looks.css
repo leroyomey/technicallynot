@@ -1,0 +1,136 @@
+/* Technically Not · the four extra looks of Settings › General › Color (user 2026-10-23, chosen
+   from the mock docs/plans/design-concepts/appearance-looks.html): Dim and High contrast dark are
+   shades of Dark, Paper and High contrast light are shades of Light.
+
+   How a look is put on: 32-theme-and-shortcuts.js keeps data-theme as the base (dark, or no
+   attribute for Light), so every rule written for Dark or Light still applies, and adds
+   data-look="dim|paper|hc-dark|hc-light" for the shade. This file only gives the --pg-* and
+   --tnt-* tokens other values; it sets no layout.
+
+   Selector weight: one :not(#lk) more than the Dark and Light blocks of 31-thread-pages.css, so a
+   shade wins over its base. Contrast of every text level on a panel is written in
+   docs/notes/appearance-themes-proposal.md (all at least 4.5 to 1). */
+
+/* ---------------------------------------------------------------- the Shade row */
+/* Under the Look row in Settings › General › Color (124): the same switch, with three buttons
+   ("Standard", "Dim" or "Paper", "High contrast"), so it is wider than the Look row's two. */
+.tnt-shade-row .tnt-menu-seg {
+  flex: none;
+  width: 312px;
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------- Dim: a softer dark */
+/* A lifted ground and lighter panels, for long sessions with less glare. */
+html.tnt-on[data-look='dim']:not(#tnt):not(#pg):not(#lk) {
+  --pg-bg-d: #1a1b21;
+  --pg-solid-d: #2a2b32;
+  --pg-panel: rgba(255, 255, 255, 0.05);
+  --pg-panel-2: rgba(255, 255, 255, 0.09);
+  --pg-panel-hover: rgba(255, 255, 255, 0.09);
+  --pg-line: rgba(230, 230, 240, 0.1);
+  --pg-line-2: rgba(230, 230, 240, 0.18);
+  --pg-text: #e4e4ea;
+  --pg-text-2: #bdbdc7;
+  --pg-text-3: #a2a2ad;
+  --pg-text-4: #8c8c98;
+  --pg-work-text: #a3e6c1;
+  --pg-shadow: 0 18px 44px rgba(0, 0, 0, 0.35);
+  --pg-scrim: rgba(10, 10, 14, 0.55);
+  --pg-aura: 0.35;
+  --tnt-island: #222329;
+  --tnt-over: rgba(44, 45, 53, 0.9);
+  --tnt-aura-1: 110, 105, 130;
+  --tnt-aura-2: 80, 85, 105;
+}
+
+/* ---------------------------------------------------------------- High contrast dark */
+/* Black ground, white text, firm lines, brighter status colors, no ground glow and a thicker
+   focus ring. */
+html.tnt-on[data-look='hc-dark']:not(#tnt):not(#pg):not(#lk) {
+  --pg-bg-d: #000000;
+  --pg-solid-d: #111111;
+  --pg-panel: rgba(255, 255, 255, 0.07);
+  --pg-panel-2: rgba(255, 255, 255, 0.13);
+  --pg-panel-hover: rgba(255, 255, 255, 0.16);
+  --pg-line: rgba(255, 255, 255, 0.32);
+  --pg-line-2: rgba(255, 255, 255, 0.55);
+  --pg-text: #ffffff;
+  --pg-text-2: #ececf0;
+  --pg-text-3: #d2d2da;
+  --pg-text-4: #b8b8c2;
+  --pg-work: #6ef0b0;
+  --pg-work-text: #a5f6cb;
+  --pg-wait: #ffcb70;
+  --pg-ready: #94b8ff;
+  --pg-idle: #b0abc0;
+  --pg-err: #ff929f;
+  --pg-scrim: rgba(0, 0, 0, 0.75);
+  --pg-grain: 0;
+  --pg-aura: 0;
+  --pg-ring: 3px;
+  --tnt-island: #0a0a0a;
+  --tnt-over: rgba(16, 16, 16, 0.97);
+}
+
+/* ---------------------------------------------------------------- Paper: a warm cream light */
+/* Light's off-white turned warm, with brown-ink text and lines tinted to match. Status colors are
+   a step darker than Light's so each stays above 5 to 1 on the cream. */
+html.tnt-on[data-look='paper']:not(#tnt):not(#pg):not(#lk) {
+  --pg-bg-l: #ece3d3;
+  --pg-tint-l: 80, 60, 30;
+  --pg-panel: rgba(255, 252, 245, 0.66);
+  --pg-panel-2: rgba(255, 252, 245, 0.86);
+  --pg-panel-hover: rgba(80, 60, 30, 0.07);
+  --pg-panel-solid: #f7f1e6;
+  --pg-line: rgba(80, 60, 30, 0.18);
+  --pg-line-2: rgba(80, 60, 30, 0.28);
+  --pg-text: #2b2218;
+  --pg-text-2: #4e4232;
+  --pg-text-3: #665846;
+  --pg-text-4: #776a56;
+  --pg-work: #0f7448;
+  --pg-work-text: #24603d;
+  --pg-wait: #9a5704;
+  --pg-ready: #2a5fbf;
+  --pg-idle: #7a6f60;
+  --pg-err: #bd3049;
+  --pg-shadow: 0 20px 50px rgba(70, 50, 20, 0.16);
+  --pg-scrim: rgba(70, 55, 35, 0.34);
+  --pg-aura: 0.3;
+  --tnt-island: #f5efe4;
+  --tnt-over: rgba(250, 246, 238, 0.92);
+  --tnt-aura-1: 170, 130, 80;
+  --tnt-aura-2: 150, 110, 90;
+}
+
+/* ---------------------------------------------------------------- High contrast light */
+/* White ground, black text, firm lines, darker status colors, no ground glow or grain and a
+   thicker focus ring. On white a white panel is lost, so panels are a faint shade instead. */
+html.tnt-on[data-look='hc-light']:not(#tnt):not(#pg):not(#lk) {
+  --pg-bg-l: #ffffff;
+  --pg-tint-l: 0, 0, 0;
+  --pg-panel: rgba(20, 20, 30, 0.04);
+  --pg-panel-2: rgba(20, 20, 30, 0.075);
+  --pg-panel-hover: rgba(20, 20, 30, 0.1);
+  --pg-panel-solid: #ffffff;
+  --pg-line: rgba(0, 0, 0, 0.42);
+  --pg-line-2: rgba(0, 0, 0, 0.65);
+  --pg-text: #000000;
+  --pg-text-2: #1c1c22;
+  --pg-text-3: #33333b;
+  --pg-text-4: #484850;
+  --pg-work: #0a6a46;
+  --pg-work-text: #105236;
+  --pg-wait: #8a4f00;
+  --pg-ready: #1d4fb0;
+  --pg-idle: #5e5a68;
+  --pg-err: #b0243c;
+  --pg-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+  --pg-scrim: rgba(0, 0, 0, 0.4);
+  --pg-grain: 0;
+  --pg-aura: 0;
+  --pg-ring: 3px;
+  --tnt-island: #f4f4f5;
+  --tnt-over: rgba(255, 255, 255, 0.98);
+}

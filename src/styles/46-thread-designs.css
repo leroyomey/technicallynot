@@ -86,11 +86,13 @@
   outline-offset: -2px;
 }
 
-/* the page small and still (a picture of it), or a picture as itself */
+/* the page still (a picture of it) at the conversation's whole width and at its own shape (the
+   picture is taken at 1280 by 800), or a picture as itself at full width (user 2026-10-21: "By
+   default in threads it should be showing way more of previews") */
 .tnt-design-frame {
   display: grid;
   width: calc(100% - 24px);
-  height: 210px;
+  aspect-ratio: 16 / 10;
   margin: 0 12px;
   padding: 0;
   overflow: hidden;
@@ -107,9 +109,41 @@
   object-fit: cover;
   object-position: top center;
 }
+.tnt-design-frame.tnt-design-picture {
+  aspect-ratio: auto;
+  min-height: 160px;
+  max-height: min(560px, 70vh);
+}
 .tnt-design-frame.tnt-design-picture img {
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: min(560px, 70vh);
   object-fit: contain;
   object-position: center;
+}
+
+/* a page in use right there in the card: one at a time, the same walled frame as Open large */
+.tnt-design-live {
+  width: calc(100% - 24px);
+  aspect-ratio: 16 / 10;
+  margin: 0 12px;
+  overflow: hidden;
+  border-radius: 8px;
+  outline: 2px solid var(--pg-accent);
+  outline-offset: -2px;
+  background: var(--pg-bg);
+}
+.tnt-design-live iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--pg-bg);
+}
+.tnt-design-live[hidden],
+.tnt-design-frame[hidden] {
+  display: none;
 }
 .tnt-design-none {
   padding: 0 12px;
@@ -120,7 +154,7 @@
 /* several pictures: a row of them with their names */
 .tnt-design-shots {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 10px;
   padding: 10px 12px 0;
 }
@@ -150,7 +184,7 @@
 }
 .tnt-design-thumb {
   display: grid;
-  height: 74px;
+  aspect-ratio: 4 / 3;
   overflow: hidden;
   border-radius: 8px;
   background: var(--pg-panel-2);
@@ -160,7 +194,7 @@
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 /* Open large: one solid layer over the window (the panel fill alone is see-through) */

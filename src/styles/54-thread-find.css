@@ -1,0 +1,83 @@
+/* Technically Not · 54-thread-find.css — the find bar of a thread's conversation and its matches
+   (173-thread-find.js). From the approved mock docs/plans/design-concepts/thread-small-features.html,
+   with the thread design's tokens only. */
+
+.tnt-view {
+  position: relative;
+}
+
+/* the bar: at the conversation's top right, under the head row (173 sets its top) */
+.tnt-find {
+  position: absolute;
+  right: 20px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 6px 6px 8px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel-2);
+  box-shadow: var(--pg-shadow);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+.tnt-find[hidden] {
+  display: none;
+}
+.tnt-find input {
+  width: 200px;
+  height: 28px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 7px;
+  background: var(--pg-bg);
+  color: var(--pg-text);
+  font: 13px/1 var(--pg-sans);
+  outline: none;
+}
+.tnt-find input:focus-visible {
+  border-color: var(--pg-accent);
+}
+.tnt-find-count {
+  min-width: 58px;
+  color: var(--pg-text-2);
+  font: 12px/1 var(--pg-sans);
+  text-align: center;
+  white-space: nowrap;
+}
+.tnt-find-up svg {
+  transform: rotate(180deg);
+}
+.tnt-find[data-none='true'] .tnt-find-count {
+  color: var(--pg-text);
+}
+
+/* the matches: all softly, the current one in the accent */
+::highlight(tnt-find) {
+  background-color: color-mix(in srgb, var(--pg-accent) 30%, transparent);
+}
+::highlight(tnt-find-now) {
+  background-color: var(--pg-accent);
+  color: #fff;
+}
+
+/* the smallest window: the bar takes the conversation's width */
+@container tnt-main (max-width: 520px) {
+  .tnt-find {
+    left: 12px;
+    right: 12px;
+  }
+  .tnt-find input {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+}
+
+@media (pointer: coarse) {
+  .tnt-find input {
+    height: 44px;
+  }
+}

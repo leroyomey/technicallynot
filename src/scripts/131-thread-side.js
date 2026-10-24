@@ -125,15 +125,19 @@
   const previewPart = column.querySelector('#tntSidePreview');
   const previewTab = tabs.querySelector('[data-tab="preview"]');
 
-  // The button in the thread's top row: the look and the spoken state of 127's two.
+  // The button in the thread's top row: the look and the spoken state of 127's two, with its
+  // name "Split" beside the icon (user 2026-10-24, tab 5 of app-polish.html: the two buttons used
+  // most carry their names; 29 `.tnt-head-named`).
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'tnt-fold tnt-fold-side';
-  button.innerHTML = icon('panel-right', 16);
+  button.className = 'tnt-fold tnt-fold-side tnt-head-named';
+  button.innerHTML = icon('panel-right', 16) + '<span>Split</span>';
 
   function paintButton() {
     const open = shown();
-    const text = open ? 'Hide the column beside the thread' : 'Show the project’s files';
+    const text = open
+      ? 'Split: hide the column beside the thread'
+      : 'Split: show the column beside the thread (the project’s files, Details, Terminal)';
     if (button.getAttribute('aria-label') !== text) button.setAttribute('aria-label', text);
     if (button.title !== text) button.title = text;
     if (button.getAttribute('aria-expanded') !== String(open))

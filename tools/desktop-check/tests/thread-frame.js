@@ -422,16 +422,23 @@ try {
       !window.TnaiOverviewPurple && !document.getElementById('pgOverview'),
       'nothing of the old Overview is in the page'
     );
+
+    // Tokens/min is the last row of the System chip's popover (81), so the popover is opened to
+    // see it drawn.
+    window.TnaiSystemChip?.open();
+    await wait(200);
     check(
       !!chip &&
+        chip.parentElement === window.TnaiSystemChip?.list &&
         chip.dataset.on === '1' &&
         chip.getClientRects().length > 0 &&
         chip.querySelector('.v')?.textContent === '0' &&
         window.TnaiTokenChip?.tokensPerMinute() === 0,
-      'the top bar Tokens/min chip is painted by its own file and reads 0 with no agent ("' +
+      'the Tokens/min row of the System popover is painted by its own file and reads 0 with no agent ("' +
         chip?.textContent.trim() +
         '")'
     );
+    window.TnaiSystemChip?.close();
     check(
       /^#[0-9a-f]{6}$/.test(window.TnaiAgentMarks?.agentColor('Ash') || '') &&
         window.TnaiAgentMarks.agentColor('Ash') === window.TnaiAgentMarks.agentColor(' ash ') &&
@@ -482,7 +489,7 @@ try {
           fact.inner.join(' / ')
       );
     check(
-      facts.length >= 3 && facts.every(fact => near(fact.height, facts[0].height, 0.5)),
+      facts.length >= 2 && facts.every(fact => near(fact.height, facts[0].height, 0.5)),
       'the top bar’s chips are one height (' + facts.map(fact => n(fact.height)).join(', ') + ')'
     );
     check(

@@ -15,6 +15,15 @@ const path = require('path');
 const opencode = require('./opencode-store');
 const cursor = require('./cursor-store');
 const stalls = require('./stall-log');
+const { splitPrompt } = require('./thread-log-text');
+
+// A queued prompt as the user sees it: only their own words, without what the app wrapped around
+// it for the agent ("[TN.ai]", "[New task while you work on …]", skill notes). The raw text stays
+// in the queue for matching; this is for display only.
+function shownText(text) {
+  const words = splitPrompt(text).words;
+  return words || String(text || '');
+}
 
 const CHUNK = 4 * 1024 * 1024; // bytes read per step when catching up on a file
 const turns = new Map(); // paneId -> turn (internal)
@@ -63,7 +72,7 @@ function publicTurn(t) {
     // the last finished compact in this conversation (0: none seen)
     compactedAt: t.compactedAt || 0,
     log: t.reader?.file || t.log || '',
-    queued: (queues.get(t.paneId) || []).map(q => ({ text: q.text, at: q.at })),
+    queued: (queues.get(t.paneId) || []).map(q => ({ text: shownText(q.text), at: q.at })),
     steps: t.endedAt ? null : stepsOf(t.paneId),
   };
 }

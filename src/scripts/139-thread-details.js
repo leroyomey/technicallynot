@@ -450,6 +450,22 @@
         const term = make('dt', '', label);
         const cell = make('dd');
         const text = make('span', 'ttd-clamp', value);
+
+        // Lines: the added count in green and the removed in red, as in a pull request
+        if (label === 'Lines') {
+          text.replaceChildren(
+            ...String(value)
+              .split(/([+−-][\d,]+)/)
+              .filter(Boolean)
+              .map(part =>
+                /^\+[\d,]+$/.test(part)
+                  ? make('b', 'ttd-plus', part)
+                  : /^[−-][\d,]+$/.test(part)
+                    ? make('b', 'ttd-minus', part)
+                    : document.createTextNode(part)
+              )
+          );
+        }
         const more = make('button', 'ttd-more');
         const key = (scope || '') + '|' + label;
         const open = expanded.has(key);
@@ -1112,6 +1128,19 @@
     ['skills', 'Skills'],
     ['setup', 'Setup'],
   ];
+
+  // The mark beside each section's name (names in the app's icon set, src/vendor/lucide/icons.js).
+  const SECTION_ICONS = {
+    queue: 'clock',
+    now: 'zap',
+    changes: 'git-branch',
+    team: 'users',
+    timeline: 'clock',
+    with: 'users',
+    files: 'pencil',
+    skills: 'sparkles',
+    setup: 'settings',
+  };
   const views = new Map();
   let drawCount = 0;
 
@@ -1374,7 +1403,11 @@
       head.dataset.name = name;
       head.setAttribute('aria-expanded', String(!folded.has(name)));
       const count = make('em');
-      head.append(make('span', '', title), count);
+
+      // each section's own mark in its color (user 2026-10-23, mock helper-split.html part 2)
+      const mark = make('i', 'ttd-mark');
+      mark.innerHTML = window.TnaiIcon?.(SECTION_ICONS[name] || 'file', { size: 13 }) || '';
+      head.append(mark, make('span', '', title), count);
       const body = make('div', 'ttd-body');
       body.hidden = folded.has(name);
       section.append(head, body);

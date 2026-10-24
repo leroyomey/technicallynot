@@ -4,17 +4,17 @@
  * box that always sends to that thread (user, 2026-10-21: "Yes, build it as shown",
  * docs/plans/design-concepts/thread-popout.html).
  *
- * Ways out: "Pop out into its own window" in the thread's "..." menu (137), the pop-out icon in
- * its top row, or the thread dragged from the list out of the app's window. Ways back: "Back into
- * the app" in the window or the menu, or closing the window. Several threads can be out at once,
- * each on any monitor; each window remembers where it was.
+ * Ways out: "Pop out into its own window" in the thread's "..." menu (137), or the thread dragged
+ * from the list out of the app's window. Ways back: "Back into the app" in the window or the menu,
+ * or closing the window. Several threads can be out at once, each on any monitor; each window
+ * remembers where it was.
  *
  * Built from the app's own parts: the window is the pop-out of 93 (`TnaiPopout`: a same-origin
  * window, the app's style sheets copied in, its window buttons, its place kept); the conversation
  * is 122's (`TnaiThreadReadable.mount`), the questions 121's (`TnaiThreadAsks.mount`), and the
  * prompt box sends through the composer's own path (11 `sendFrom`), so a prompt from a window is
- * routed, held and marked exactly like one from the main box. A conversation lives in one place
- * at a time: while a thread is out, the app and its All threads card say where it is (122 asks
+ * routed, held and marked exactly like one from the main box. A conversation lives in one place at
+ * a time: while a thread is out, the app and its All threads card say where it is (122 asks
  * `elsewhere` and draws `placeholder`), and show it again when it comes back (122 `retry`).
  *
  * `window.TnaiThreadPopout` (`can`, `open`, `back`, `isOut`, `focus`, `elsewhere`, `placeholder`).
@@ -258,33 +258,9 @@
     if (out.state.textContent !== line) out.state.textContent = line;
   }
 
-  // ---------- in the app: the list, the top row, the place it left ----------
-  const topButton = make('button', 'tnt-icon-btn tnt-head-popout');
-  topButton.type = 'button';
-  topButton.title = 'Pop out into its own window';
-  topButton.setAttribute('aria-label', topButton.title);
-  topButton.innerHTML = icon('external-link', 16);
-  topButton.hidden = true;
-  topButton.addEventListener('click', () => {
-    const paneId = window.TnaiThreadView?.shown?.() || '';
-    if (paneId) open(paneId);
-  });
-
-  // In the top row, before the thread actions button (154), which sits before the on/off button
-  // (137): each has its own place, so neither pushes the other on a repaint.
-  function placeTop() {
-    const acts = document.querySelector('.tnt-view .tnt-head-acts');
-    if (!acts) return;
-    const before =
-      acts.querySelector('.tnt-head-work') ||
-      acts.querySelector('.tnt-head-power') ||
-      acts.querySelector('.tnt-head-menu');
-    if (before && topButton.nextElementSibling !== before) before.before(topButton);
-    else if (!before && topButton.parentNode !== acts) acts.append(topButton);
-    const paneId = window.TnaiThreadView?.shown?.() || '';
-    const hide = !paneId || outs.has(paneId) || !can(paneId);
-    if (topButton.hidden !== hide) topButton.hidden = hide;
-  }
+  // ---------- in the app: the list and the place it left ----------
+  // (The pop-out icon of the top row went into the thread's "..." menu, which already had the
+  // row: user 2026-10-24, tab 5 of app-polish.html.)
 
   // The thread list: a popped-out thread is marked, a press brings its window to the front, and a
   // thread can be dragged out of the app to pop it out.
@@ -306,7 +282,6 @@
 
   function paintAll() {
     for (const paneId of [...outs.keys()]) paintOne(paneId);
-    placeTop();
     paintList();
   }
 
@@ -375,7 +350,6 @@
   }
 
   window.addEventListener('tnai:threads-painted', paintAll);
-  window.addEventListener('tnai:thread-view', placeTop);
 
   window.TnaiThreadPopout = {
     can,

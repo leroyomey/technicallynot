@@ -248,7 +248,7 @@ try {
     status = 'working';
     await turn(t);
     await step('Bash', 'npm run build');
-    const shown = await until(() => F.doing(paneId)?.text === 'Running npm run build', 3000);
+    const shown = await until(() => F.doing(paneId)?.text === 'Building', 3000);
     status = 'waiting';
     await turn(t, { endedAt: Date.now(), endedBy: by });
     await wait(300);

@@ -1,8 +1,10 @@
 /* Technically Not · 45-board.css — the Board page (src/scripts/157-board-page.js), built from the
    approved mock docs/plans/design-concepts/app-board.body.html (user, 2026-10-16: "Build it like
    this"). One island beside the thread list; five columns as soft surfaces with no lines between
-   them; a Week view of seven days. Tokens only: no color, font or radius of its own. One change
-   from the mock: a card's tool name is on the card's second line, not beside its title. */
+   them; a Week view of seven days. Tokens only: no color, font or radius of its own. Round 2
+   (2026-10-23, mock docs/plans/design-concepts/board-r2.html): colored tabs that fold, columns
+   that share the width and scroll on their own, groups, and two-line thread cards (an idea's or a
+   schedule's card keeps its tool name on its second line). */
 
 /* ---------------------------------------------------------------- the page in the layout */
 .layout > .bd-page {
@@ -110,41 +112,198 @@ body:has(.layout.board-mode) .composer {
 }
 
 /* ---------------------------------------------------------------- Board: the columns */
+/* Board round 2 (user 2026-10-23, mock docs/plans/design-concepts/board-r2.html): the columns
+   share the island's width and each scrolls on its own under its colored tab, so a busy column
+   never runs off the page; a folded column is a slim strip. Below a column's least width the row
+   scrolls sideways instead of squeezing the cards. */
 .bd-board {
   flex: 1;
   min-height: 0;
-  overflow: auto;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
-  grid-auto-rows: max-content;
-  align-content: start;
-  align-items: start;
+  overflow-x: auto;
+  overflow-y: hidden;
+  display: flex;
+  align-items: stretch;
   gap: 10px;
   padding: 4px 20px 20px;
 }
 .bd-col {
-  min-height: 120px;
-  padding: 10px;
+  --tone: var(--pg-text-3);
+  flex: 1 1 0;
+  min-width: 190px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   border-radius: var(--pg-r);
   background: var(--pg-panel);
-  transition: background 0.15s;
+  transition:
+    background 0.15s,
+    flex-basis 0.25s var(--pg-ease),
+    min-width 0.25s var(--pg-ease);
+}
+.bd-col[data-col='next'] {
+  --tone: var(--pg-accent);
+}
+.bd-col[data-col='work'] {
+  --tone: var(--pg-work);
+}
+.bd-col[data-col='needs'] {
+  --tone: var(--pg-wait);
+}
+.bd-col[data-col='review'] {
+  --tone: var(--pg-ready);
 }
 .bd-col.bd-drop-on {
   background: var(--pg-accent-soft);
 }
+.bd-col.bd-dragging {
+  opacity: 0.5;
+}
+
+/* the colored tab: a band of the column's color at the top, its name, count and fold button */
 .bd-col-head {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 2px 4px 10px;
+  min-height: 38px;
+  padding: 0 6px 0 12px;
+  border-radius: var(--pg-r) var(--pg-r) 0 0;
+  background: color-mix(in srgb, var(--tone) 15%, transparent);
+  box-shadow: inset 0 3px 0 var(--tone);
   font-size: 13px;
   font-weight: 600;
+  cursor: grab;
 }
+.bd-col-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bd-col-head em {
+  flex: none;
+  min-width: 20px;
+  height: 20px;
+  margin-right: auto;
+  padding: 0 6px;
+  box-sizing: border-box;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tone) 28%, transparent);
+  color: var(--pg-text);
+  font-size: 11.5px;
+  font-style: normal;
+  font-weight: 500;
+}
+.bd-fold,
+.bd-more-btn {
+  flex: none;
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  color: var(--pg-text-2);
+  cursor: pointer;
+}
+.bd-fold:hover,
+.bd-more-btn:hover {
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+}
+.bd-col-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px;
+  scrollbar-width: thin;
+}
+
+/* a folded column: a slim strip with its name upright and its count */
+.bd-col.bd-folded {
+  flex: 0 0 44px;
+  min-width: 44px;
+}
+.bd-col.bd-folded .bd-col-head {
+  flex: 1;
+  flex-direction: column-reverse;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 8px 0;
+  border-radius: var(--pg-r);
+  box-shadow: inset 3px 0 0 var(--tone);
+}
+.bd-col.bd-folded .bd-col-name {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+.bd-col.bd-folded .bd-col-head em {
+  margin: 0;
+}
+.bd-col.bd-folded .bd-col-body {
+  display: none;
+}
+
 /* What a start from Up next costs, in one plain line under its head. */
 .bd-col-note {
-  margin: -6px 4px 10px;
+  margin: 0 4px 10px;
   color: var(--pg-text-3);
   font-size: 11.5px;
+}
+
+/* the head's Group by and card size switches */
+.bd-head-label {
+  color: var(--pg-text-3);
+  font-size: 12.5px;
+}
+
+/* a lead and its helpers (or one tool's threads), a group that folds */
+.bd-group {
+  margin-bottom: 8px;
+  border-radius: var(--pg-r-sm);
+  background: color-mix(in srgb, var(--tone) 6%, transparent);
+}
+.bd-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  color: var(--pg-text-2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.bd-group-head svg {
+  flex: none;
+  transition: transform 0.2s var(--pg-ease);
+}
+.bd-group[data-open='false'] .bd-group-head svg {
+  transform: rotate(-90deg);
+}
+.bd-group-head em {
+  color: var(--pg-text-3);
+  font-style: normal;
+  font-weight: 400;
+}
+.bd-group-cards {
+  padding: 0 6px 6px;
+}
+.bd-group[data-open='false'] .bd-group-cards {
+  display: none;
+}
+.bd-group-cards .bd-card:last-child {
+  margin-bottom: 0;
 }
 
 /* The empty screens (a board with nothing on it, a Week with no schedule): the app's empty slot
@@ -173,12 +332,6 @@ body:has(.layout.board-mode) .composer {
 }
 .bd-page[data-view='week'] .bd-week:has(> .bd-empty) {
   display: block;
-}
-
-.bd-col-head em {
-  color: var(--pg-text-3);
-  font-style: normal;
-  font-weight: 400;
 }
 
 /* ---------------------------------------------------------------- cards */
@@ -229,6 +382,59 @@ body:has(.layout.board-mode) .composer {
   font-size: 11.5px;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+/* a thread's card: name, tool and time on one line, the task under it, the rest when opened */
+.bd-thread {
+  padding: 8px 8px 8px 11px;
+}
+.bd-thread .bd-card-top b {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bd-thread .bd-card-top .bd-tool {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.bd-card .bd-time {
+  flex: none;
+  color: var(--pg-text-3);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.bd-more-btn {
+  width: 22px;
+  height: 22px;
+  margin: -2px -2px -2px 0;
+}
+.bd-more-btn svg {
+  transition: transform 0.2s var(--pg-ease);
+}
+.bd-thread[data-open='true'] .bd-more-btn svg {
+  transform: rotate(180deg);
+}
+.bd-card p.bd-task {
+  margin: 3px 0 0 16px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bd-thread .bd-more {
+  display: none;
+  margin-left: 16px;
+}
+.bd-thread[data-open='true'] .bd-more,
+.bd-page[data-density='roomy'] .bd-thread .bd-more {
+  display: block;
+}
+.bd-page[data-density='roomy'] .bd-thread .bd-more-btn {
+  display: none;
+}
+.bd-page[data-density='roomy'] .bd-card p.bd-task {
+  white-space: normal;
 }
 .bd-card p {
   margin: 6px 0 0;
@@ -328,8 +534,23 @@ body:has(.layout.board-mode) .composer {
 /* Up next stays above the days as a strip, so its ideas can be dragged onto a day. */
 .bd-page[data-view='week'] .bd-board {
   flex: none;
-  grid-template-columns: 1fr;
+  display: block;
   max-height: 40%;
+  overflow-y: auto;
+}
+.bd-page[data-view='week'] .bd-fold {
+  display: none;
+}
+.bd-page[data-view='week'] .bd-col.bd-folded .bd-col-body {
+  display: block;
+}
+.bd-page[data-view='week'] .bd-col.bd-folded .bd-col-head {
+  flex-direction: row;
+  box-shadow: inset 0 3px 0 var(--tone);
+}
+.bd-page[data-view='week'] .bd-col.bd-folded .bd-col-name {
+  writing-mode: horizontal-tb;
+  transform: none;
 }
 .bd-page[data-view='week'] .bd-col:not([data-col='next']) {
   display: none;
@@ -437,5 +658,62 @@ body:has(.layout.board-mode) .composer {
   .bd-col,
   .bd-day {
     transition: none;
+  }
+}
+
+/* Board round 2: the fold arrows do not turn under reduced motion; under touch the fold, open and
+   group buttons are 44 by 44 */
+@media (prefers-reduced-motion: reduce) {
+  .bd-group-head svg,
+  .bd-more-btn svg {
+    transition: none;
+  }
+}
+@media (pointer: coarse) {
+  .bd-fold,
+  .bd-more-btn {
+    width: 44px;
+    height: 44px;
+  }
+  .bd-group-head {
+    min-height: 44px;
+  }
+}
+
+/* a card too narrow for the tool's name leaves it out (it shows on hover over the name) */
+.bd-thread {
+  container-type: inline-size;
+}
+@container (max-width: 230px) {
+  .bd-thread .bd-card-top .bd-tool {
+    display: none;
+  }
+}
+
+/* Week: a folded Up next is drawn open (folding is a Board thing), and the Board's grouping and
+   card size switches leave the head */
+.bd-page[data-view='week'] .bd-col.bd-folded .bd-col-head {
+  flex: none;
+  justify-content: flex-start;
+  padding: 0 6px 0 12px;
+  border-radius: var(--pg-r) var(--pg-r) 0 0;
+}
+.bd-page[data-view='week'] .bd-col.bd-folded .bd-col-head em {
+  margin-right: auto;
+}
+.bd-page[data-view='week'] :is(.bd-head-label, .bd-group-by, .bd-density) {
+  display: none;
+}
+
+/* a card never makes its column scroll sideways: a long name shortens instead */
+.bd-col-body {
+  overflow-x: hidden;
+}
+.bd-thread .bd-card-top b {
+  flex: 0 1 auto;
+}
+@container (max-width: 230px) {
+  .bd-thread .bd-card-top b {
+    flex: 1 1 auto;
   }
 }

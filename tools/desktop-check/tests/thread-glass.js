@@ -277,10 +277,10 @@ async function settingsParts(look, tag, pic) {
   }
 }
 
-// The computer of the first thread row, saved enlarged.
+// The agent's letter of the first thread row, saved enlarged.
 async function faceCrop(name) {
-  const face = [...document.querySelectorAll('.tnt-th .tnt-face')].find(shown);
-  if (!face) return note(name + ': no thread row with a computer is shown');
+  const face = [...document.querySelectorAll('.tnt-th .tnt-av')].find(shown);
+  if (!face) return note(name + ': no thread row with a letter is shown');
   const b = box(face);
   await main(
     'crop',
@@ -291,13 +291,14 @@ async function faceCrop(name) {
     b.width + 12,
     b.height + 12
   );
-  const eyes = getComputedStyle(face.querySelector('.tnt-face-eyes')).filter;
-  note(name + ': the computer is ' + face.dataset.face + ', its eyes drawn with ' + eyes);
-  if (/asleep/.test(face.dataset.face))
-    check(
-      /invert\(1\)/.test(eyes),
-      name + ': the closed eyes of a computer that is asleep are in a pale ink (' + eyes + ')'
-    );
+  note(
+    name +
+      ': the letter is ' +
+      face.textContent +
+      (face.hasAttribute('data-asleep') ? ', dimmed (nothing runs)' : '') +
+      ', on ' +
+      face.style.getPropertyValue('--c')
+  );
 }
 
 async function walk(look, size) {

@@ -460,7 +460,7 @@
   color: var(--pg-text-3);
 }
 .dv-sees .dv-no b {
-  color: var(--pg-work);
+  color: var(--pg-work-text);
 }
 .dv-stop {
   display: grid;

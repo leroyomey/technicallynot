@@ -69,11 +69,20 @@ try {
   kit.ask = () => {};
   window.dispatchEvent(new CustomEvent('tnai:thread-changes', { detail: { folder: '' } }));
 
+  // The thread actions are a row of the thread's "..." menu (137; an icon of the top row until
+  // 2026-10-24): it shows for a thread with a git folder, and opens the actions' menu.
+  const moreButton = document.querySelector('.tnt-view .tnt-head-menu');
+  const actionsRow = () => {
+    window.TnaiThreadMore.close();
+    moreButton?.click();
+    return document.querySelector('.tnt-menu-thread .tnt-menu-row[data-row="actions"]');
+  };
   const work = await until(() => {
-    const button = document.querySelector('.tnt-view .tnt-head-work');
-    return button && !button.hidden ? button : null;
+    const row = actionsRow();
+    if (!row) window.TnaiThreadMore.close();
+    return row;
   }, 4000);
-  check(!!work, 'the thread actions button shows for a thread with a pull request');
+  check(!!work, 'the thread actions row shows for a thread with a pull request');
   window.TnaiTheme?.set?.('dark');
   work?.click();
   await until(() => menu() && !menu().hidden, 2000);
@@ -103,7 +112,7 @@ try {
 
   // a draft: Watch stays, Merge goes
   facts = { ...facts, pr: { ...pr, draft: true } };
-  work?.click();
+  actionsRow()?.click();
   await until(() => menu() && !menu().hidden, 2000);
   check(
     rowIds().includes('pr-watch') && !rowIds().includes('pr-merge'),

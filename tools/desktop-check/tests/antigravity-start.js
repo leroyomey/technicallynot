@@ -101,8 +101,13 @@ try {
   window.TnaiThreads.show(paneId);
   await wait(500);
   const row = window.TnaiThreads.slot('list').querySelector('.tnt-th[data-pane="' + paneId + '"]');
-  const rowTool = row?.querySelector('.tnt-th-tool')?.textContent || 'no row';
-  check(/Antigravity/.test(rowTool), 'its row in the thread list names the CLI: ' + rowTool);
+
+  // the tool's name is in the row's tip (119: the line under the name says what it does)
+  const rowTool = row?.title || 'no row';
+  check(
+    /Antigravity/.test(rowTool),
+    'its row in the thread list names the CLI in its tip: ' + rowTool
+  );
   if (window.TnaiThreadView.mode() !== 'term') window.TnaiThreadView.setMode('term');
   await wait(1200);
   console.log('TNAI_SHOT:antigravity-start-screen');

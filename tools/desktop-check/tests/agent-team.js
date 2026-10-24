@@ -174,7 +174,7 @@ check(
   'two sub-agent rows under the lead (' + kidRows().length + ')'
 );
 check(
-  !!(await until(() => /Edit · src\/settings\.js/.test(kidNow('tu1')), 3000)) &&
+  !!(await until(() => /Editing settings\.js/.test(kidNow('tu1')), 3000)) &&
     subOf('tu1')?.status === 'running',
   'first sub-agent running, its row says what it does now (' + kidNow('tu1') + ')'
 );

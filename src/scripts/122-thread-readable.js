@@ -368,6 +368,8 @@
 
   // Blocks stand in order above the live line, which is always last.
   function addBlock(state, node) {
+    // 176: a line that comes in while the thread is open rises in (not the first read's lines)
+    if (!state.first && !state.redrawing) node.classList.add('tnt-fresh');
     state.list.insertBefore(node, state.live);
     jumpLater(state);
     const blocks = state.list.children;
@@ -388,8 +390,11 @@
   }
 
   // A page or picture the last actions made comes as a card before what follows them (159).
-  const placeDesigns = state =>
+  // A workflow's card (171) waits for the same moments.
+  const placeDesigns = state => {
     safe(() => window.TnaiThreadDesigns?.place?.(state, node => addBlock(state, node)), null);
+    safe(() => window.TnaiWorkflowCard?.place?.(state, node => addBlock(state, node)), null);
+  };
 
   function addYou(state, entry) {
     placeDesigns(state);
@@ -406,15 +411,33 @@
       box.querySelector('.tnt-ask-go').hidden = true;
       box.querySelector('.tnt-ask-done').hidden = false;
     });
-    if (entry.text) addBlock(state, make('div', 'tnt-you', entry.text));
+    if (entry.text) {
+      // 172: a day line when the day changes, and the prompt's time under it
+      safe(() => window.TnaiTimes?.day?.(state, entry.at, node => addBlock(state, node)), null);
+      const bubble = addBlock(state, make('div', 'tnt-you', entry.text));
+      safe(() => window.TnaiTimes?.stamp?.(state, entry.at, true, bubble), null);
+    }
+
+    // pictures attached to the prompt: tiles under the words, not their paths (182)
+    const tiles = safe(() => window.TnaiAgentMessages?.pictures?.(state, entry), null);
+    if (tiles) addBlock(state, tiles);
     addAdded(state, entry, 'tnt-added tnt-added-you');
   }
 
   function addFrom(state, entry) {
-    const block = make('div', 'tnt-from');
-    block.append(make('small', '', 'From ' + entry.who), make('div', '', entry.text));
+    // 182 draws it as a card that says who wrote to whom; the plain bubble if 182 is missing
+    const card = safe(() => window.TnaiAgentMessages?.from?.(state, entry, markdown), null);
+    const block = card || make('div', 'tnt-from');
+    if (!card) block.append(make('small', '', 'From ' + entry.who), make('div', '', entry.text));
     addBlock(state, block);
     addAdded(state, entry, 'tnt-added');
+  }
+
+  // A helper's report handed back to its lead (desktop/thread-log-claude.js): a card (182).
+  function addReport(state, entry) {
+    const card = safe(() => window.TnaiAgentMessages?.report?.(state, entry, markdown), null);
+    if (card) addBlock(state, card);
+    else addFrom(state, { ...entry, who: 'a helper' });
   }
 
   // What the app wrote around a prompt before sending it (the reader keeps it apart, as `added`)
@@ -556,6 +579,9 @@
     const card = make('section', 'tnt-report');
     if (at) card.dataset.at = String(at);
     card.append(make('h3', '', 'Technically Not report'));
+
+    // 172: when the report was written, at the head's right end
+    safe(() => window.TnaiTimes?.onReport?.(card, at), null);
     let decision = 0;
     for (const raw of text.split(/\r?\n/)) {
       const row = /^\s*-\s*([A-Za-z][A-Za-z ]{1,24}):\s*(.*)$/.exec(raw);
@@ -594,6 +620,14 @@
     return card;
   }
 
+  // A reply's words: with a chart block or a table of numbers, 178 draws them with their chart
+  // cards; otherwise as before.
+  function drawWords(block, words) {
+    const drawn =
+      !!words && safe(() => !!window.TnaiThreadCharts?.fill?.(block, words, markdown), false);
+    if (!drawn) block.innerHTML = words ? markdown(words) : '';
+  }
+
   function addSay(state, entry) {
     const mark = REPORT_MARK.exec(entry.text);
     const words = (mark ? entry.text.slice(0, mark.index) : entry.text).trim();
@@ -608,14 +642,18 @@
     if (known) {
       if (known.words !== words) {
         known.words = words;
-        known.block.innerHTML = markdown(words);
+        drawWords(known.block, words);
         colorReply(known.block);
         addCopyButtons(known.block);
       }
       if (report && known.report !== report) {
         const card = reportCard(report, entry.at);
+
+        // a new card goes after the reply's time (172), when it has one
+        const next = known.block.nextElementSibling;
+        const anchor = next?.classList.contains('tnt-at') ? next : known.block;
         if (known.card?.isConnected) known.card.replaceWith(card);
-        else known.block.after(card);
+        else anchor.after(card);
         known.card = card;
         known.report = report;
         paintDecisions(state);
@@ -623,12 +661,21 @@
       return;
     }
     if (words) placeDesigns(state);
+
+    // 172: a day line when the day changes
+    if (words)
+      safe(() => window.TnaiTimes?.day?.(state, entry.at, node => addBlock(state, node)), null);
     const block = make('div', 'tnt-say');
-    block.innerHTML = words ? markdown(words) : '';
+    drawWords(block, words);
     colorReply(block);
     addCopyButtons(block);
     block.hidden = !words;
     addBlock(state, block);
+
+    // 172: the reply's time under it (none in the same minute as the last time shown), and its
+    // Copy button, which copies the reply's words as they are when pressed
+    const wordsNow = () => (entry.id ? state.says.get(entry.id)?.words : '') || words;
+    if (words) safe(() => window.TnaiTimes?.stamp?.(state, entry.at, false, block, wordsNow), null);
     let card = null;
     if (report) {
       card = addBlock(state, reportCard(report, entry.at));
@@ -723,7 +770,10 @@
       '<i class="tnt-helper-dot"></i><span class="tnt-helper-text"><b></b><small></small></span>' +
       '<span class="tnt-helper-open"></span>';
     card.querySelector('b').textContent = entry.what || 'Sub-agent';
-    card.querySelector('small').textContent = 'Helper · working';
+
+    // 172: since when it works
+    const since = safe(() => window.TnaiTimes?.helperWords?.(entry.at, 0), '');
+    card.querySelector('small').textContent = 'Helper · working' + (since ? ' · ' + since : '');
     card.querySelector('.tnt-helper-open').innerHTML =
       safe(() => window.TnaiIcon?.('chevron-right', { size: 16 }), '') || '';
     card.addEventListener('click', () =>
@@ -767,6 +817,10 @@
     const shown = shownName(entry, kind);
     const line = make('div', 'tnt-act');
     line.dataset.state = 'running';
+
+    // a step takes the keyboard: Enter opens it beside the thread (181)
+    line.tabIndex = 0;
+    line.title = 'Open this step beside the thread';
     line.innerHTML = icon(kind.icon, 14);
     const what = make(kind.code ? 'code' : 'span', 'tnt-act-what', shown);
 
@@ -786,14 +840,21 @@
     more.hidden = true;
     line.append(open);
     line.addEventListener('click', () => {
-      if (open.hidden || String(window.getSelection())) return;
+      if (String(window.getSelection())) return;
+
+      // the step slides in beside the thread with all of it (181, user 2026-10-23); without 181
+      // its text opens under the line as before
+      if (window.TnaiStepViewer?.open?.(line)) return;
+      if (open.hidden) return;
       more.hidden = !more.hidden;
       open.setAttribute('aria-expanded', String(!more.hidden));
     });
     group.lastElementChild.append(line, more);
     const known = { line, entry, more, open };
+    line.tntStep = known;
     state.acts.set(entry.id, known);
     safe(() => window.TnaiThreadDesigns?.note?.(state, entry, node => addBlock(state, node)), null);
+    safe(() => window.TnaiWorkflowCard?.note?.(state, entry, node => addBlock(state, node)), null);
 
     // 170: what the task made, shown in its "Worked for" block
     safe(() => window.TnaiWhatItMade?.note?.(state, entry), null);
@@ -920,9 +981,14 @@
     if (line.classList.contains('tnt-helper')) {
       // the lead's record says the helper was started in the background, or what it came back with
       line.dataset.state = entry.failed ? 'failed' : entry.text ? 'running' : 'done';
+
+      // 172: its start, and its end once it came back ("since 9:36 AM" while it still runs)
+      const ended = line.dataset.state === 'running' ? 0 : entry.at;
+      const when = safe(() => window.TnaiTimes?.helperWords?.(known.entry.at, ended), '');
       line.querySelector('small').textContent =
         'Helper · ' +
-        (entry.failed ? 'failed' : entry.text ? entry.text.toLowerCase() : 'finished');
+        (entry.failed ? 'failed' : entry.text ? entry.text.toLowerCase() : 'finished') +
+        (when ? ' · ' + when : '');
       return;
     }
     if (line.classList.contains('tnt-askbox')) {
@@ -958,6 +1024,9 @@
 
     // 170: a command's output can name the site it started
     if (!again) safe(() => window.TnaiWhatItMade?.result?.(state, known.entry, entry), null);
+
+    // 171: a workflow's run id comes with its result
+    safe(() => window.TnaiWorkflowCard?.result?.(state, known.entry, entry), null);
     const group = line.closest('.tnt-grp');
     if (group) paintGroup(group);
   }
@@ -1073,12 +1142,15 @@
       }
       if (entry.kind === 'you') addYou(state, entry);
       else if (entry.kind === 'from') addFrom(state, entry);
+      else if (entry.kind === 'report') addReport(state, entry);
       else if (entry.kind === 'say') addSay(state, entry);
       else if (entry.kind === 'act') addAct(state, entry);
       else if (entry.kind === 'result') addResult(state, entry);
       else if (entry.kind === 'ask') addAsk(state, entry);
       else if (entry.kind === 'worked') addWorked(state, entry);
       else if (entry.kind === 'note') {
+        // 171: a background task's end can be a workflow's
+        safe(() => window.TnaiWorkflowCard?.notice?.(state, entry), null);
         addNote(state, entry.text);
 
         // a compact line ends the thread's "Compacting" line (158)
@@ -1324,6 +1396,8 @@
           running ? 1 : 0,
           thread.label,
           thread.now,
+          thread.nowFolder || '',
+          thread.nowRaw || '',
           thread.inferred ? 1 : 0,
           thread.busy ? thread.busy.words + thread.busy.clock : '',
         ].join('|')
@@ -1355,9 +1429,20 @@
     // A built-in command such as a compact (158): its own words, how long it runs, and the bar.
     const busy = thread.busy;
     const words = busy ? [busy.words, busy.clock] : [thread.label, thread.now].filter(Boolean);
-    state.live.querySelector('span').textContent = [...new Set(words)].join(' · ');
+    const span = state.live.querySelector('span');
+    span.textContent = [...new Set(words)].join(' · ');
+
+    // the folder a command runs in as a chip, the command as reported as the tip (183)
+    if (!busy && thread.nowFolder) {
+      const chip = make('code', 'tnt-live-folder', thread.nowFolder);
+      span.append(' in ', chip);
+    }
+    span.title = !busy && thread.nowRaw ? thread.nowRaw : '';
     state.live.querySelector('em').hidden = !thread.inferred;
     state.live.querySelector('.tnt-live-bar').hidden = !busy;
+
+    // 176: the task's clock and the agent's checklist on this line
+    safe(() => window.TnaiLiveProgress?.paint?.(state), null);
   }
 
   // ---------- reading ----------
@@ -1383,11 +1468,19 @@
         state.seen.clear();
         state.files = new Map();
         state.cut = false;
+
+        // 172: the day and time lines start again with the conversation
+        state.timesDay = 0;
+        state.timesLast = '';
       }
       state.found = part.found !== false;
       if (part.cut) state.cut = true;
       if (part.next > 0 || part.reset) state.next = part.next;
+
+      // a whole redraw is not news: its lines do not rise in (176)
+      state.redrawing = !!part.reset;
       addEntries(state, part.entries || []);
+      state.redrawing = false;
       const first = state.first;
       state.first = false;
       paintFrame(state);
@@ -1397,7 +1490,10 @@
       if (part.reset || first) state.holdReport = null;
       else if (stick && state.list.querySelectorAll('.tnt-report').length > reportsBefore)
         state.holdReport = lastReport(state);
-      if (stick || first) toBottom(state);
+
+      // 177: new lines under "New since you left" are read from that line, not from the end
+      const held = safe(() => !!window.TnaiSinceYouLeft?.hold?.(state), false);
+      if (!held && (stick || first)) toBottom(state);
     }
     if (state.wanted) request(state);
   }
@@ -1575,6 +1671,9 @@
     watchEnd(host);
     watchGrowth(state);
     shown.add(state);
+
+    // 177: back in a thread that got something new: "New since you left" where it starts
+    safe(() => window.TnaiSinceYouLeft?.arrive?.(state), null);
     if (!state.live.parentNode) state.list.append(state.live);
     const parts = [state.empty, state.list, state.queued, state.jump];
     if (parts.some((part, at) => host.children[at] !== part) || host.children.length !== 4)
@@ -1604,6 +1703,8 @@
     refused.delete(host);
     for (const state of [...shown])
       if (state.host === host) {
+        // 177: where the reader was when this thread left the view
+        safe(() => window.TnaiSinceYouLeft?.leave?.(state), null);
         shown.delete(state);
         state.host = null;
         listSized.unobserve(state.list);

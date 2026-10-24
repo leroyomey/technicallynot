@@ -1,0 +1,80 @@
+/* Technically Not · 55-live-progress.css — live progress in a thread (176-live-progress.js): the
+   task's clock at the Working line's right end, the checklist as segments under it, and new lines
+   rising in. From the approved mock docs/plans/design-concepts/live-progress.html, with the thread
+   design's tokens only. */
+
+.tnt-live {
+  flex-wrap: wrap;
+}
+.tnt-live-clock {
+  flex: none;
+  margin-left: auto;
+  color: var(--pg-text);
+}
+.tnt-live-clock[hidden],
+.tnt-live-check[hidden] {
+  display: none;
+}
+
+/* the checklist: a row of its own under the line */
+.tnt-live-check {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding-left: 16px;
+  font-size: 12px;
+}
+.tnt-live-seg {
+  display: flex;
+  flex: none;
+  gap: 3px;
+}
+.tnt-live-seg i {
+  width: 18px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--pg-line-2);
+}
+.tnt-live-seg i.done {
+  background: var(--tone);
+}
+.tnt-live-seg i.now {
+  background: var(--tone);
+  opacity: 0.55;
+  animation: tnt-live-now 1.6s ease-in-out infinite;
+}
+@keyframes tnt-live-now {
+  50% {
+    opacity: 0.25;
+  }
+}
+.tnt-live-step {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tnt-live-step b {
+  color: var(--pg-text);
+  font-weight: 500;
+}
+
+/* a line that came in while the thread was open rises in (122 marks it tnt-fresh) */
+.tnt-talk-list > .tnt-fresh {
+  animation: tnt-live-rise 0.32s var(--pg-ease);
+}
+@keyframes tnt-live-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tnt-live-seg i.now,
+  .tnt-talk-list > .tnt-fresh {
+    animation: none;
+  }
+}

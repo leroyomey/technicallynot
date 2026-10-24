@@ -928,6 +928,9 @@
       if (!f) {
         f = el('iframe', 'lp-frame');
 
+        // stopped while out of sight (180)
+        window.TnaiPreviewPause?.watch?.(f);
+
         // No top navigation: the page can never replace Technically Not. Popups and non-localhost
         // links open in the user's browser (desktop/main.js).
         f.setAttribute(
@@ -1775,6 +1778,9 @@
       scale = el('div', 'lp-frame-scale'),
       cap = el('div', 'lp-mirror-cap'),
       f = el('iframe', 'lp-frame');
+
+    // stopped while out of sight (180)
+    window.TnaiPreviewPause?.watch?.(f);
     f.setAttribute(
       'sandbox',
       'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads'

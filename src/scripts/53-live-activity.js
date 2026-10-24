@@ -533,8 +533,14 @@
           ? s.agent + ' took the task and has not called a tool yet (from its own session record)'
           : 'Claude Code took the task and has not called a tool yet (from its hooks)',
       };
+
+    // In plain words (183: "Running a test"), with the folder a command runs in and the call as
+    // the tool reported it, which the thread list and the Working line keep as their tip.
+    const plain = window.TnaiPlainWords?.step?.(c.tool, c.detail);
     return {
-      text: toolWords(c.tool, c.detail)[0],
+      text: plain?.text || toolWords(c.tool, c.detail)[0],
+      folder: plain?.folder || '',
+      raw: plain?.raw || toolWords(c.tool, c.detail)[0],
       since: c.at,
       tip:
         'Latest tool call from ' +

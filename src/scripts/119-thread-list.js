@@ -1,15 +1,17 @@
 /*
- * Technically Not · 119-thread-list.js — the thread layout's left island.
- * Desktop app only; fills the `list` slot of 118
- * (`window.TnaiThreads`) and does nothing while the thread layout is off or its page is hidden.
+ * Technically Not · 119-thread-list.js — the thread layout's left island. Desktop app only; fills
+ * the `list` slot of 118 (`window.TnaiThreads`) and does nothing while the thread layout is off or
+ * its page is hidden.
  *
  * One thread per live session, in Terminal order: every terminal panel with a connection, in every
- * terminal workspace. A thread is shown by its agent, one of the app's device characters, awake and
- * lit in its status color or asleep when nothing runs. "Needs you" comes first, then one group per
- * open project. A lead's sub-agents sit under it: Claude Code's own (19 `TnaiTeam`, no panel of
+ * terminal workspace. A thread is shown by its agent's letter, in the color its letter has under
+ * the prompt box (128 `agentColor`), dimmed when nothing runs; the line under the name says what it
+ * does in plain words (183) after a dot in its status color, and the tool's own words stay in the
+ * row's tip (user 2026-10-24, tab 3 of app-polish.html). "Needs you" comes first, then one group
+ * per open project. A lead's sub-agents sit under it: Claude Code's own (19 `TnaiTeam`, no panel of
  * their own) as small rows, a sub-agent in its own panel (43's graph) as a thread set in. After
- * this computer's groups comes one group per other computer ("On NAME") with its agents of the
- * open project, as 116 holds them; a press on one shows it in the thread's main area (138).
+ * this computer's groups comes one group per other computer ("On NAME") with its agents of the open
+ * project, as 116 holds them; a press on one shows it in the thread's main area (138).
  *
  * Real state only, read from what the Terminal page list reads (10's `data-status` on the panel,
  * 104 `TnaiDigest.describe`, 71 `TnaiNeedsYou`), and redrawn on the app's own push events. There is
@@ -18,9 +20,9 @@
  *
  * A click or Enter opens the thread (`TnaiThreads.select`); the arrow keys move. While the Agents
  * and history page shows, the press chooses that agent on that page instead (25 has no list of its
- * own), and the row marked open is the agent that page shows. "New thread" is
- * the prompt box's own New agent switch (11). Look: src/styles/28-thread-list.css.
- * `window.TnaiThreadList` (`refresh`, `rows`) for the desktop test `thread-list`.
+ * own), and the row marked open is the agent that page shows. "New thread" is the prompt box's own
+ * New agent switch (11). Look: src/styles/28-thread-list.css. `window.TnaiThreadList` (`refresh`,
+ * `rows`) for the desktop test `thread-list`.
  */
 (() => {
   'use strict';
@@ -71,15 +73,11 @@
   };
   const SUB_TONE = { running: 'work', starting: 'work', failed: 'err', done: 'idle' };
 
-  // Which device character stands for which tool, as in the mock. A plain terminal is the laptop.
-  const DEVICE = {
-    'Claude Code': 'desktop',
-    Codex: 'laptop',
-    OpenCode: 'tablet',
-    Terminal: 'laptop',
-  };
-  const deviceFile = (device, part) =>
-    new URL('src/assets/devices/' + device + '-' + part + '.webp', document.baseURI).href;
+  // An agent's letter and its color: the same as its letter under the prompt box (46), so a row,
+  // a letter and a helper card match.
+  const letterOf = name => (String(name || '?').trim()[0] || '?').toUpperCase();
+  const colorOf = name =>
+    safe(() => window.TnaiAgentMarks?.agentColor?.(name), '') || 'var(--pg-accent)';
 
   // ---------- the island's parts ----------
   const root = make('div', 'tnt-lst');
@@ -143,6 +141,10 @@
   // ---------- reading the live sessions ----------
   const clock = at => safe(() => (at ? new Date(at).toTimeString().slice(0, 5) : ''), '');
 
+  // A row's time (172): a clock today, "Yesterday" or a date before; the full date on hover.
+  const shortTime = at => safe(() => window.TnaiTimes?.short?.(at), '') || clock(at);
+  const fullTime = at => safe(() => window.TnaiTimes?.full?.(at), '') || clock(at);
+
   // The panel of a sub-agent's lead, when the sub-agent runs in a panel of its own (43).
   function leadOf(paneId) {
     return safe(() => {
@@ -167,7 +169,11 @@
     // A question or an error is worth more than "what it does now": it takes the row's line.
     const flagged = !!digest && (digest.tone === 'ask' || digest.tone === 'bad') && !!digest.last;
     const turn = safe(() => window.TnaiTurns?.get?.(id), null);
-    const at = turn?.startedAt || session.startedAt || 0;
+
+    // When it last did something: the end of its last task, or the start of the one it works on
+    // now, or the session's start.
+    const ended = turn?.endedAt && turn.endedAt >= (turn.startedAt || 0) ? turn.endedAt : 0;
+    const at = ended || turn?.startedAt || session.startedAt || 0;
 
     // What the old agent cards carried beside the status, each read from the script that owns
     // it: messages with another agent (11, exact: `tnai send`), a team the user made (88), Claude
@@ -187,7 +193,8 @@
     const cut = running ? safe(() => window.TnaiLiveTasks?.interrupted?.(id), null) : null;
     const steps = running && turn && !turn.endedAt ? turn.steps : null;
     const count = steps?.total > 0 ? steps.index + '/' + steps.total : '';
-    const doing = digest ? (flagged ? digest.last : digest.now) : label;
+    const stopped = !running && (!digest || digest.now === 'Not running');
+    const doing = digest ? (flagged ? digest.last : stopped ? 'Stopped' : digest.now) : label;
 
     // Waiting on another agent: it asked that agent with the tnai command and has no answer yet
     // (37), or its own helpers still run (10). A violet tone of its own, never the blue of "free",
@@ -206,7 +213,27 @@
       running && !limited && !needs ? safe(() => window.TnaiCliBusy?.get?.(id), null) : null;
     const tone =
       needs || limited ? 'needs' : busy ? 'work' : waitingOn ? 'agents' : TONE[status] || 'idle';
+
+    // A draft typed for this thread and not sent (16): its first words, unless the thread works
+    // or needs the user, which say more.
+    const typed = safe(() => window.TnaiDrafts?.of?.(id), '')
+      .trim()
+      .replace(/\s+/g, ' ');
+    const draft = typed && tone !== 'needs' && tone !== 'work' && status !== 'working' ? typed : '';
+
+    // Something new since the user last looked (174): a dot after the name, and what happened on
+    // the time's hover.
+    const unread = safe(() => !!window.TnaiUnread?.has?.(id), false);
+
+    // When the line is the tool call in plain words (183), the call as the tool reported it and
+    // the folder a command runs in: the row's tip and the Working line (122) use them.
+    const plainLine = !!digest && !flagged && !limited && !busy && !cut && !waitingOn;
     return {
+      nowRaw: plainLine ? digest.nowRaw || '' : '',
+      nowFolder: plainLine ? digest.nowFolder || '' : '',
+      unread,
+      unreadTip: unread ? safe(() => window.TnaiUnread.tip(id), '') : '',
+      draft: draft.length > 60 ? draft.slice(0, 60) + '…' : draft,
       busy,
       talk,
       team: mates.map(nameOf).join(', '),
@@ -239,11 +266,14 @@
       project: session.cwd ? projectOf(session, projects) : workspaceProject(id, projects),
       projectFrom: session.cwd ? 'folder' : 'workspace',
       lead: leadOf(id),
-      time: clock(at),
+      time: shortTime(at),
       timeTip: !at
         ? ''
-        : (turn?.startedAt ? 'Its current or last task started at ' : 'This session started at ') +
-          clock(at),
+        : (ended
+            ? 'Its last task ended '
+            : turn?.startedAt
+              ? 'Its current task started '
+              : 'This session started ') + fullTime(at),
     };
   }
 
@@ -269,14 +299,6 @@
   // key is its pane id; a Claude Code sub-agent's is its lead's id, a zero character and its key.
   const rows = new Map();
 
-  function faceHtml() {
-    return (
-      '<span class="tnt-face" aria-hidden="true"><img class="tnt-face-body" alt="" width="960" ' +
-      'height="780"><i class="tnt-face-screen"></i><img class="tnt-face-eyes" alt="" width="960" ' +
-      'height="780"></span>'
-    );
-  }
-
   function rowFor(key, paneId, isSub) {
     let row = rows.get(key);
     if (row) return row;
@@ -286,10 +308,13 @@
     row.tabIndex = -1;
     row.dataset.pane = paneId;
     row.dataset.key = key;
+
+    // The agent's letter, the name and time, and under them a status dot and what it does now.
     row.innerHTML =
-      (isSub ? '<i class="tnt-dot" aria-hidden="true"></i>' : faceHtml()) +
-      '<b></b><time></time><small><span class="tnt-th-line"><span class="tnt-th-tool"></span>' +
-      '<span class="tnt-th-now"></span></span><i class="tnt-th-inf" hidden>· inferred</i></small>';
+      '<span class="tnt-av" aria-hidden="true"></span><b></b><time></time><small>' +
+      '<i class="tnt-dot" aria-hidden="true"></i><span class="tnt-th-line">' +
+      '<span class="tnt-th-tool"></span><span class="tnt-th-now"></span></span>' +
+      '<i class="tnt-th-inf" hidden>· inferred</i></small>';
 
     // A thread's own ✕, shown on hover. It is a mark inside the row, not a
     // second button, since a button may not hold one: the list's click handler reads it, and
@@ -306,45 +331,60 @@
     return row;
   }
 
-  function paintFace(row, tool, asleep) {
-    const face = row.querySelector('.tnt-face');
-    if (!face) return;
-
-    // The tool's name may come from another computer: only a name of the table picks a device.
-    const device = Object.hasOwn(DEVICE, tool) ? DEVICE[tool] : 'desktop';
-    const want = device + (asleep ? ' asleep' : ' awake');
-    if (face.dataset.face === want) return;
-    face.dataset.face = want;
-    face.querySelector('.tnt-face-body').src = deviceFile(device, 'body');
-    face.querySelector('.tnt-face-eyes').src = deviceFile(device, asleep ? 'sleep' : 'eyes');
-
-    // A url() set from a script is not relative to the style sheet, so it is absolute.
-    face.style.setProperty('--tnt-screen', 'url("' + deviceFile(device, 'screen') + '")');
+  // The letter in the agent's own color; dimmed while nothing runs, as a stopped agent's letter
+  // under the prompt box is.
+  function paintLetter(row, name, asleep) {
+    const mark = row.querySelector('.tnt-av');
+    setText(mark, letterOf(name));
+    const color = colorOf(name);
+    if (mark.style.getPropertyValue('--c') !== color) mark.style.setProperty('--c', color);
+    if (asleep !== mark.hasAttribute('data-asleep')) mark.toggleAttribute('data-asleep', asleep);
   }
 
   function fillRow(row, view) {
     setText(row.querySelector('b'), view.name);
     setText(row.querySelector('time'), view.time || '');
-    setAttr(row.querySelector('time'), 'title', view.timeTip || '');
-    setText(row.querySelector('.tnt-th-tool'), view.tool);
-    setText(row.querySelector('.tnt-th-now'), view.now ? ' · ' + view.now : '');
+    setAttr(row.querySelector('time'), 'title', view.unreadTip || view.timeTip || '');
+    if (!!view.unread !== row.hasAttribute('data-unread'))
+      row.toggleAttribute('data-unread', !!view.unread);
+
+    // What stands before the words (the project in "Needs you", "↔ NAME"), then the words.
+    const before = view.tool || '';
+    const gap = before ? ' · ' : '';
+    setText(row.querySelector('.tnt-th-tool'), before);
+    const now = row.querySelector('.tnt-th-now');
+    if (view.draft) {
+      // "Draft:" in the accent, then the draft's first words (16)
+      const drawn = gap + view.draft;
+      if (now.dataset.draft !== drawn) {
+        now.dataset.draft = drawn;
+        now.replaceChildren(gap, make('em', 'tnt-th-draft', 'Draft:'), ' ' + view.draft);
+      }
+    } else {
+      delete now.dataset.draft;
+      setText(now, view.now ? gap + view.now : '');
+    }
     row.querySelector('.tnt-th-inf').hidden = !view.inferred;
     if (row.dataset.tone !== view.tone) row.dataset.tone = view.tone;
     row.classList.toggle('tnt-kid', !!view.kid);
     setAttr(row, 'aria-selected', String(!!view.on));
     if (row.title !== view.tip) row.title = view.tip;
-    paintFace(row, view.toolName, view.tone === 'idle' || view.tone === 'err');
+    paintLetter(row, view.letterName || view.name, view.tone === 'idle' || view.tone === 'err');
   }
 
-  // What a Claude Code sub-agent does now, in a few words.
+  // What a Claude Code sub-agent does now, in a few words (183), and the call as reported.
   function subNow(sub, leadRuns) {
-    if (leadRuns && sub.status === 'running' && sub.now)
-      return sub.now.tool + (sub.now.detail ? ' · ' + sub.now.detail : '');
-    if (sub.status === 'done') return 'Done';
-    if (sub.status === 'failed') return 'Failed';
-    if (!leadRuns) return 'Stopped with its lead';
-    if (sub.status === 'starting') return sub.asking ? 'Waiting for approval' : 'Starting';
-    return 'Running';
+    if (leadRuns && sub.status === 'running' && sub.now) {
+      const plain = safe(() => window.TnaiPlainWords?.step?.(sub.now.tool, sub.now.detail), null);
+      const raw = sub.now.tool + (sub.now.detail ? ' · ' + sub.now.detail : '');
+      return { text: plain?.text || raw, raw };
+    }
+    const word = text => ({ text, raw: '' });
+    if (sub.status === 'done') return word('Done');
+    if (sub.status === 'failed') return word('Failed');
+    if (!leadRuns) return word('Stopped with its lead');
+    if (sub.status === 'starting') return word(sub.asking ? 'Waiting for approval' : 'Starting');
+    return word('Running');
   }
 
   function threadTip(thread) {
@@ -357,7 +397,14 @@
         ? '\nProject: ' + thread.project.name + ' (from its ' + thread.projectFrom + ')'
         : '') +
       (thread.task ? '\nTask: ' + thread.task : '') +
-      (thread.now ? '\nNow: ' + thread.now + (thread.inferred ? ' (inferred)' : '') : '') +
+      (thread.now
+        ? '\nNow: ' +
+          thread.now +
+          (thread.nowFolder ? ' in ' + thread.nowFolder : '') +
+          (thread.inferred ? ' (inferred)' : '')
+        : '') +
+      // the call as the tool reported it, word for word (the line says it in plain words)
+      (thread.nowRaw && thread.nowRaw !== thread.now ? '\n' + thread.nowRaw : '') +
       (thread.team ? '\nTeam: with ' + thread.team : '') +
       (thread.browser ? '\nBrowser: Claude in Chrome, ' + thread.browser + ' now' : '') +
       (thread.context ? '\nContext: ' + contextWords(thread.context) : '') +
@@ -418,15 +465,20 @@
         name: thread.name,
         time: thread.time,
         timeTip: thread.timeTip,
-        toolName: thread.tool,
+        letterName: thread.session.name || thread.name,
 
         // "↔ NAME" stands before what the agent does now: it is exact, and "inferred" at the
-        // line's end then still stands beside the part it is about.
-        tool:
-          (withProject && thread.project ? thread.project.name + ' · ' : '') +
-          thread.tool +
-          (thread.talk ? ' · ↔ ' + thread.talk.label : ''),
+        // line's end then still stands beside the part it is about. The tool's name is in the tip.
+        tool: [
+          withProject && thread.project ? thread.project.name : '',
+          thread.talk ? '↔ ' + thread.talk.label : '',
+        ]
+          .filter(Boolean)
+          .join(' · '),
         now: thread.now,
+        draft: thread.draft,
+        unread: thread.unread,
+        unreadTip: thread.unreadTip,
         inferred: thread.inferred,
         tone: thread.tone,
         kid,
@@ -445,11 +497,14 @@
         const leadRuns = thread.session.running !== false;
         const doing = subNow(sub, leadRuns);
         alive.add(key);
+        const subAt = sub.endedAt || sub.startedAt || 0;
         fillRow(row, {
           name: what,
-          toolName: thread.tool,
-          tool: 'Sub-agent',
-          now: doing,
+          time: shortTime(subAt),
+          timeTip: subAt ? (sub.endedAt ? 'Ended ' : 'Started ') + fullTime(subAt) : '',
+          letterName: sub.alias || sub.description || sub.type || 'Sub-agent',
+          tool: '',
+          now: doing.text,
           tone: !leadRuns && sub.status !== 'done' ? 'err' : SUB_TONE[sub.status] || 'idle',
           on: false,
           tip:
@@ -457,7 +512,8 @@
             ' · sub-agent of ' +
             thread.name +
             '\nNow: ' +
-            doing +
+            doing.text +
+            (doing.raw ? '\n' + doing.raw : '') +
             '\n\nIt has no thread of its own: this opens the thread of ' +
             thread.name,
         });
@@ -496,8 +552,8 @@
         name: agent.name,
         time,
         timeTip: time ? 'Working since ' + time + ', as ' + computer.name + ' reports' : '',
-        toolName: agent.cli,
-        tool: agent.cli || 'Agent',
+        letterName: agent.name,
+        tool: '',
         now,
         inferred: false,
         tone: REMOTE_TONE[agent.status],
@@ -733,6 +789,12 @@
     }
     threads()?.select(row.dataset.pane);
     refresh();
+
+    // a sub-agent's row opens its lead split evenly with that helper (123, user 2026-10-23)
+    if (row.classList.contains('tnt-sub')) {
+      const subKey = String(row.dataset.key || '').split(SEPARATOR)[1] || '';
+      requestAnimationFrame(() => window.TnaiThreadHelpers?.open?.(subKey));
+    }
   });
 
   // Closes a row's thread the way the thread's own "..." menu does (137): it asks first, over the
@@ -741,6 +803,9 @@
     if (!row.dataset.pane || row.dataset.remote || row.classList.contains('tnt-sub')) return;
     window.TnaiLiveTasks?.close?.(row.dataset.pane, document.querySelector('.tnt-view'));
   }
+
+  // Up, Down, Home and End move the keyboard between rows here; 175 then opens the row they
+  // reached (user 2026-10-23), so this handler must keep taking the key when it moves.
   box.addEventListener('keydown', event => {
     const row = event.target.closest?.('.tnt-th');
     if (!row || event.altKey || event.ctrlKey || event.metaKey) return;
@@ -789,6 +854,8 @@
     'tnai:agent-talk',
     'tnai:teams-changed',
     'tnai:graph-changed',
+    'tnai:draft-changed',
+    'tnai:unread-changed',
   ];
   let queued = 0;
   let stops = [];

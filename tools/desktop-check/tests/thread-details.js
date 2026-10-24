@@ -899,7 +899,7 @@ try {
   };
   const steps = [];
   for (const [part, age, token] of [
-    [0.2, 'ok', '--pg-work'],
+    [0.2, 'ok', '--pg-work-text'],
     [0.7, 'long', '--pg-wait'],
     [1.4, 'over', '--pg-err'],
   ]) {

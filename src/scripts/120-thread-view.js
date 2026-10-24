@@ -19,6 +19,8 @@
  * all read from the list (119 `TnaiThreadList.thread`). A thread opens as its conversation (drawn
  * by 122 from the tool's own record). The tool's own screen, the CLI screen, is reached only from
  * the row "CLI screen" of the thread's "..." menu (137), whose button is the last of the top row.
+ * The top row's buttons are few: Preview (All threads), Split (131's side column), Stop or Start
+ * and "..."; everything else that stood there is a named row of the "..." menu.
  * A tool with no such record has its screen only. Under the terminal is a row for the
  * app's question cards, filled by 121. Look: src/styles/29-thread-view.css.
  * `window.TnaiThreadView` (`shown`, `term`, `mode`, `setMode`) for 137, 122 and the tests.
@@ -54,23 +56,16 @@
     '<span class="tnt-head-topic"></span></div><p><span class="tnt-head-tool"></span>' +
     '<span class="tnt-head-more"></span></p></div><span class="tnt-head-state" data-tone="idle"><i></i>' +
     '<span></span></span><div class="tnt-head-acts">' +
-    '<button type="button" class="tnt-icon-btn" data-tnai-font="-1" data-tnai-font-place="focus" ' +
-    'title="Smaller text" aria-label="Smaller text">A−</button>' +
-    '<button type="button" class="tnt-icon-btn" data-tnai-font="1" data-tnai-font-place="focus" ' +
-    'title="Larger text" aria-label="Larger text">A+</button>' +
-    '<button type="button" class="tnt-icon-btn tnt-head-handoff" ' +
-    'title="Handoff history: every time this agent was retired and a fresh one took over" ' +
-    'aria-label="Handoff history">' +
-    icon('clock', 16) +
-    '</button>' +
-    '<button type="button" class="tnt-icon-btn tnt-head-page" ' +
-    'title="Show this thread on All threads" aria-label="Show on All threads">' +
+    // Few buttons, the two used most with their names (user 2026-10-24, tab 5 of
+    // app-polish.html): Preview (this one: the thread on All threads, beside Live preview) and
+    // Split (131, the column beside the thread), then Stop or Start (137) and "...". Text size,
+    // Handoff history, Blur, Past conversations, Pop out and the thread actions are rows of the
+    // "..." menu (137).
+    '<button type="button" class="tnt-icon-btn tnt-head-named tnt-head-page" ' +
+    'title="Preview: show this thread on All threads, beside Live preview" ' +
+    'aria-label="Preview: show this thread on All threads, beside Live preview">' +
     icon('square-terminal', 16) +
-    '</button>' +
-    '<button type="button" class="tnt-icon-btn tnt-head-blur" aria-pressed="false" ' +
-    'title="Blur this thread" aria-label="Blur this thread">' +
-    icon('eye', 16) +
-    '</button>' +
+    '<span>Preview</span></button>' +
     '<button type="button" class="tnt-icon-btn tnt-head-menu" aria-haspopup="menu" ' +
     'aria-expanded="false" title="More for this thread" aria-label="More for this thread">' +
     icon('ellipsis', 16) +
@@ -114,11 +109,6 @@
     talkEl.hidden = mode !== 'read';
     termEl.hidden = mode !== 'term';
 
-    // the text size buttons belong to the CLI screen: they show only while it does
-    headEl.querySelectorAll('[data-tnai-font]').forEach(button => {
-      button.hidden = mode !== 'term';
-    });
-
     // said plainly: why this thread has no readable view
     const plain = !!thread && !readable && thread.tool !== 'Terminal';
     plainEl.hidden = !plain;
@@ -160,9 +150,10 @@
 
   // ---------- the blur: a thread kept out of sight ----------
   // The user can blur one thread, so nobody looking at the screen can read it (a stream, a
-  // shared screen, someone beside them). The thread's top row stays sharp, so the button that
-  // brings the thread back is always in reach. The choice belongs to the thread and is kept
-  // across restarts. 135 blurs the same thread's card on All threads and has the same button.
+  // shared screen, someone beside them). The thread's top row stays sharp, so its "..." menu,
+  // whose row "Show this thread again" brings the thread back (137), is always in reach. The
+  // choice belongs to the thread and is kept across restarts. 135 blurs the same thread's card on
+  // All threads and has a button for it there.
   const BLUR_KEY = 'tnai.thread-blur.v1';
   const blurred = new Set(
     safe(() => {
@@ -198,7 +189,6 @@
 
   function paintBlur() {
     root.classList.toggle('tnt-blurred', !!pane && blurred.has(pane));
-    paintBlurButton(headEl.querySelector('.tnt-head-blur'), pane);
   }
 
   window.TnaiThreadBlur = {
@@ -264,18 +254,8 @@
     if (pane) window.TnaiThreadMore?.rename?.(pane);
   });
 
-  headEl.querySelector('.tnt-head-blur').addEventListener('click', () => {
-    if (pane) setBlur(pane, !blurred.has(pane));
-  });
-
   headEl.querySelector('.tnt-head-page').addEventListener('click', () => {
     if (pane) window.TnaiLiveTasks?.focusPane?.(pane, true);
-  });
-
-  // Handoff history (102), opened at this thread's own chain of handoffs. It was a button of the
-  // old Overview; a thread's top row is where the actions of one agent stand now.
-  headEl.querySelector('.tnt-head-handoff').addEventListener('click', () => {
-    window.TnaiHandoffHistory?.open?.(pane || '');
   });
 
   // ---------- the terminal: one more view of the session (as 99 and 25 make theirs) ----------

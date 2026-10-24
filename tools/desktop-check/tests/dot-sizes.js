@@ -1,11 +1,11 @@
 /*
  * Technically Not tools · desktop-check/tests/dot-sizes.js — Every status dot is drawn the same
- * size. Two kinds of dots stand in rows: the status dot at the foot of each character in the
- * thread list, and the dot per thread under the cards of All threads. A dot whose box starts on
+ * size. Two kinds of dots stand in rows: the status dot at the start of each row's second line in
+ * the thread list, and the dot per thread under the cards of All threads. A dot whose box starts on
  * a part of a pixel is rounded to the screen by itself, so one row's dot came out larger than the
- * next one's. Checked here:
- * a dot is a whole number of screen pixels wide and high (then the screen's rounding of its
- * edges gives every copy the same size wherever it stands), and all dots of a kind have one size.
+ * next one's. Checked here: a dot is a whole number of screen pixels wide and high (then the
+ * screen's rounding of its edges gives every copy the same size wherever it stands), and all dots
+ * of a kind have one size.
  */
 const log = [];
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -45,22 +45,13 @@ try {
   for (let count = 0; count < 6; count++) await window.TnaiTest.startThread({ tool: 'Terminal' });
   window.TnaiThreads.open();
   const list = window.TnaiThreads.slot('list');
-  await until(() => list.querySelectorAll('.tnt-th .tnt-face').length >= 6);
+  await until(() => list.querySelectorAll('.tnt-th .tnt-dot').length >= 6);
   await wait(600);
 
-  // ---- the status dot at each character's foot (the ::after of the face) ----
-  // Its box is worked out as the browser places it: from the face's right and bottom edges.
-  const faceDots = [...list.querySelectorAll('.tnt-th .tnt-face')].map(face => {
-    const box = face.getBoundingClientRect();
-    const style = getComputedStyle(face, '::after');
-    const w = parseFloat(style.width);
-    const h = parseFloat(style.height);
-    return {
-      x: box.right - parseFloat(style.right) - w,
-      y: box.bottom - parseFloat(style.bottom) - h,
-      w,
-      h,
-    };
+  // ---- the status dot at the start of each row's second line ----
+  const faceDots = [...list.querySelectorAll('.tnt-th .tnt-dot')].map(dot => {
+    const box = dot.getBoundingClientRect();
+    return { x: box.left, y: box.top, w: box.width, h: box.height };
   });
   check(oneSize(faceDots), 'thread list: every status dot has one size (' + tell(faceDots) + ')');
   check(

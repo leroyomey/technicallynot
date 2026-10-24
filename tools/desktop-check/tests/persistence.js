@@ -123,8 +123,12 @@ await wait(200);
 
 // (The editor-draft checks went with the File repository editor, removed in the purple redesign.)
 await wait(600);
+
+// with a thread open the draft is that thread's (16, since 2026-10-22), else the box's own
+const threadDrafts = JSON.parse(localStorage.getItem('tnai.draft.threads.v1') || '{}');
 check(
-  localStorage.getItem('tnai.draft.composer.v1') === 'draft that must survive',
+  localStorage.getItem('tnai.draft.composer.v1') === 'draft that must survive' ||
+    Object.values(threadDrafts).includes('draft that must survive'),
   'composer draft stored'
 );
 window.onbeforeunload = null;

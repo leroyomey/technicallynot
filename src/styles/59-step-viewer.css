@@ -1,0 +1,152 @@
+/* Technically Not · 59-step-viewer.css — the agent's steps as one flat list, and a step beside the
+   thread (181-step-viewer.js; user 2026-10-23: "NESTING is really hard to navigate", mock
+   docs/plans/design-concepts/step-viewer.html). A run's line still sums it up and folds (30); what
+   it opens is one level: every step on its own line with its icon and verb, no group heading in
+   between, and nothing that scrolls inside the conversation (the whole of a step is beside the
+   thread). Tokens only. */
+
+/* ---------------------------------------------------------------- one level in the conversation */
+.tnt-did .tnt-grp > .tnt-grp-head {
+  display: none;
+}
+.tnt-did .tnt-grp[data-folds='true'][data-open='false'] > .tnt-grp-list {
+  display: block;
+}
+.tnt-did[data-run='true']:not([data-single='true']) > .tnt-grp,
+.tnt-grp[data-many='true'] > .tnt-grp-list {
+  padding-left: 0;
+}
+.tnt-grp[data-many='true'] .tnt-act > svg:first-child {
+  display: block;
+}
+.tnt-grp[data-many='true'] .tnt-act-verb {
+  display: inline;
+}
+
+/* a step: one line that lights up under the pointer or the keyboard, and stays lit while it is
+   beside the thread */
+.tnt-did .tnt-act {
+  margin: 0 -6px;
+  padding: 1px 6px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.tnt-did .tnt-act:hover {
+  background: var(--pg-panel-2);
+}
+.tnt-did .tnt-act:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 0;
+}
+.tnt-did .tnt-act.tnt-act-on {
+  background: var(--pg-accent-soft);
+  box-shadow: inset 2px 0 0 var(--pg-accent);
+}
+.tnt-did .tnt-act[data-state='failed'] .tnt-act-result {
+  color: var(--pg-err);
+}
+
+/* the whole of a step is beside the thread, never in a box under its line */
+.tnt-did .tnt-act-more {
+  display: none;
+}
+.tnt-did .tnt-act-open > svg {
+  rotate: none;
+}
+
+/* ---------------------------------------------------------------- the step beside the thread */
+.tsv {
+  padding: 2px 14px 14px;
+  color: var(--pg-text);
+  font: 13px/1.5 var(--pg-sans);
+}
+.tsv-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.tsv-move {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  color: var(--pg-text-2);
+  cursor: pointer;
+}
+.tsv-prev > svg {
+  rotate: 180deg;
+}
+.tsv-move:hover:not(:disabled) {
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+}
+.tsv-move:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.tsv-move:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 2px;
+}
+.tsv-where {
+  color: var(--pg-text-3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.tsv-end {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pg-work) 16%, transparent);
+  color: var(--pg-text);
+  font-size: 12px;
+}
+.tsv-end[data-state='failed'] {
+  background: color-mix(in srgb, var(--pg-err) 18%, transparent);
+}
+.tsv-end[data-state='running'] {
+  background: color-mix(in srgb, var(--pg-ready) 18%, transparent);
+}
+.tsv-label {
+  margin: 12px 0 6px;
+  color: var(--pg-text-3);
+  font: 600 11px/1 var(--pg-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.tsv-code {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+  font: 12.5px/1.55 var(--pg-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tsv-out {
+  color: var(--pg-text-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tnt-did .tnt-act {
+    transition: none;
+  }
+}
+@media (pointer: coarse) {
+  .tsv-move {
+    width: 44px;
+    height: 44px;
+  }
+  .tnt-did .tnt-act {
+    min-height: 44px;
+    align-items: center;
+  }
+}

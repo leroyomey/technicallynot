@@ -44,7 +44,7 @@ check(
   'src/app.js is credited to the thread that wrote it (' + (Date.now() - t0) + ' ms)'
 );
 check(
-  !!(await until(() => /src\/app\.js/.test(nowText(paneId)), 6000)),
+  !!(await until(() => /app\.js/.test(nowText(paneId)), 6000)),
   'its thread row names the file ("' + nowText(paneId) + '")'
 );
 console.log('TNAI_SHOT:file-activity-thread-row');

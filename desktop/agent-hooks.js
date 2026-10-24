@@ -1489,6 +1489,11 @@ function handle(req, res) {
             extra.push(require('./agent-mesh').renamedNote(paneId));
           } catch {}
 
+          // a prompt that compares: the numbers of the answer as a chart (comparison-hint.js)
+          try {
+            extra.push(require('./comparison-hint').forPrompt(msg.prompt || ''));
+          } catch {}
+
           // who else works here now, and whose task crosses this one (agent-peers.js)
           extra.push(await span.rest(peers.forPrompt(paneId, msg.prompt || '')));
           try {

@@ -1,0 +1,108 @@
+/* Technically Not · 53-thread-times.css — times in the conversation (172-thread-times.js): the
+   small time under a prompt and a reply, the day line, and the time on a report's head. From the
+   approved mock docs/plans/design-concepts/timestamps.html ("always shown, quiet"), with the
+   thread design's tokens only. */
+
+.tnt-at {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  margin: 0 0 6px;
+  color: var(--pg-text-2);
+  font: 11px/1.3 var(--pg-sans);
+}
+.tnt-at-you {
+  justify-content: flex-end;
+}
+
+/* Copy a whole reply: quiet, shown while the reply or its line is under the pointer, or on
+   keyboard focus; always shown under touch */
+.tnt-at-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--pg-text-2);
+  font: 500 11.5px/1 var(--pg-sans);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s var(--pg-ease);
+}
+.tnt-say:hover + .tnt-at .tnt-at-copy,
+.tnt-at:hover .tnt-at-copy,
+.tnt-at-copy:focus-visible,
+.tnt-at-copy[data-done] {
+  opacity: 1;
+}
+.tnt-at-copy:hover {
+  border-color: var(--pg-line-2);
+  background: var(--pg-panel-2);
+  color: var(--pg-text);
+}
+.tnt-at-copy:focus-visible {
+  outline: 2px solid var(--pg-accent);
+  outline-offset: 2px;
+}
+@media (pointer: coarse) {
+  .tnt-at-copy {
+    height: 44px;
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tnt-at-copy {
+    transition: none;
+  }
+}
+
+/* a day line: the words between two hairlines */
+.tnt-day {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 10px;
+  color: var(--pg-text-2);
+  font: 11.5px/1.3 var(--pg-sans);
+}
+.tnt-day::before,
+.tnt-day::after {
+  flex: 1;
+  height: 1px;
+  background: var(--pg-line);
+  content: '';
+}
+
+/* "New since you left" (177): the day line's look, in the accent */
+.tnt-since {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 10px;
+  color: var(--pg-accent);
+  font: 600 11.5px/1.3 var(--pg-sans);
+}
+.tnt-since::before,
+.tnt-since::after {
+  flex: 1;
+  height: 1px;
+  background: color-mix(in srgb, var(--pg-accent) 45%, transparent);
+  content: '';
+}
+
+/* the report's time sits at the right end of its head */
+.tnt-report h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.tnt-report-at {
+  margin-left: auto;
+  color: var(--pg-text-2);
+  font: 400 12px/1.3 var(--pg-sans);
+}

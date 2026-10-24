@@ -35,6 +35,9 @@ const PICTURE_MAX = 25 * 1024 * 1024;
 const THUMB_RAW_MAX = 3 * 1024 * 1024;
 const THUMB_WIDTH = 480;
 
+// a single picture shown at the conversation's whole width (159's card) asks for this width
+const WIDE_WIDTH = 960;
+
 // the still picture of a page: the size it is drawn at, and the width it is kept at
 const SHOT_WIDTH = 1280;
 const SHOT_HEIGHT = 800;
@@ -58,6 +61,14 @@ let deps = {
   nameOf: () => '',
   // sends a push to the window
   toWindow: () => {},
+  // the app's own folder of pictures the user pasted or dropped into a prompt
+  attachmentsDir: () => {
+    try {
+      return require('path').join(require('electron').app.getPath('userData'), 'attachments');
+    } catch {
+      return '';
+    }
+  },
 };
 
 function init(dependencies) {
@@ -112,6 +123,11 @@ function locate(paneId, file, kind) {
   if (!kind.test(name)) return { ok: false, error: 'not this kind of file' };
   const roots = rootsOf(paneId);
   if (!roots.length) return { ok: false, error: 'the thread has no folder' };
+
+  // a picture the user attached to a prompt lives in the app's own attachments folder: shown as
+  // a tile under the prompt (122), so pictures (and only pictures) may come from there too
+  const attached = kind === PICTURE ? deps.attachmentsDir() : '';
+  if (attached && path.isAbsolute(attached)) roots.push(attached);
   const full = path.isAbsolute(name) ? path.resolve(name) : path.resolve(roots[0], name);
   const real = realOf(full);
   if (!real || !kind.test(real)) return { ok: false, error: 'not found' };
@@ -234,9 +250,9 @@ async function page(paneId, file, options = {}) {
 }
 
 // ---------- a picture ----------
-// `picture(paneId, file, { since, large, check })` → { ok, name, image, width, height }. A small
-// one of a kind the system can shrink (PNG, JPEG) is shrunk to THUMB_WIDTH; others are sent as they
-// are.
+// `picture(paneId, file, { since, large, wide, check })` → { ok, name, image, width, height }. A
+// small one of a kind the system can shrink (PNG, JPEG) is shrunk to THUMB_WIDTH, or WIDE_WIDTH
+// with `wide`; others are sent as they are.
 async function picture(paneId, file, options = {}) {
   const at = locate(paneId, file, PICTURE);
   if (!at.ok) return at;
@@ -252,8 +268,8 @@ async function picture(paneId, file, options = {}) {
     const { nativeImage } = require('electron');
     let image = nativeImage.createFromPath(at.real);
     if (!image.isEmpty()) {
-      if (image.getSize().width > THUMB_WIDTH)
-        image = image.resize({ width: THUMB_WIDTH, quality: 'good' });
+      const width = options.wide ? WIDE_WIDTH : THUMB_WIDTH;
+      if (image.getSize().width > width) image = image.resize({ width, quality: 'good' });
       const size = image.getSize();
       return {
         ok: true,
