@@ -75,6 +75,17 @@ const STOP = new Set([
   // tnai-bug-sweep's name words fired on "fix this bug"; it keeps "bug sweep" and its phrases.
   'bug',
   'sweep',
+  // 2026-10-28: ai-3d-head-to-live-avatar was offered on nearly every prompt ("to" is in most
+  // sentences, "ai" in this product's own name, "[TN.ai]"). Small joining words never count, and
+  // that skill keeps "3d", "avatar" and its phrase keywords.
+  'to',
+  'of',
+  'in',
+  'on',
+  'with',
+  'ai',
+  'head',
+  'live',
 ]);
 const cache = new Map(); // SKILL.md path -> { mtime, skill }
 

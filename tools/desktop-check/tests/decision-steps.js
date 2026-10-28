@@ -3,8 +3,8 @@
  * lines (real context store, fed by decision-steps.main.js on a real PowerShell thread; the send to
  * the agent is stood in, nothing is typed into it): every decision is kept, the waiting decision
  * (51 `deciding`) and the one section on the next-steps card step through them in order, the
- * section without changing size, the answers go to the agent as one message that names each
- * decision, and each decision is marked answered on its own. Returns {ok, log}.
+ * section without changing size, each answer goes to the agent the moment it is given, naming the
+ * decisions still open, and each decision is marked answered on its own. Returns {ok, log}.
  */
 const log = [],
   wait = ms => new Promise(r => setTimeout(r, ms));
@@ -95,7 +95,8 @@ try {
       : 'Result summary: not visited (it shows the standing brief here, not this result)'
   );
 
-  // 2. Answering the first sends nothing yet and the waiting decision moves on to the second.
+  // 2. Answering the first sends it at once, naming Decision 2 as still open, and the waiting
+  // decision moves on to the second (user 2026-10-28: each answer goes as it is pressed).
   // Options are in the report's order with the recommended one first: Memory, Disk.
   C.decide(d1.id, 0, 'send');
   const d2 = await until(() =>
@@ -105,28 +106,30 @@ try {
     !!d2 && /Decision 2 of 2: Ship it today\?/.test(d2.question || ''),
     'after the first answer the waiting decision is Decision 2 ("' + (d2?.question || '') + '")'
   );
-  const m2 = await marksNow();
-  check(
-    sent.length === 0 && !m2[e1.id + ':choices:0'] && !m2[e1.id + ':choices:1'],
-    'nothing is sent or marked answered until the last decision is answered (sent ' +
-      sent.length +
-      ')'
-  );
-  console.log('TNAI_SHOT:decision-steps-second');
-  await wait(600);
-
-  // 3. The last answer sends one message naming both decisions and marks each answered.
-  // Decision 2's options: Yes (recommended), No.
-  C.decide(e1.id + '#1', 1, 'send');
-  check(!!(await until(() => sent.length === 1)), 'the last answer sends one message');
+  check(!!(await until(() => sent.length === 1)), 'the first answer is sent at once');
   const text = sent[0]?.[1] || '';
   check(
     sent[0]?.[0] === paneId &&
       /Decision on "Decision 1 of 2: Which store\?": go with Memory\./.test(text) &&
-      /Decision on "Decision 2 of 2: Ship it today\?": go with No\./.test(text) &&
-      !/\n/.test(text) &&
-      text.indexOf('Decision 1 of 2') < text.indexOf('Decision 2 of 2'),
-    'it names each decision with its answer, in order, on one line: ' + text
+      /keep these open: "Decision 2 of 2: Ship it today\?"/.test(text) &&
+      !/\n/.test(text),
+    'it names its decision and the one still open, on one line: ' + text
+  );
+  check(
+    !!(await until(async () => (await marksNow())[e1.id + ':choices:0']?.state === 'answered')),
+    'Decision 1 is marked answered on its own key'
+  );
+  console.log('TNAI_SHOT:decision-steps-second');
+  await wait(600);
+
+  // 3. The second answer is its own message, and no decision waits after it.
+  // Decision 2's options: Yes (recommended), No.
+  C.decide(e1.id + '#1', 1, 'send');
+  check(!!(await until(() => sent.length === 2)), 'the second answer sends its own message');
+  check(
+    /Decision on "Decision 2 of 2: Ship it today\?": go with No\./.test(sent[1]?.[1] || '') &&
+      !/keep these open/.test(sent[1]?.[1] || ''),
+    'it names Decision 2 only: ' + sent[1]?.[1]
   );
   const m3 = await until(async () => {
     const m = await marksNow();
@@ -140,7 +143,7 @@ try {
   check(!!(await until(() => !N.deciding(paneId))), 'no decision waits once all are answered');
   C.decide(e1.id + '#0', 0, 'send');
   await wait(150);
-  check(sent.length === 1, 'a late second answer sends nothing more');
+  check(sent.length === 2, 'a late second answer sends nothing more');
 
   // 4. The next-steps card: one decision section that steps the same way, and the own-words reply
   // names its decision too.
@@ -174,8 +177,8 @@ try {
     )) &&
       !next().hidden &&
       secs() === 1 &&
-      sent.length === 1,
-    'after the first answer the card stays, the one section shows Decision 2, nothing sent yet'
+      sent.length === 3,
+    'after the first answer the card stays, the one section shows Decision 2, the answer is sent'
   );
   check(
     Math.abs(sec().getBoundingClientRect().height - sh1) < 1.5,
@@ -189,11 +192,11 @@ try {
   own.value = 'Tomorrow morning';
   own.dispatchEvent(new Event('input', { bubbles: true }));
   sec().querySelector('[data-act="decide"][data-i="other"]').click();
-  check(!!(await until(() => sent.length === 2)), 'the last answer (own words) sends one message');
+  check(!!(await until(() => sent.length === 4)), 'the answer in own words sends its own message');
   check(
-    /Decision on "Decision 1 of 2: Which cache\?": go with Memory\./.test(sent[1]?.[1] || '') &&
-      /Decision on "Decision 2 of 2: Ship it today\?": Tomorrow morning/.test(sent[1]?.[1] || ''),
-    'it names both decisions: ' + sent[1]?.[1]
+    /Decision on "Decision 1 of 2: Which cache\?": go with Memory\./.test(sent[2]?.[1] || '') &&
+      /Decision on "Decision 2 of 2: Ship it today\?": Tomorrow morning/.test(sent[3]?.[1] || ''),
+    'each names its own decision: ' + sent[2]?.[1] + ' / ' + sent[3]?.[1]
   );
   check(
     !!(await until(async () => {

@@ -1,0 +1,21 @@
+/* Technically Not · 65-quiet-threads.css — the "No output for N min" card (188) in the open
+   thread's "Questions for you" row. It wears the look of that row's question cards (29
+   `.tnt-asks > .tnt-ask`: the waiting amber, the question left and the answers right); its own
+   class keeps 121 from taking it for one of its cards. The text and buttons are 29's
+   `.tnt-ask-text` and `.tnt-ask-acts`. */
+
+.tnt-asks > .tnt-quiet {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--pg-wait) 35%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--pg-wait) 9%, transparent);
+  color: var(--pg-text);
+}
+.tnt-asks > .tnt-quiet[hidden] {
+  display: none;
+}

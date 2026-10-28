@@ -96,6 +96,10 @@ const lineCount = text =>
 // What a finished tool gave back.
 function resultOf(id, tool, state) {
   const entry = { kind: 'result', id, failed: state.status === 'error' };
+
+  // when the tool finished (OpenCode keeps a finished tool's start and end), for 187's time bar
+  const ended = Number(state.time?.end);
+  if (ended > 0) entry.at = ended;
   const meta = state.metadata && typeof state.metadata === 'object' ? state.metadata : {};
   if (entry.failed) {
     entry.text = oneLine(String(state.error || 'Failed'), RESULT_MAX);

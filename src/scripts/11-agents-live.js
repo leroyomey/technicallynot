@@ -3195,15 +3195,31 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
       ); // 88: two or more agents got it: offer a team (asked once)
       return true;
     }
+
+    // A prompt that is one slash command (/model, /usage …) goes to the CLI exactly as typed, also
+    // to a thread that has to wake first: with the app's mark around it the CLI read it as plain
+    // words and the command never ran (learned 2026-10-28: "/usage" to a sleeping thread).
+    const slashOnly = !refs && /^\/[\w:-]+(?:[ \t][^\n]*)?$/.test(String(text || '').trim());
+
+    // A command the app answers with a card in the thread (184: /usage, /cost, /stats) is not sent
+    // to the CLI at all: Claude Code opens a menu on its own screen for it that waits for a key,
+    // and the thread looked stuck (user 2026-10-28)
+    let answeredHere = false;
+    try {
+      answeredHere = slashOnly && !!window.TnaiCommandCards?.answer?.(chosen.paneId, text);
+    } catch {}
+    if (answeredHere) {
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      say('Answered in the thread');
+      return true;
+    }
     if (r.kind === 'wake') {
-      if (
-        !agents.wake(
-          chosen.paneId,
-          (chosen.agent === 'Claude Code' && window.TnaiTeam ? '[TN.ai] ' : '') +
-            message +
-            (window.TnaiSessionSkills?.note(chosen.paneId) || '')
-        )
-      ) {
+      const wakeText = slashOnly
+        ? String(text).trim()
+        : (chosen.agent === 'Claude Code' && window.TnaiTeam ? '[TN.ai] ' : '') +
+          message +
+          (window.TnaiSessionSkills?.note(chosen.paneId) || '');
+      if (!agents.wake(chosen.paneId, wakeText)) {
         snap?.restore();
         say(chosen.name + ' could not start.');
         return;
@@ -3222,10 +3238,9 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
       sending = false;
     }
 
-    // A prompt that is one slash command (/model, /clear …) goes to the CLI exactly as typed: the
-    // app's mark or a note around it made it plain words for the agent, and the command never ran
-    // (found 2026-10-21 while building the prompt box's / list, 160).
-    const slashOnly = !refs && /^\/[\w:-]+(?:[ \t][^\n]*)?$/.test(String(text || '').trim());
+    // A prompt that is one slash command (/model, /clear …) goes to the CLI exactly as typed
+    // (`slashOnly` above): the app's mark or a note around it made it plain words for the agent,
+    // and the command never ran (found 2026-10-21 while building the prompt box's / list, 160).
     if (
       !agents.send(
         chosen.paneId,

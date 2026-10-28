@@ -239,6 +239,20 @@ const blockText = content =>
         .map(block => block.text || '')
         .join('\n');
 
+// A request's tokens as the app counts them everywhere (input without the cache, output, cache read
+// and cache write), with the message id they belong to; null when the line has none.
+function usageOf(message) {
+  const usage = message?.usage;
+  if (!usage || typeof usage !== 'object' || !message.id) return null;
+  return {
+    id: String(message.id),
+    input: Number(usage.input_tokens) || 0,
+    output: Number(usage.output_tokens) || 0,
+    cacheRead: Number(usage.cache_read_input_tokens) || 0,
+    cacheWrite: Number(usage.cache_creation_input_tokens) || 0,
+  };
+}
+
 // What an action gave back, as one result entry for the action with the same id.
 function resultOf(block, line) {
   const out =
@@ -375,13 +389,20 @@ function lineEntries(line, inSub) {
     if (line.isCompactSummary) return [];
     if (typeof content === 'string') return userEntries(content, at);
     if (!Array.isArray(content)) return [];
+
+    // when the result came back: a step's time in "Where the time went" (187) runs from its
+    // action to here, and a helper's card says when it finished (122)
     const results = content
       .filter(block => block?.type === 'tool_result')
-      .map(block => resultOf(block, line));
+      .map(block => ({ ...resultOf(block, line), at }));
     return results.length ? results : userEntries(blockText(content), at);
   }
   if (line.type !== 'assistant' || !Array.isArray(content)) return [];
   const out = [];
+
+  // The tokens of the request that wrote this line, on its first entry: a task's cost (187) adds
+  // them up once per message id, since Claude Code repeats a message's usage on every line of it.
+  const usage = usageOf(line.message);
   for (const block of content) {
     if (block?.type === 'text' && block.text?.trim())
       out.push({
@@ -428,6 +449,7 @@ function lineEntries(line, inSub) {
         at,
       });
   }
+  if (usage && out.length) out[0].usage = usage;
   return out;
 }
 

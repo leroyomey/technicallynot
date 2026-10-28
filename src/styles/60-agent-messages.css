@@ -153,6 +153,18 @@
   align-self: flex-end;
   max-width: 90%;
 }
+
+/* inside the prompt's own bubble (122 addYou): words and pictures read as one message */
+.tnt-you.tnt-you-pics .tam-pics {
+  max-width: none;
+  margin-top: 8px;
+  justify-content: flex-start;
+  white-space: normal;
+}
+.tnt-you.tnt-you-pics:empty,
+.tnt-you.tnt-you-pics > .tam-pics:first-child {
+  margin-top: 0;
+}
 .tam-pic {
   width: 150px;
   padding: 0;

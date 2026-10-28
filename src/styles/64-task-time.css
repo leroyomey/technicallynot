@@ -1,0 +1,176 @@
+/*
+ * Technically Not · 64-task-time.css — the "Worked for" block's time bar and cost word
+ * (src/scripts/187-task-time.js; mock docs/plans/design-concepts/thread-visuals.html). Tokens only:
+ * each kind of step takes an existing chart, kind or status hue, the tip takes --tnt-over like
+ * every layer over the page.
+ */
+
+/* the time: one thin bar, the kind that took the most beside it */
+.ttt-time {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding-left: 2px;
+}
+.ttt-bar {
+  display: flex;
+  flex: 0 1 360px;
+  gap: 2px;
+  min-width: 120px;
+  height: 6px;
+}
+.tnt-worked .ttt-seg {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 4px;
+  height: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: var(--k);
+  box-shadow: none;
+  cursor: pointer;
+}
+
+/* a press area taller than the bar, so the thin parts are easy to hit */
+.ttt-seg::after {
+  content: '';
+  position: absolute;
+  inset: -6px 0;
+}
+.tnt-worked .ttt-seg:hover,
+.tnt-worked .ttt-seg:focus-visible {
+  outline: 2px solid var(--pg-text-3);
+  outline-offset: 1px;
+}
+.ttt-most {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pg-text-3);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* one hue per kind of step, from the tokens every look and shade defines */
+[data-kind='read'].ttt-seg,
+[data-kind='read'].ttt-dot {
+  --k: var(--pg-hue-chart-1);
+}
+[data-kind='edit'].ttt-seg,
+[data-kind='edit'].ttt-dot {
+  --k: var(--pg-hue-chart-2);
+}
+[data-kind='run'].ttt-seg,
+[data-kind='run'].ttt-dot {
+  --k: var(--pg-hue-picture);
+}
+[data-kind='helper'].ttt-seg,
+[data-kind='helper'].ttt-dot {
+  --k: var(--pg-handoff);
+}
+[data-kind='you'].ttt-seg,
+[data-kind='you'].ttt-dot {
+  --k: var(--pg-wait);
+}
+[data-kind='other'].ttt-seg,
+[data-kind='other'].ttt-dot {
+  --k: var(--pg-text-4);
+}
+[data-kind='write'].ttt-seg,
+[data-kind='write'].ttt-dot {
+  --k: var(--pg-idle);
+}
+
+/* the cost: a quiet word in the block's top line, the detail on hover */
+/* the top line may wrap only once the word is in it */
+.tnt-made-top:has(.ttt-cost) {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.tnt-worked .ttt-cost {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  margin: 0;
+  padding: 0 9px;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  box-shadow: none;
+  color: var(--pg-text-3);
+  font: 12px/1 var(--pg-sans);
+  white-space: nowrap;
+  cursor: default;
+}
+.ttt-cost b {
+  color: var(--pg-text-2);
+  font: 500 12px/1 var(--pg-mono);
+}
+.tnt-worked .ttt-cost:hover,
+.tnt-worked .ttt-cost:focus-visible {
+  outline: none;
+  background: var(--pg-panel-hover-soft);
+  color: var(--pg-text-2);
+}
+
+/* without a "What it made" top line, the cost word has a row of its own */
+.ttt-row {
+  display: flex;
+}
+
+/* the tip all parts share */
+.ttt-tip {
+  position: fixed;
+  z-index: 60;
+  max-width: 300px;
+  padding: 9px 12px;
+  border-radius: var(--pg-r-sm);
+  background: var(--tnt-over);
+  box-shadow: 0 8px 26px rgb(0 0 0 / 0.22);
+  color: var(--pg-text);
+  font: 12px/1.5 var(--pg-sans);
+  pointer-events: none;
+  backdrop-filter: blur(14px);
+}
+.ttt-tip[hidden] {
+  display: none;
+}
+.ttt-tip b {
+  font-weight: 600;
+}
+.ttt-tip small {
+  display: block;
+  color: var(--pg-text-3);
+  font-size: 12px;
+}
+.ttt-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 2px;
+  background: var(--k);
+}
+.ttt-tip table {
+  margin-top: 4px;
+  border-collapse: collapse;
+}
+.ttt-tip td {
+  padding: 1px 0;
+}
+.ttt-tip td + td {
+  padding-left: 14px;
+  color: var(--pg-text-2);
+  font-family: var(--pg-mono);
+  text-align: right;
+}
+
+/* in a block with no "What it made" top line, the cost word ends the time line */
+.ttt-time .ttt-cost {
+  margin-left: auto;
+}

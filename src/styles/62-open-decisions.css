@@ -1,0 +1,148 @@
+/* Technically Not · 62-open-decisions.css — the list of every thread's open decisions (185), in
+   the open thread's "Questions for you" row above the prompt box. The decisions themselves use the
+   thread's own decision style (.tnt-decide in 30-thread-readable.css); this file only places the
+   bar and the list (mock: docs/plans/design-concepts/decisions-at-once.html). */
+
+/* "4 decisions · 3 threads · Answer here": a small amber pill, on the right */
+.tod-bar {
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pg-wait) 16%, transparent);
+  color: var(--pg-text);
+  font: 500 11.5px/17px var(--pg-sans);
+  cursor: pointer;
+  transition: box-shadow 0.15s var(--pg-ease);
+}
+.tod-bar[hidden] {
+  display: none;
+}
+.tod-bar i {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pg-wait);
+}
+.tod-bar small {
+  color: var(--pg-text-3);
+  font-size: 11px;
+}
+.tod-bar:hover,
+.tod-bar[aria-expanded='true'] {
+  box-shadow: inset 0 0 0 1px var(--pg-wait);
+}
+.tod-bar:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 1px;
+}
+
+/* the list: one soft surface, scrolling inside when long */
+.tod {
+  display: flex;
+  flex-direction: column;
+  max-height: min(52vh, 520px);
+  padding: 12px 14px 10px;
+  border-radius: 14px;
+  background: var(--pg-panel);
+  animation: tod-rise 0.18s var(--pg-ease);
+}
+.tod[hidden] {
+  display: none;
+}
+@keyframes tod-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tod {
+    animation: none;
+  }
+}
+.tod-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+.tod-head b {
+  font-weight: 600;
+}
+.tod-head small {
+  color: var(--pg-text-3);
+  font-size: 12px;
+}
+.tod-close,
+.tod-go {
+  margin-left: auto;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  color: var(--pg-text-3);
+  font: 12px/1.4 var(--pg-sans);
+  cursor: pointer;
+}
+.tod-close:hover,
+.tod-go:hover {
+  color: var(--pg-text);
+  background: var(--pg-panel-2);
+}
+
+/* the body borrows .tnt-talk-list for the decision buttons' look; its column layout is undone */
+.tod .tod-body.tnt-talk-list {
+  width: auto;
+  margin: 0;
+  gap: 0;
+  padding: 0 2px 0 0;
+  overflow-y: auto;
+  font-size: 13.5px;
+}
+.tod .tod-body.tnt-talk-list > * {
+  content-visibility: visible;
+}
+.tod-thread {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--pg-text-2);
+  font-size: 12.5px;
+}
+.tod-thread i {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  /* the agent's avatar color (128): light tones, so the letter is dark, the same dark as the
+     thread list's own letter (28 `.tnt-av`; no token holds it) */
+  background: var(--tone, var(--pg-accent));
+  color: #1b1530;
+  font: 600 10px/1 var(--pg-sans);
+  font-style: normal;
+}
+.tod-thread b {
+  font-weight: 600;
+  color: var(--pg-text);
+}
+.tod .tnt-decide {
+  margin-top: 8px;
+}
+.tod .tnt-decide b {
+  margin-bottom: 8px;
+}
+.tod-foot {
+  margin: 10px 0 0;
+  padding-top: 10px;
+  box-shadow: inset 0 1px 0 var(--pg-line);
+  color: var(--pg-text-3);
+  font-size: 12px;
+}

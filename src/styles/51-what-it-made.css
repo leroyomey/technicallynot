@@ -123,6 +123,11 @@
   height: 100%;
   object-fit: cover;
 }
+/* plain top-to-bottom flow, not the well's grid: the title and the first lines can never land in
+   the same place (user 2026-10-28: the title was drawn over the first line in the app) */
+.tnt-made-thumb > .tnt-made-ttext {
+  display: block;
+}
 .tnt-made-ttext {
   align-content: start;
   place-items: start !important;

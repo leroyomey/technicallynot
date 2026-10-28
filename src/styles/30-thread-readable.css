@@ -787,6 +787,22 @@ code.tnt-act-what {
   margin-bottom: 10px;
   font-weight: 500;
 }
+/* "Best answered after Decision 1: why" (122 paintAfter): only on a decision whose answer
+   hinges on an earlier one, while both are open; quiet advice, never a lock */
+.tnt-decide-after {
+  display: block;
+  margin: -4px 0 10px;
+  color: var(--pg-text-3);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.tnt-decide-after::before {
+  content: '↳ ';
+  color: var(--pg-wait);
+}
+.tnt-decide-after[hidden] {
+  display: none;
+}
 .tnt-decide-options {
   display: flex;
   flex-wrap: wrap;

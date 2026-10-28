@@ -979,7 +979,7 @@ module.exports = (win, profile) => {
               const reached = [];
               const ctx = window.TnaiContext || {};
               const keep = { ...ctx };
-              for (const name of ['decideInThread', 'sendKeptNow', 'toComposer'])
+              for (const name of ['decideInThread', 'toComposer'])
                 ctx[name] = (...a) => reached.push(name + ':' + JSON.stringify(a).slice(0, 40));
               const pty = window.tnaiNative?.pty;
               const realWrite = pty?.write;

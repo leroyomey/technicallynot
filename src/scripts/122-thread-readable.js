@@ -394,6 +394,7 @@
   const placeDesigns = state => {
     safe(() => window.TnaiThreadDesigns?.place?.(state, node => addBlock(state, node)), null);
     safe(() => window.TnaiWorkflowCard?.place?.(state, node => addBlock(state, node)), null);
+    safe(() => window.TnaiCommandCards?.place?.(state, node => addBlock(state, node)), null);
   };
 
   function addYou(state, entry) {
@@ -411,16 +412,22 @@
       box.querySelector('.tnt-ask-go').hidden = true;
       box.querySelector('.tnt-ask-done').hidden = false;
     });
-    if (entry.text) {
+
+    // pictures attached to the prompt: tiles inside the prompt's own bubble, under its words, so
+    // the words and the picture read as one message (182; user 2026-10-28: they "look like
+    // seperate chats even though they were one prompt")
+    const tiles = safe(() => window.TnaiAgentMessages?.pictures?.(state, entry), null);
+    if (entry.text || tiles) {
       // 172: a day line when the day changes, and the prompt's time under it
       safe(() => window.TnaiTimes?.day?.(state, entry.at, node => addBlock(state, node)), null);
-      const bubble = addBlock(state, make('div', 'tnt-you', entry.text));
+      const bubble = make('div', 'tnt-you', entry.text || '');
+      if (tiles) {
+        bubble.classList.add('tnt-you-pics');
+        bubble.append(tiles);
+      }
+      addBlock(state, bubble);
       safe(() => window.TnaiTimes?.stamp?.(state, entry.at, true, bubble), null);
     }
-
-    // pictures attached to the prompt: tiles under the words, not their paths (182)
-    const tiles = safe(() => window.TnaiAgentMessages?.pictures?.(state, entry), null);
-    if (tiles) addBlock(state, tiles);
     addAdded(state, entry, 'tnt-added tnt-added-you');
   }
 
@@ -593,7 +600,25 @@
         const parts = body.split(/\s*\|\s*/);
         const ask = make('div', 'tnt-decide');
         ask.dataset.decision = String(decision++);
-        ask.append(make('b', '', parts[0]));
+
+        // The question as written is kept for matching and answering (49); an "(after Decision
+        // N: why)" mark is shown as its own line under it instead (paintDecisions).
+        ask.dataset.question = parts[0];
+        const first = safe(() => window.TnaiContext?.dependsOn?.(parts[0]), null);
+        const shown = first
+          ? parts[0].replace(/\s*\(\s*after\s+Decision\s+\d+[^)]*\)/i, '')
+          : parts[0];
+        ask.append(make('b', '', shown));
+        if (first) {
+          ask.dataset.after = String(first.number);
+          const note = make(
+            'small',
+            'tnt-decide-after',
+            'Best answered after Decision ' + first.number + (first.why ? ': ' + first.why : '')
+          );
+          note.hidden = true;
+          ask.append(note);
+        }
         const options = make('div', 'tnt-decide-options');
         parts.slice(1).forEach((part, index) => {
           const button = make('button', '', part.replace(/^\d+\.\s*/, ''));
@@ -1126,6 +1151,9 @@
     // 170: what the task made, under the same line (the block stays as it was when it made
     // nothing)
     safe(() => window.TnaiWhatItMade?.block?.(state, entry, block), false);
+
+    // 187: where the task's time went and what it cost, in the same block
+    safe(() => window.TnaiTaskTime?.block?.(state, entry, block), null);
     addBlock(state, block);
     state.files = new Map();
   }
@@ -1140,6 +1168,9 @@
         if (state.seen.has(key)) continue;
         state.seen.add(key);
       }
+
+      // 187: every entry of a task, for its time bar and cost when the task ends
+      safe(() => window.TnaiTaskTime?.note?.(state, entry), null);
       if (entry.kind === 'you') addYou(state, entry);
       else if (entry.kind === 'from') addFrom(state, entry);
       else if (entry.kind === 'report') addReport(state, entry);
@@ -1215,7 +1246,7 @@
     const card = ask.closest('.tnt-report');
     const said = promptsAfter(card);
     if (!said) return '';
-    const question = ask.firstChild?.textContent || '';
+    const question = questionOf(ask);
     const asks = card.querySelectorAll('.tnt-decide').length;
     const ownNumber = /^decision\s+(\d+)\b/i.exec(question);
     const number = ownNumber
@@ -1257,12 +1288,15 @@
 
   const reportTime = node => Number(node.closest('.tnt-report')?.dataset.at) || 0;
 
+  // A decision's question as the agent wrote it (reportCard keeps it; the bold line may be shorter)
+  const questionOf = ask => ask.dataset.question || ask.firstChild?.textContent || '';
+
   function paintDecisions(state) {
     // a helper's report is its lead's to read: its options are never buttons here
     if (state.sub) return;
     const context = window.TnaiContext;
     state.list.querySelectorAll('.tnt-report .tnt-decide').forEach(ask => {
-      const question = ask.firstChild?.textContent || '';
+      const question = questionOf(ask);
       const since = reportTime(ask);
       const found = safe(() => context?.findDecision?.(state.paneId, question, since), null);
       const labels = [...ask.querySelectorAll('button')].map(button => button.textContent);
@@ -1300,47 +1334,28 @@
           : null;
       });
     });
-    paintSendKept(state, context);
+    paintAfter(state);
   }
 
-  // A report with several decisions sends its answers together once the last is answered (49
-  // `decide`). While some are answered and others are still open, the card shows "Send N answers":
-  // it sends the ones picked now and leaves the rest open (49 `sendKeptNow`). It reuses the
-  // decision buttons' own row and style.
-  function paintSendKept(state, context) {
-    state.list.querySelectorAll('.tnt-report').forEach(card => {
-      const asks = [...card.querySelectorAll('.tnt-decide')];
-      const question = asks[0]?.firstChild?.textContent || '';
-      const since = reportTime(card);
-      const kept =
-        asks.length > 1 ? safe(() => context?.keptCount?.(state.paneId, question, since), 0) : 0;
-      const stillOpen = asks.some(ask => ask.dataset.open === 'true');
-      let row = card.querySelector(':scope .tnt-decide-send');
-      if (!kept || !stillOpen) {
-        row?.remove();
-        return;
-      }
-      if (!row) {
-        row = make('div', 'tnt-decide-options tnt-decide-send');
-        const button = make('button', '', '');
-        button.type = 'button';
-        row.append(button);
-        asks[asks.length - 1].after(row);
-      }
-      const button = row.querySelector('button');
-      button.textContent =
-        'Send ' + kept + (kept === 1 ? ' answer' : ' answers') + ', leave the rest open';
-      button.title =
-        'The agent gets the answers picked so far; the decisions not answered stay open';
-      button.onclick = () => {
-        pressingDecision = true;
-        try {
-          context.sendKeptNow(state.paneId, question, since);
-        } finally {
-          pressingDecision = false;
-        }
-        paintDecisions(state);
-      };
+  // Every answer is sent the moment it is pressed, in any order (49 `decide`). Only a decision the
+  // agent marked "(after Decision N: why)" says it is best answered after decision N, and only
+  // while both are still open: once either is answered the line goes. It is advice, never a lock:
+  // its buttons stay pressable (user, 2026-10-28: "only show these warnings and labels if it
+  // actually matters").
+  function paintAfter(state) {
+    state.list.querySelectorAll('.tnt-report .tnt-decide[data-after]').forEach(ask => {
+      const note = ask.querySelector(':scope > .tnt-decide-after');
+      if (!note) return;
+      const wanted = Number(ask.dataset.after);
+
+      // decision N is the one numbered N, or else the report's N-th decision
+      const numberOf = other =>
+        safe(() => window.TnaiContext.decisionNumber(questionOf(other)), 0) ||
+        Number(other.dataset.decision) + 1;
+      const first = [...ask.closest('.tnt-report').querySelectorAll('.tnt-decide')].find(
+        other => other !== ask && numberOf(other) === wanted
+      );
+      note.hidden = !(first && first.dataset.open === 'true' && ask.dataset.open === 'true');
     });
   }
 
@@ -1629,6 +1644,17 @@
 
   // The user sent a prompt to a thread (11): that conversation goes to its newest line, so the
   // prompt and what follows are in view.
+  // A command the app answered itself (184, e.g. /usage): its card goes in at once, at the end of
+  // every view of that conversation, and the view follows it like a sent prompt.
+  window.addEventListener('tnai:command-card', event => {
+    for (const state of shown)
+      if (state.paneId === event.detail?.paneId && state.host && !state.sub) {
+        safe(() => window.TnaiCommandCards?.place?.(state, node => addBlock(state, node)), null);
+        atEnd.set(state.host, true);
+        toBottom(state);
+      }
+  });
+
   window.addEventListener('tnai:prompt-sent', event => {
     // sent by a decision press (paintDecisions): the view stays where the user is reading
     if (pressingDecision) return;

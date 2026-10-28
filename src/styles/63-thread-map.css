@@ -1,0 +1,116 @@
+/* Technically Not · 63-thread-map.css — the map of the open thread's conversation (186): a strip
+   of small marks just inside the scrollbar, a tip on hover, and a short flash on the block a
+   press jumps to (mock: docs/plans/design-concepts/thread-visuals.html, visual 1). Colors by
+   kind from the status tokens: prompts in the accent, reports in ready blue, an open decision in
+   waiting amber, a failed step in the error red, a compact in idle gray. */
+
+.tmap {
+  position: absolute;
+  z-index: 2;
+  width: 10px;
+  pointer-events: none;
+}
+.tmap[hidden] {
+  display: none;
+}
+.tmap-mark {
+  position: absolute;
+  left: 0;
+  width: 10px;
+  height: 4px;
+  margin-top: -2px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: var(--k);
+  opacity: 0.85;
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    opacity 0.12s var(--pg-ease),
+    transform 0.12s var(--pg-ease);
+}
+
+/* a larger place to press than the mark itself */
+.tmap-mark::after {
+  content: '';
+  position: absolute;
+  inset: -4px -3px;
+}
+.tmap-mark:hover,
+.tmap-mark:focus-visible {
+  opacity: 1;
+  transform: scaleX(1.4);
+  outline: none;
+}
+.tmap-mark:focus-visible {
+  box-shadow: 0 0 0 2px var(--pg-accent);
+}
+.tmap-mark[data-kind='you'] {
+  --k: var(--pg-accent);
+}
+.tmap-mark[data-kind='report'] {
+  --k: var(--pg-ready);
+}
+.tmap-mark[data-kind='decide'] {
+  --k: var(--pg-wait);
+  height: 6px;
+  margin-top: -3px;
+}
+.tmap-mark[data-kind='failed'] {
+  --k: var(--pg-err);
+}
+.tmap-mark[data-kind='compact'] {
+  --k: var(--pg-idle);
+}
+
+/* the tip: what the mark is, its words, and what a press does */
+.tmap-tip {
+  position: fixed;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 300px;
+  padding: 8px 11px;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.22);
+  color: var(--pg-text);
+  font: 12.5px/1.4 var(--pg-sans);
+  pointer-events: none;
+}
+.tmap-tip[hidden] {
+  display: none;
+}
+.tmap-tip b {
+  font-weight: 600;
+}
+.tmap-tip small {
+  color: var(--pg-text-3);
+  font-size: 11.5px;
+}
+
+/* the block a press jumped to says "here" for a moment */
+.tmap-flash {
+  border-radius: var(--pg-r-sm);
+  animation: tmap-flash 1.4s var(--pg-ease);
+}
+@keyframes tmap-flash {
+  0%,
+  40% {
+    background: var(--pg-accent-soft);
+    box-shadow: 0 0 0 6px var(--pg-accent-soft);
+  }
+  100% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tmap-mark {
+    transition: none;
+  }
+  .tmap-flash {
+    animation: none;
+  }
+}

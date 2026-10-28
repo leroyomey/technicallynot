@@ -57,11 +57,10 @@
     const c = e?.summary?.choices;
     return c?.options?.length ? [c, ...(c.more || [])] : [];
   };
-  const answered = new Set(),
-    // answered: mark keys answered here, before the mark comes back from main (a second click never
-    // answers one twice); held: result id → answers waiting for the report's other decisions
-    // (decide)
-    held = new Map();
+
+  // mark keys answered here, before the mark comes back from main (a second click never answers
+  // one twice)
+  const answered = new Set();
   const openChoice = (e, isMarked) => {
     const all = decisionsOf(e),
       n = all.findIndex(
@@ -71,6 +70,16 @@
       );
     return n < 0 ? null : { ...all[n], n };
   };
+
+  // Every decision of a report not yet answered or dismissed ({ …decision, n }), in its order; the
+  // list of every thread's open decisions (185) shows them all at once.
+  const openDecisions = e =>
+    decisionsOf(e)
+      .map((decision, n) => ({ ...decision, n }))
+      .filter(
+        ({ n }) =>
+          !marked(markKey(e.id, 'choices', n)) && !answered.has(markKey(e.id, 'choices', n))
+      );
 
   // Leftovers of the removed Project context panel (per-viewer conveniences only).
   try {
@@ -560,8 +569,8 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
     }
 
     // A plain option goes straight to the asking agent while it runs (held while it works, so the
-    // thread shows it as waiting); with a saved result, through `decide`, which also gathers a
-    // report's several decisions into one message.
+    // thread shows it as waiting); with a saved result, through `decide`, which names the report's
+    // decisions still open in the same message.
     if (routing?.sendsItself?.(paneId, label)) {
       const sent = found
         ? decide(found.id + '#' + found.n, index, 'send')
@@ -626,28 +635,12 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
         return false;
       }
 
-      // Several decisions in one report go to the agent as one message, once the last is answered:
-      // an agent that got the first answer alone would start working, and the row for the next
-      // decision would be gone before the user could answer it. Kept in memory only and not marked
-      // until sent, so a reload forgets a half-answered report instead of calling an unsent answer
-      // "answered".
-      const all = decisionsOf(e),
-        kept = held.get(id) || new Map();
-      kept.set(n, { text: choiceMessage(c, o), label: o.label });
-      if (all.some((_, j) => !kept.has(j) && !marked(markKey(id, 'choices', j)))) {
-        held.set(id, kept);
-        answered.add(key);
-        say('Kept: ' + o.label + '. Answer the next decision; ' + e.name + ' gets them together.');
-
-        // the cards' decision row moves on to the next one
-        window.dispatchEvent(new CustomEvent('tnai:live-activity'));
-        return true;
-      }
-      if (!sendKept(id, e, s, kept)) {
-        kept.delete(n);
-        return false;
-      }
-      return true;
+      // Each answer goes the moment it is pressed, in any order, even with other decisions of the
+      // report still open: those are named in the same message so the agent keeps them open, and
+      // their buttons stay pressable (user, 2026-10-28: "decision 2 doesn't get sent because I
+      // haven't chose a option for decision 1"; answers used to wait for the report's last one).
+      const kept = new Map([[n, { text: choiceMessage(c, o), label: o.label }]]);
+      return sendKept(id, e, s, kept);
     }
     if (!toComposer(id, o.label, o.own ? 'reply' : 'choices', c.question)) return false;
     rememberChoice(e.paneId, c.question, o.label);
@@ -657,9 +650,9 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
     return true;
   }
 
-  // Sends the answers kept for a report (decide above) as one message. Decisions of that report
-  // with no answer are named as skipped, so the agent knows they are still open; they stay open on
-  // the card. → true when the app took the message.
+  // Sends a report's answer (decide above) as one message. Decisions of that report with no answer
+  // are named as not answered yet, so the agent knows they are still open; they stay open on the
+  // card. → true when the app took the message.
   function sendKept(id, e, s, kept) {
     const say = m => {
       try {
@@ -670,16 +663,42 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
     const parts = [...kept].sort((a, b) => a[0] - b[0]);
     const skipped = all
       .map((c, j) => ({ c, j }))
-      .filter(({ j }) => !kept.has(j) && !marked(markKey(id, 'choices', j)));
+      .filter(({ j }) => {
+        const key = markKey(id, 'choices', j);
+
+        // `answered`: pressed a moment ago, its mark not back from main yet
+        return !kept.has(j) && !answered.has(key) && !marked(key);
+      });
     const skipNote = skipped.length
       ? ' Not answered yet, keep these open: ' +
         skipped.map(({ c }) => '"' + c.question + '"').join(', ') +
         '.'
       : '';
 
+    // An answer pressed before the decision it depends on ("(after Decision 1: …)", 50-decisions)
+    // still goes; the agent is told to check it once that one is answered.
+    const earlyNote = parts
+      .map(([j]) => {
+        const first = dependsOn(all[j]?.question);
+        const open =
+          first &&
+          skipped.find(
+            // decision N is the one numbered N, or else the report's N-th decision
+            ({ c, j }) => (decisionNumber(c.question) || j + 1) === first.number
+          );
+        return open
+          ? ' This answer came before Decision ' +
+              first.number +
+              ', which it depends on: act on the parts that do not hinge on it, and once Decision ' +
+              first.number +
+              ' is answered, check this answer still fits; ask again only if it no longer does.'
+          : '';
+      })
+      .join('');
+
     // An agent still at work gets the answer when its task ends, like a prompt from the box: the
     // app holds it, and its thread shows it as waiting (71, 122).
-    const answer = parts.map(p => p[1].text).join(' ') + skipNote;
+    const answer = parts.map(p => p[1].text).join(' ') + skipNote + earlyNote;
     const labels = parts.map(p => p[1].label).join(' · ');
     const shown =
       'Decision: ' + labels + (skipped.length ? ' · ' + skipped.length + ' skipped' : '');
@@ -687,7 +706,6 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
       say(e.name + ' stopped before the choice could be sent.');
       return false;
     }
-    held.delete(id);
     parts.forEach(([j, part]) => rememberChoice(e.paneId, all[j]?.question, part.label));
     window.TnaiLiveTasks?.record?.(s.paneId, shown, s.name + ' (' + s.agent + ')');
     say(
@@ -706,22 +724,23 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
     return true;
   }
 
-  // How many answers are kept, unsent, for a thread's report (122's "Send N answers").
-  function keptCount(paneId, question, since = 0) {
-    const found = findDecision(paneId, question, since);
-    return found ? held.get(found.id)?.size || 0 : 0;
+  // ---------- decisions whose order matters ----------
+  // An agent marks a decision that hinges on an earlier one's answer as "Decision 2 of 2 (after
+  // Decision 1: <why>): <question>" (desktop/hidden-skills/50-decisions.md), and only then: most
+  // decisions can be answered in any order. Read here and by the thread card (122).
+
+  // "Decision 2 of 3: …" → 2, or 0 when the question has no number
+  function decisionNumber(question) {
+    const match = /^\s*Decision\s+(\d+)\b/i.exec(String(question || ''));
+    return match ? Number(match[1]) : 0;
   }
 
-  // "Send N answers": the kept answers go now, and the decisions not answered stay open.
-  function sendKeptNow(paneId, question, since = 0) {
-    const found = findDecision(paneId, question, since);
-    const kept = found && held.get(found.id);
-    const e = found && data.entries.find(x => x.id === found.id);
-    const s = e && sessionOf(e);
-    if (!kept?.size || !s?.running) return false;
-    const sent = sendKept(found.id, e, s, kept);
-    if (sent) window.dispatchEvent(new CustomEvent('tnai:live-activity'));
-    return sent;
+  // → { number, why } of the decision this one should follow, or null
+  function dependsOn(question) {
+    const match = /\(\s*after\s+Decision\s+(\d+)\s*(?::\s*([^)]*?))?\s*\)/i.exec(
+      String(question || '')
+    );
+    return match ? { number: Number(match[1]), why: (match[2] || '').trim() } : null;
   }
 
   // ---------- Live updates ----------
@@ -759,9 +778,10 @@ code.tnai-ic{padding:0 4px;border:1px solid #edf0ea;border-radius:4px;background
     findDecision,
     choiceFor,
     decideInThread,
-    keptCount,
-    sendKeptNow,
+    dependsOn,
+    decisionNumber,
     decisionsOf,
     openChoice,
+    openDecisions,
   };
 })();

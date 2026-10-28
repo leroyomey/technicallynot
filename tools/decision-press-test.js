@@ -193,6 +193,50 @@ const sendsItself = { sendsItself: () => true, targetOf: () => '', sendPlain: ()
     );
   }
 
+  // 6. two decisions in one report, Decision 2 pressed first: it goes at once, names Decision 1 as
+  // still open, and (marked "after Decision 1") tells the agent to check it once 1 is answered.
+  // Then Decision 1 goes on its own press (user 2026-10-28: "decision 2 doesn't get sent because
+  // I haven't chose a option for decision 1").
+  {
+    const FIRST = 'Decision 1 of 2: Which host?';
+    const SECOND = 'Decision 2 of 2 (after Decision 1: the host decides the plans): Which plan?';
+    const entry = savedResult('r6', FIRST, [
+      { label: 'Cloudflare', detail: '', recommended: true },
+      { label: 'Vercel', detail: '' },
+    ]);
+    entry.summary.choices.more = [
+      {
+        question: SECOND,
+        options: [
+          { label: 'Free', detail: '', recommended: true },
+          { label: 'Paid', detail: '' },
+        ],
+      },
+    ];
+    const { api, sent } = await load([entry], sendsItself);
+    api.decideInThread('p1', SECOND, 0, 'Paid', 0);
+    check(sent.length === 1, 'Decision 2 is sent the moment it is pressed (' + sent.length + ')');
+    check(/go with Paid\./.test(sent[0] || ''), 'it carries the answer pressed');
+    check(
+      /keep these open: "Decision 1 of 2: Which host\?"/.test(sent[0] || ''),
+      'it names Decision 1 as still open'
+    );
+    check(
+      /came before Decision 1, which it depends on/.test(sent[0] || ''),
+      'it tells the agent the answer came before the decision it hinges on'
+    );
+    api.decideInThread('p1', FIRST, 0, 'Vercel', 0);
+    check(sent.length === 2, 'Decision 1 is sent on its own press');
+    check(
+      /go with Vercel\./.test(sent[1] || '') && !/keep these open/.test(sent[1] || ''),
+      'and does not call Decision 2 open again: ' + sent[1]
+    );
+    check(
+      api.dependsOn(SECOND)?.number === 1 && api.dependsOn(FIRST) === null,
+      'the "after Decision N" mark is read only where it is written'
+    );
+  }
+
   // 5. the code: the place is never used to pick
   const source = fs.readFileSync(path.join(__dirname, '../src/scripts/49-context-data.js'), 'utf8');
   check(/function optionIndexFor/.test(source), 'the saved option is found by its words');

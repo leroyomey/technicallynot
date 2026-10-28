@@ -129,7 +129,7 @@ const TRANSCRIPT = [
       content: [
         {
           type: 'text',
-          text: 'Test received.\n\nDone:\n- read the brief\n- ran the tests\n\nWhere we stopped:\n- two tests fail\n\nStill open:\n- the footer\n\nYour turn:\n1. Reload the dev copy.\n\nHeads up: the old build stops working tomorrow.\n\n**1 · the cart total**\n- Outcome: Fixed\n- How we know: the test passes\n\n**2 · the footer**\n- Outcome: Still failing\n- How we know: seen\n\n**3 · the header**\n- Outcome: Partly\n\n**4 · the menu**\n- Outcome: Not started\n\nTechnically Not report\n- Did: answered the test message; checked the morning brief\n- Found: two tests fail\n- Changed: src/cart.js\n- Decided: left the three idle agents open\n- Remains: the footer\n- Untested: the header on a phone\n- Blockers: none of the checks ran\n- Next: fix the two tests\n- Ideas: a test for the footer\n\n- Decide: Which way should the test go? | 1. Left (recommended) | 2. Right\n\n- Decide: Which color for the badge? | 1. Blue (recommended) | 2. Green',
+          text: 'Test received.\n\nDone:\n- read the brief\n- ran the tests\n\nWhere we stopped:\n- two tests fail\n\nStill open:\n- the footer\n\nYour turn:\n1. Reload the dev copy.\n\nHeads up: the old build stops working tomorrow.\n\n**1 · the cart total**\n- Outcome: Fixed\n- How we know: the test passes\n\n**2 · the footer**\n- Outcome: Still failing\n- How we know: seen\n\n**3 · the header**\n- Outcome: Partly\n\n**4 · the menu**\n- Outcome: Not started\n\nTechnically Not report\n- Did: answered the test message; checked the morning brief\n- Found: two tests fail\n- Changed: src/cart.js\n- Decided: left the three idle agents open\n- Remains: the footer\n- Untested: the header on a phone\n- Blockers: none of the checks ran\n- Next: fix the two tests\n- Ideas: a test for the footer\n\n- Decide: Which way should the test go? | 1. Left (recommended) | 2. Right\n\n- Decide: Which color for the badge (after Decision 1: the badge sits on the side picked there)? | 1. Blue (recommended) | 2. Green',
         },
       ],
     },
@@ -500,39 +500,37 @@ try {
   await wait(50);
   const readingAt = talk.scrollTop;
 
-  // With one answer kept and the other decision of the report still open, the card offers "Send 1
-  // answer, leave the rest open" (122 paintSendKept). The kept count and the send are stood in
-  // for here: this report has no saved result, so 49 keeps nothing of its own.
-  const context = window.TnaiContext;
-  const realKept = context.keptCount;
-  const realSendKept = context.sendKeptNow;
-  const sentKept = [];
-  context.keptCount = () => 1;
-  context.sendKeptNow = (paneId, question) => {
-    sentKept.push(paneId + ': ' + question);
-    return true;
-  };
+  // The second decision is marked "(after Decision 1: why)": while both are open it says so under
+  // its question, which no longer carries the mark (122 paintAfter).
+  const afterAsk = [...list().querySelectorAll('.tnt-decide')].find(ask =>
+    /Which color/.test(ask.textContent)
+  );
+  const afterNote = () => afterAsk?.querySelector('.tnt-decide-after');
+  check(
+    !!afterNote() &&
+      !afterNote().hidden &&
+      /Best answered after Decision 1: the badge sits on the side picked there/.test(
+        afterNote().textContent
+      ) &&
+      !/after Decision/.test(afterAsk.querySelector('b')?.textContent || ''),
+    'a decision that depends on another says so while both are open ("' +
+      (afterNote()?.textContent || 'nothing') +
+      '")'
+  );
+
+  // Each answer goes the moment it is pressed, without waiting for the report's other decision.
   try {
     optionButtons[0]?.click();
     await wait(150);
-    const sendRow = decideAsk?.closest('.tnt-report')?.querySelector('.tnt-decide-send button');
-    check(
-      !!sendRow && /Send 1 answer, leave the rest open/.test(sendRow.textContent),
-      'one decision answered, one open: the card offers "' +
-        (sendRow?.textContent || 'nothing') +
-        '"'
-    );
-    sendRow?.click();
-    await wait(150);
-    check(
-      sentKept.length === 1 && sentKept[0].startsWith(pane + ': '),
-      'pressing it sends the kept answers now (' + sentKept.length + ' sent)'
-    );
   } finally {
     window.TnaiAgents.send = realSend;
-    context.keptCount = realKept;
-    context.sendKeptNow = realSendKept;
   }
+  check(!!afterNote() && afterNote().hidden, 'once Decision 1 is answered, the "after" line goes');
+  check(
+    afterAsk?.dataset.open === 'true' &&
+      [...afterAsk.querySelectorAll('button')].every(button => !button.disabled),
+    'the other decision stays open and pressable'
+  );
   check(
     talk.scrollHeight <= talk.clientHeight + 48 || Math.abs(talk.scrollTop - readingAt) < 4,
     'pressing a decision keeps the view where the user reads (' +

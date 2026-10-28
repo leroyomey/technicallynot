@@ -267,7 +267,15 @@ function eventEntries(event, cwd) {
       const counts = pending.get(id);
       pending.delete(id);
       return [
-        { kind: 'result', id, failed: data.success === false, text: resultText(data), ...counts },
+        // `at`: when it finished, for 187's time bar and a helper's end time (122)
+        {
+          kind: 'result',
+          id,
+          failed: data.success === false,
+          text: resultText(data),
+          ...counts,
+          at,
+        },
       ];
     }
     case 'abort':
