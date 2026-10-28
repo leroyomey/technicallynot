@@ -102,9 +102,16 @@ for (const kind of ['image', 'stylesheet', 'font', 'media', 'mainFrame', 'ping',
     .filter(name =>
       /\.\s*onBeforeRequest\s*\(/.test(fs.readFileSync(path.join(desktop, name), 'utf8'))
     );
+
+  // file-viewer.js keeps its own listener on its own session (the "tnai-file-viewer" partition,
+  // which blocks outside loads from a shown file): a different session, so it cannot replace this
+  // guard. Any other file with a listener can.
+  const viewer = fs.readFileSync(path.join(desktop, 'file-viewer.js'), 'utf8');
+  const viewerOwnSession = /fromPartition\(\s*'tnai-file-viewer'\s*\)/.test(viewer);
+  const others = listeners.filter(name => !(name === 'file-viewer.js' && viewerOwnSession));
   check(
-    'only script-guard.js puts an onBeforeRequest listener on a session',
-    JSON.stringify(listeners) === '["script-guard.js"]',
+    'only script-guard.js puts an onBeforeRequest listener on the app session',
+    JSON.stringify(others) === '["script-guard.js"]',
     listeners
   );
 }
