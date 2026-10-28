@@ -19,10 +19,22 @@ const until = async (fn, ms = 15000) => {
 };
 const paneId = sessionStorage.getItem('tnai.test.pane');
 
-check(
-  document.getElementById('prompt')?.value === 'draft that must survive',
-  'composer draft restored after reload'
-);
+// The draft is the open thread's (16, since 2026-10-22): it comes into the box once 120 says which
+// thread is open after the reload, a moment after the page loads, so this waits for it as the
+// checks below do (learned 2026-10-28: the 0.3.76 release run checked at once and failed). Should
+// another thread open first, the draft waits with its own thread, where the thread list shows it.
+const DRAFT = 'draft that must survive';
+const draftBack = await until(() => {
+  if (document.getElementById('prompt')?.value === DRAFT) return 'in the prompt box';
+  let owners = [];
+  try {
+    const stored = JSON.parse(localStorage.getItem('tnai.draft.threads.v1') || '{}');
+    owners = Object.keys(stored).filter(owner => stored[owner] === DRAFT);
+  } catch {}
+  const shown = owners.find(owner => window.TnaiDrafts?.of?.(owner) === DRAFT);
+  return shown ? 'kept with its thread, which is not the open one' : null;
+}, 8000);
+check(!!draftBack, 'composer draft restored after reload (' + (draftBack || 'lost') + ')');
 
 // The stopped shell is back as a thread, restored from its saved record: its CLI screen shows the
 // old output as a saved screen with the line that says what Enter does, and nothing auto-started.
