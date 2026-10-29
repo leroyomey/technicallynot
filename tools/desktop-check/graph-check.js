@@ -281,9 +281,11 @@ const typedTo = paneId =>
   // Sub1 finishes; the user closes its pane → HIDDEN, conversation saved → reusable.
   graph.onEvent('sub1', { kind: 'stop', text: 'Micro test added.' });
   const sub1 = () => graph.state().nodes.find(n => n.paneId === 'sub1');
+
+  // user 2026-10-28: a finished helper closes, also while the lead works; its report is kept
   check(
-    !sub1().closesAt,
-    'its report went to the lead, which works on it: the finished sub-agent stays'
+    sub1().closesAt > Date.now() && !/Micro test added/.test(typedTo('root')),
+    'finished while the lead works: it closes after the grace period, its report kept for the lead'
   );
   graph.onEvent('root', { kind: 'stop', text: '' });
   check(

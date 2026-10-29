@@ -36,6 +36,7 @@
     'devices-mode',
     'preview-mode',
     'board-mode',
+    'connections-mode',
   ];
 
   const layout = document.querySelector('.layout');
@@ -103,6 +104,7 @@
     { label: 'Terminal', icon: 'terminal', go: () => window.TnaiOwnTerminal?.open() },
     { label: 'Live preview', icon: 'monitor-play', go: () => window.TnaiLivePreviewPage?.open() },
     { label: 'Skills', icon: 'sparkles', go: () => window.TnaiRoute?.('skills') },
+    { label: 'Connections', icon: 'layout-grid', go: () => window.TnaiRoute?.('connections') },
     { group: 'This app' },
     {
       label: 'Devices and own relay',

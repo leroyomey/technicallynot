@@ -294,6 +294,11 @@ const clean = (text, max) =>
     .slice(0, max);
 const label = text => clean(text, 80).replace(/\n/g, ' ').trim();
 
+// A sentence the window answers an agent with ("where" it showed a preview, why it refused): one
+// line, long enough for 31's longest answer and a list of closed addresses. `label`'s 80 cut it
+// mid-word ("…so the preview w.", bug sweep 2026-10-28 item 13).
+const sentence = text => clean(text, 600).replace(/\n/g, ' ').trim();
+
 // The shims: one .cmd per agent command and for `tnai` (PowerShell, cmd, Codex's shell), plus a
 // `tnai` sh script for Git Bash (Claude Code's Bash tool); on mac/Linux one executable sh script
 // per name instead.
@@ -902,6 +907,26 @@ const userKept = (paneId, n = names.get(paneId)) =>
   !!n?.kept && !deps.lifecycle?.startedByAgent?.(paneId);
 const idOf = m => (deps.lifecycle?.instanceOf(m.paneId) || '').slice(0, 8) || m.paneId;
 
+// One helper, two ids: tnai_delegate, tnai_subagents and tnai_wait name a sub-agent by its graph
+// id (agent-graph.js), `tnai agents` by its agent id (agent-lifecycle.js). A graph id given to
+// send, ask, read, intervene, close or team is turned into the helper's panel id (while its panel
+// is open) and agent id (also after it closed), so the id a lead was given reaches its helper.
+// Returns null for anything that is not a graph id. Learned 2026-10-28: leads messaged their
+// helpers by the given id and reached nobody.
+function helperIds(key) {
+  const node = deps?.graph?.nodeById?.(label(key));
+  if (!node) return null;
+  const agentId =
+    (node.paneId && deps.lifecycle?.instanceOf(node.paneId)) ||
+    deps.lifecycle?.instanceOfContext?.(node.sessionId) ||
+    '';
+  return { paneId: node.paneId, agentId };
+}
+
+// An agent that is not running (closed, hidden), by name or agent id, also by its graph id
+const lookupAgent = (key, project) =>
+  deps.lifecycle?.lookup(helperIds(key)?.agentId || key, project);
+
 // ", waiting on NAME" for an agent with an unanswered question to another agent (agent-links.js),
 // so no agent wonders why it sits idle.
 const waitingOn = paneId => {
@@ -936,6 +961,9 @@ const rows = (list, project, paneId) =>
     }));
 
 async function find(list, key, project, self) {
+  // a helper named by the id tnai_delegate gave: its panel
+  const helper = helperIds(key);
+  if (helper?.paneId) key = helper.paneId;
   const k = label(key).toLowerCase(),
     here = list.filter(m => m.project === project && m.paneId !== self);
   const byId = here.find(
@@ -976,7 +1004,7 @@ const NAME_WORDS = 5;
 async function nameWithSpaces(list, msg, project, self) {
   if (typeof msg.to !== 'string' || !msg.to || /\s/.test(msg.to)) return null;
   const known = async name =>
-    !!(await find(list, name, project, self)) || !!deps.lifecycle?.lookup(name, project);
+    !!(await find(list, name, project, self)) || !!lookupAgent(name, project);
   let name = msg.to,
     rest = msg.text,
     longer = null;
@@ -1453,7 +1481,7 @@ async function request(paneId, pane, msg, socket) {
     msg.to.includes('@') &&
     deps.remoteSay &&
     !(await find(list, msg.to, project, paneId)) &&
-    !deps.lifecycle?.lookup(msg.to, project)
+    !lookupAgent(msg.to, project)
   ) {
     let takers = [];
     try {
@@ -1688,9 +1716,13 @@ async function request(paneId, pane, msg, socket) {
       refused = [];
     for (const key of keys) {
       const k = key.toLowerCase();
+
+      // a helper named by the id tnai_delegate gave: its panel
+      const helperPane = helperIds(key)?.paneId || '';
       const hits = pool.filter(
         c =>
           c.paneId === key ||
+          (!!helperPane && c.paneId === helperPane) ||
           c.name.toLowerCase() === k ||
           (k.length >= 6 && String(c.id).toLowerCase().startsWith(k))
       );
@@ -1709,6 +1741,7 @@ async function request(paneId, pane, msg, socket) {
             x.project === project &&
             (x.name.toLowerCase() === k ||
               x.paneId === key ||
+              (!!helperPane && x.paneId === helperPane) ||
               (k.length >= 6 && String(idOf(x)).toLowerCase().startsWith(k)))
         );
         refused.push(
@@ -1845,7 +1878,7 @@ async function request(paneId, pane, msg, socket) {
       myName = label(names.get(paneId)?.name || paneId);
     const live = await find(list, msg.to, project, paneId);
     if (live?.error) return errors.pass(live, 'invalid', TRY.agents);
-    const hit = live ? null : deps.lifecycle?.lookup(msg.to, project);
+    const hit = live ? null : lookupAgent(msg.to, project);
     const heir = hit ? deps.lifecycle.successorOf?.(hit.instanceId) : null;
     const target = {
       panes: [live?.paneId, heir?.paneId],
@@ -2125,7 +2158,7 @@ async function request(paneId, pane, msg, socket) {
     if (target?.error) return errors.pass(target, 'invalid', TRY.agents);
     let from = (me ? me.provider : 'Terminal') + ' · ' + label(names.get(paneId)?.name || paneId);
     if (!target) {
-      hit = deps.lifecycle?.lookup(msg.to, project);
+      hit = lookupAgent(msg.to, project);
 
       // A retired agent (it handed its work over) is not revived: its successor gets the message.
       // Only when no successor can take it is the old one revived, so nothing is lost.
@@ -2884,8 +2917,8 @@ module.exports = {
         : null;
     resolve(
       r?.ok === true
-        ? { ok: true, where: label(r.where), shot: shotOf }
-        : { ok: false, error: label(r?.error) || 'refused' }
+        ? { ok: true, where: sentence(r.where), shot: shotOf }
+        : { ok: false, error: sentence(r?.error) || 'refused' }
     );
     return true;
   },

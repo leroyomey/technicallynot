@@ -60,6 +60,8 @@
     start: -1,
     rows: [],
     active: 0,
+    // where the Saved group starts in `rows` (194), -1 without one
+    savedAt: -1,
     cli: '',
     // Esc closed the list for the word that starts here
     dismissedAt: -1,
@@ -170,6 +172,7 @@
     state.start = -1;
     state.rows = [];
     state.active = 0;
+    state.savedAt = -1;
     promptEl.removeAttribute('aria-expanded');
     promptEl.removeAttribute('aria-activedescendant');
   }
@@ -224,8 +227,16 @@
 
   function paint() {
     const el = listEl();
-    el.innerHTML =
-      '<h4>' + esc(title(state.sign, state.cli)) + '</h4>' + state.rows.map(rowHtml).join('');
+
+    // The CLI's own rows under their title, then the Saved group (194) under its own.
+    const rowsHtml = state.rows.map((row, at) => {
+      let head = '';
+      if (at === state.savedAt) head = '<h4>Saved</h4>';
+      return head + rowHtml(row, at);
+    });
+    const ownTitle =
+      state.savedAt === 0 ? '' : '<h4>' + esc(title(state.sign, state.cli)) + '</h4>';
+    el.innerHTML = ownTitle + rowsHtml.join('');
     window.TnaiFloat?.attach(promptEl.closest('.composebox') || promptEl, el, {
       placement: 'top-start',
       sameWidth: true,
@@ -284,11 +295,27 @@
     if (opening && !far) fetchFor(cli);
 
     const answer = far ? far.rows : known.get(cli);
-    if (!answer) return close();
-    let all;
+
+    // The CLI's list is on its way: wait for it, so the first row (and Enter) stays the CLI's
+    // own as before the Saved group existed.
+    if (!answer && !far && state.fetching === cli) return close();
+
+    // The Saved group (194, the prompt and workflow library) after the CLI's own rows, for "/"
+    // on this computer's threads; it shows before the CLI's answer came in too.
+    const saved =
+      !far && word.sign === '/'
+        ? matching(
+            safe(() => window.TnaiPromptLibrary?.pickerRows?.(cli) || [], []),
+            word.text
+          )
+        : [];
+    if (!answer && !saved.length) return close();
+    let all = [];
     if (far) all = far.rows;
-    else all = word.sign === '/' ? commandRows(cli, answer) : skillRows(cli, answer);
-    const rows = matching(all, word.text);
+    else if (answer) all = word.sign === '/' ? commandRows(cli, answer) : skillRows(cli, answer);
+    const own = matching(all, word.text);
+    const rows = [...own, ...saved];
+    state.savedAt = saved.length ? own.length : -1;
 
     // Nothing matches: no list, so Enter sends the prompt as typed.
     if (!rows.length) return close();
@@ -311,7 +338,16 @@
     if (!row) return close();
     const value = promptEl.value;
     const caret = promptEl.selectionStart;
-    const insert = row.insert + ' ';
+    let insert = row.insert + ' ';
+
+    // A Saved row (194): a prompt's text takes the typed word's place, a recipe starts on the
+    // thread and the typed word goes.
+    if (row.saved) {
+      const paneId = safe(() => window.TnaiLiveTasks?.target?.(), '');
+      const text = safe(() => window.TnaiPromptLibrary?.pick?.(row, paneId), null);
+      if (text === null || text === undefined) return close();
+      insert = text;
+    }
     promptEl.value = value.slice(0, state.start) + insert + value.slice(caret).replace(/^ /, '');
     const end = state.start + insert.length;
     close();

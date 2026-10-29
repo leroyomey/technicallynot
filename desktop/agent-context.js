@@ -63,6 +63,12 @@ const lifecycle = require('./agent-lifecycle');
 const errors = require('./agent-errors');
 const watch = require('./watch-service');
 const digestOf = require('./context-digest');
+
+// problems that came up in several task reports (report-repeats.js)
+const repeats = require('./report-repeats');
+
+// paneId → the problems already named to that session with a prompt
+const repeatsSaid = new Map();
 const stalls = require('./stall-log');
 const gitSvc = require('./git-service'); // internal.git: read-only log for the commit scan
 
@@ -1653,8 +1659,26 @@ function overview(p) {
         asks.map(s => '  - ' + s).join('\n')
       : '') +
     (issues.length ? '\nKnown issues:\n' + issues.map(s => '  - ' + s).join('\n') : '') +
-    (next.length ? '\nOpen / recommended next:\n' + next.map(s => '  - ' + s).join('\n') : '')
+    (next.length ? '\nOpen / recommended next:\n' + next.map(s => '  - ' + s).join('\n') : '') +
+    // problems several task reports named, not marked claimed or done (report-repeats.js)
+    repeats.contextText(repeatGroups(p)) +
+    // what this project's measured tasks taught (task-learning.js), for every CLI
+    require('./task-learning').forContext(p.root)
   );
+}
+
+// The problems that came up in two or more task reports of this project (report-repeats.js).
+function repeatGroups(p) {
+  return repeats.find(p.entries, (id, kind, index) => !!p.marks[markKey(id, kind, index)]);
+}
+
+// With a prompt: the repeated problems this prompt is about, each once per session.
+function repeatsFor(paneId, prompt) {
+  const inst = lifecycle.info(paneId);
+  const p = store(inst?.project || deps.root());
+  if (!p) return '';
+  if (!repeatsSaid.has(paneId)) repeatsSaid.set(paneId, new Set());
+  return repeats.promptText(repeatGroups(p), prompt, repeatsSaid.get(paneId));
 }
 
 function notesText(p) {
@@ -2154,9 +2178,23 @@ module.exports = {
   // (queued only).
   forPrompt(paneId, prompt) {
     try {
-      return [notesFor(paneId), digest(paneId, String(prompt || ''), 'prompt', PROMPT_PICKS)]
+      return [
+        notesFor(paneId),
+        digest(paneId, String(prompt || ''), 'prompt', PROMPT_PICKS),
+        repeatsFor(paneId, String(prompt || '')),
+      ]
         .filter(Boolean)
         .join('\n\n');
+    } catch {
+      return '';
+    }
+  },
+
+  // For a CLI without a prompt hook (11 adds it to the prompt it sends, through main.js
+  // `learning:note`): the repeated problems this prompt is about, each once per session.
+  repeatsFor(paneId, prompt) {
+    try {
+      return repeatsFor(paneId, String(prompt || ''));
     } catch {
       return '';
     }
@@ -2199,6 +2237,7 @@ module.exports = {
   removeNote,
   forget: paneId => {
     current.delete(paneId);
+    repeatsSaid.delete(paneId);
     for (const m of [queued, notesSeen])
       for (const id of m.keys()) if (!lifecycle.exists(id)) m.delete(id);
   }, // instances swept by lifecycle

@@ -748,6 +748,70 @@ code.tnt-act-what {
   margin-top: 2px;
 }
 
+/* The thread's information layout (feature 14, user 2026-10-28 chose "Proposed" in
+   docs/plans/design-concepts/info-layout.html): the report on top of its answer shows its "Did"
+   lines and its decisions; "Full report" opens the rest in place (122 `foldReport`). */
+.tnt-report[data-folded='true'] > .tnt-report-row:not([data-label='did']) {
+  display: none;
+}
+.tnt-report > .tnt-unfold {
+  margin: 6px 0 -4px -4px;
+}
+
+/* A long answer, once its turn ended, shows its first 300 px and fades out, never cut by an edge
+   (122 `foldAnswer`; the mask uses only the gradient's opacity). */
+.tnt-say.tnt-say-folded {
+  max-height: 300px;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, #000 62%, transparent);
+}
+.tnt-say + .tnt-unfold {
+  margin-top: -12px;
+}
+
+/* the quiet button under a fold: the look of 51's .tnt-made-head */
+.tnt-unfold {
+  display: flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
+  padding: 4px 8px 4px 4px;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  color: var(--pg-text-2);
+  font: 12.5px/1.4 var(--pg-sans);
+  text-align: left;
+  cursor: pointer;
+}
+.tnt-unfold:hover {
+  background: var(--pg-panel-hover-soft);
+  color: var(--pg-text);
+}
+.tnt-unfold:focus-visible {
+  outline: 2px solid var(--pg-accent);
+  outline-offset: 2px;
+}
+.tnt-unfold em {
+  color: var(--pg-text-3);
+  font-style: normal;
+}
+.tnt-unfold .tn-ico {
+  flex: none;
+  transition: transform 0.15s var(--pg-ease);
+}
+.tnt-unfold[aria-expanded='true'] .tn-ico {
+  transform: rotate(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tnt-unfold .tn-ico {
+    transition: none;
+  }
+}
+
 /* Each label in the color it has in the terminal: one list of kinds, in 75-report-highlight.js,
    which writes these colors for Light and for Dark. "Did" takes the app's text green instead
    (user decision 2026-10-23, mock green-text.html), which has a value for every shade. */

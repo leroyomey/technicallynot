@@ -171,8 +171,8 @@
   }
 
   // Light markdown: headings, paragraphs, bullet/numbered lists, block quotes, rules, fenced code,
-  // inline code, bold; links as their text. Every piece of the answer is escaped first, so HTML in
-  // it (a <script>, an <img>) shows as text.
+  // tables, inline code, bold; links as their text. Every piece of the answer is escaped first, so
+  // HTML in it (a <script>, an <img>) shows as text.
   function inline(raw) {
     const codes = [];
     let s = esc(String(raw).replace(/\u0000/g, '')).replace(/`([^`\n]+)`/g, (_, c) => {
@@ -186,6 +186,56 @@
       // __bold__ only as whole words, never inside snake__names
       .replace(/(^|[^\w])__(?=\S)([^_\n]*?\S)__(?!\w)/g, '$1<b>$2</b>');
     return s.replace(/\u0000(\d+)\u0000/g, (_, i) => '<code>' + codes[+i] + '</code>');
+  }
+
+  // A table row's cells: split on pipes that are not escaped ("\|" stays a pipe in its cell)
+  function tableCells(line) {
+    let row = line.trim();
+    if (row.startsWith('|')) row = row.slice(1);
+    if (row.endsWith('|') && !row.endsWith('\\|')) row = row.slice(0, -1);
+    return row.split(/(?<!\\)\|/).map(cell => cell.trim().replace(/\\\|/g, '|'));
+  }
+
+  const TABLE_RULE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+
+  // A Markdown table starting at lines[start] → { html, end } (end: the first line after it), or
+  // null. Without it the table showed as raw pipes (learned 2026-10-28: a helper's text tables;
+  // only tables with a numbers column were drawn, as 178's chart cards). It takes 178's table
+  // look; cells are left-aligned unless the dashes say otherwise (":--:" centre, "--:" right).
+  function tableAt(lines, start) {
+    const headLine = lines[start];
+    const ruleLine = lines[start + 1] || '';
+    if (!headLine.includes('|') || !TABLE_RULE.test(ruleLine) || !ruleLine.includes('-'))
+      return null;
+    const head = tableCells(headLine);
+    const rule = tableCells(ruleLine);
+    if (head.length !== rule.length) return null;
+    const aligns = rule.map(cell =>
+      cell.endsWith(':') ? (cell.startsWith(':') ? 'center' : 'right') : ''
+    );
+    const cellHtml = (tag, text, at) =>
+      '<' +
+      tag +
+      (aligns[at] ? ' class="tnt-md-' + aligns[at] + '"' : '') +
+      '>' +
+      inline(text) +
+      '</' +
+      tag +
+      '>';
+    let end = start + 2;
+    const rows = [];
+    while (end < lines.length && lines[end].includes('|') && lines[end].trim()) {
+      const cells = tableCells(lines[end]);
+      rows.push(head.map((_, at) => cellHtml('td', cells[at] || '', at)).join(''));
+      end++;
+    }
+    const html =
+      '<div class="tnt-md-table-wrap"><table class="tnt-chart-table tnt-md-table"><thead><tr>' +
+      head.map((text, at) => cellHtml('th', text, at)).join('') +
+      '</tr></thead><tbody>' +
+      rows.map(row => '<tr>' + row + '</tr>').join('') +
+      '</tbody></table></div>';
+    return { html, end };
   }
 
   function markdown(text) {
@@ -241,6 +291,15 @@
         flushPara();
         flushQuote();
         if (list && !/^\s*([-*+]|\d+[.)])\s+/.test(lines[i + 1] || '')) flushList();
+        continue;
+      }
+
+      // A Markdown table: a head row, then a line of dashes with the same number of cells
+      const table = tableAt(lines, i);
+      if (table) {
+        flush();
+        out.push(table.html);
+        i = table.end - 1;
         continue;
       }
       const h = line.match(/^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/);

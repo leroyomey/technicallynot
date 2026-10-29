@@ -130,6 +130,27 @@ const SHIM = path.join(__dirname, '..', '..', 'desktop', 'agent-shim.js');
     "the window's answer is passed back to the agent"
   );
 
+  // 31's longest answer (the user is on another page) reaches the agent whole: it was cut at 80
+  // characters, "…so the preview w." (bug sweep 2026-10-28, item 13, seen by a real agent)
+  const longWhere =
+    'the user got a bell notice with Open; they are on another page, so the preview was not forced on screen';
+  answer = { ok: true, where: longWhere };
+  r = await tnai(project, 'preview', url, 'desktop');
+  check(
+    r.code === 0 && r.out.includes(longWhere + '.'),
+    "the window's long answer reaches the agent whole: " + r.out.trim()
+  );
+  answer = {
+    ok: false,
+    error: 'the user has another project open in Technically Not (' + 'C:\\x'.repeat(30) + ')',
+  };
+  r = await tnai(project, 'preview', url, 'desktop');
+  check(
+    r.code === 1 && r.out.includes('C:\\x'.repeat(30) + ')'),
+    "a long refusal (another project's path) reaches the agent whole"
+  );
+  answer = { ok: true, where: 'the Live preview page was opened for the user' };
+
   pkg(sub, { vite: '5', react: '18' });
   r = await tnai(sub, 'preview', url.replace('localhost', '127.0.0.1'));
   check(

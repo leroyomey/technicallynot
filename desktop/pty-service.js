@@ -165,12 +165,17 @@ function publicInfo(s) {
 
 const ID_AT_START = ['Claude Code', 'Gemini CLI', 'GitHub Copilot'];
 
+// A tool run through the ACP connector also gets its id at start: the connector names the
+// session's record by it (acp-connector.js).
+const idAtStart = agent => ID_AT_START.includes(agent) || registry.isAcp(agent);
+
 // Whether the CLI has a saved conversation Technically Not can resume for this session.
 function checkResumable(s) {
   if (s.mode !== 'run' || !s.sessionId) return false;
   if (s.agent === 'Claude Code')
     return store.claudeTranscriptExists(s.sessionId, s.cwd, s.accountDir);
   if (s.agent === 'Cursor Agent') return cursor.chatExists(s.cwd, s.sessionId);
+  if (registry.isAcp(s.agent)) return require('./acp-connector').sessionExists(s.sessionId);
   return s.agent === 'Codex' || s.agent === 'OpenCode';
 }
 
@@ -181,6 +186,8 @@ async function checkResumableAsync(s) {
     return store.geminiSessionExists(s.sessionId);
   if (s.mode === 'run' && s.sessionId && s.agent === 'GitHub Copilot')
     return store.copilotSessionExists(s.sessionId, s.accountDir);
+  if (s.mode === 'run' && s.sessionId && registry.isAcp(s.agent))
+    return require('./acp-connector').sessionExistsAsync(s.sessionId);
   return checkResumable(s);
 }
 
@@ -555,7 +562,7 @@ async function launch({
 }) {
   // Claude Code, Gemini CLI and GitHub Copilot (`--session-id`, agent-registry.js) accept a session
   // id at start, so Technically Not always knows which conversation a pane holds.
-  if (ID_AT_START.includes(agent) && mode === 'run' && !sessionId && !resumeId)
+  if (idAtStart(agent) && mode === 'run' && !sessionId && !resumeId)
     sessionId = crypto.randomUUID();
 
   // OpenCode's own server for this panel (opencode-link.js): a loopback port and a password, only
@@ -640,6 +647,11 @@ async function launch({
   if (mode === 'run' && accountId && agent !== 'Terminal')
     Object.assign(env, accounts.keyEnv(agent, accountId));
 
+  // The keys of this thread's connections (connections.js): the same way, environment only, so a
+  // connection's settings name the variable and never hold the key.
+  if (mode === 'run' && agent !== 'Terminal')
+    Object.assign(env, require('./connections').envFor(paneId));
+
   // the password: environment only, never an argument
   if (serverLink) spec.env = { ...(spec.env || {}), ...serverLink.env };
 
@@ -715,7 +727,7 @@ async function launch({
   // A Claude Code session id made just now (not a resume) has no transcript yet: skip the sync scan
   // of every ~/.claude/projects folder on the main process while other panes stream; the 2 s tick
   // (lookup) notices once the conversation is saved.
-  s.resumable = ID_AT_START.includes(agent) && !resumeId ? false : checkResumable(s);
+  s.resumable = idAtStart(agent) && !resumeId ? false : checkResumable(s);
 
   // A PowerShell kept ready (warm below) belongs to no panel yet: no session, record or ticker
   // until a panel takes it (adopt).

@@ -31,8 +31,9 @@ function check(name, ok, detail = '') {
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 // ---- the window's pure part: the script without the bridge keeps only what can be tested ----
+// another copy of 170 may be named to test it instead (an older one, to see a check fail)
 const source = fs.readFileSync(
-  path.join(__dirname, '..', 'src', 'scripts', '170-what-it-made.js'),
+  process.argv[2] || path.join(__dirname, '..', 'src', 'scripts', '170-what-it-made.js'),
   'utf8'
 );
 const sandbox = { window: {}, console, URL };
@@ -82,14 +83,91 @@ check(
 // a command that names files: only with a start time, only when it is not one that only looks
 const ran = (command, at) => act('Ran', command, { full: command, at });
 check(
-  'a command that named a picture and a video it made (inferred, with its start time)',
+  'a command that wrote a video and a picture (inferred, with its start time; inputs left out)',
   same(
     made
       .find(ran('ffmpeg -i in.mov -vf scale=640 out/clip.mp4 && magick a.png b.png', 1000))
       .map(item => item.kind + ':' + item.file + ':' + item.since),
-    ['video:in.mov:1000', 'video:out/clip.mp4:1000', 'picture:a.png:1000', 'picture:b.png:1000']
+    ['video:out/clip.mp4:1000', 'picture:b.png:1000']
   )
 );
+
+// Bug sweep L1 (2026-10-28, user screenshot "made 14 things"): commands that only read, search or
+// check files, in the forms every CLI types them (bash, PowerShell, cmd, Codex's `bash -lc`),
+// make nothing, even when a part comes after `cd …;` or a pipe.
+const files = command => made.find(ran(command, 1000)).map(item => item.file);
+const READ_ONLY = [
+  'cd "/c/Users/me/OneDrive/Desktop/Project TN.ai"; cat docs/notes/bug-sweep-2026-10-28.md | head -80; echo ----; grep -n "What it made" docs/ISSUES.md; echo ----; wc -l src/scripts/170-what-it-made.js; grep -n "Rules every helper gets" -A40 .claude/skills/tnai-bug-sweep/SKILL.md | head -60',
+  'grep -n "^## " docs/RELEASE_QUEUE.md; sed -n 1,40p .claude/skills/tnai-release-train/owner.md; awk \'/In progress/{f=1} f\' docs/RELEASE_QUEUE.md',
+  'node -e "console.log(require(\'./package.json\').version)" && node tools/check-syntax.js',
+  'Get-Content .claude/skills/tnai-verification/SKILL.md -TotalCount 40; Select-String -Path docs/ISSUES.md -Pattern "What it made"; findstr /n "L1" docs\\notes\\bug-sweep-2026-10-28.md',
+  "cd 'C:\\Users\\me\\OneDrive\\Desktop\\Project TN.ai'; Get-Content package.json | ConvertFrom-Json | Select-Object version",
+  'cat docs/notes/bug-sweep/2026-10-28-g2-dash.md && node tools/website-check.js docs/notes/bug-sweep/2026-10-28-g2-dash.md',
+  'bash -lc "grep -n L1 docs/ISSUES.md && sed -n 1,20p .claude/skills/tnai-web-design/SKILL.md"',
+  'powershell.exe -Command "Get-Content .claude/skills/tnai-verification/checks-by-file.md | Select-String what-it-made"',
+  'git diff --stat docs/ISSUES.md; git show HEAD:docs/RELEASE_QUEUE.md | head -5; rm out/old.png',
+];
+for (const command of READ_ONLY)
+  check(
+    'read only, makes nothing: ' + command.slice(0, 60),
+    same(files(command), []),
+    files(command)
+  );
+
+// what a part writes still counts, in every shell's form
+const WRITES = [
+  ['cd docs; grep -n x ISSUES.md > out/found.txt', ['out/found.txt']],
+  ['grep -c x a.md >> log/counts.txt 2>&1', ['log/counts.txt']],
+  ["sed -i 's/a/b/' notes/plan.md", ['notes/plan.md']],
+  ['sed -n 1,5p notes/plan.md > /dev/null', []],
+  ['cp shots/a.png public/hero.png', ['public/hero.png']],
+  ['Copy-Item -Path a.png -Destination "out/b.png"', ['out/b.png']],
+  ['Move-Item old.csv data/new.csv', ['data/new.csv']],
+  ['"hi" | Out-File -FilePath notes.md -Encoding utf8', ['notes.md']],
+  ['Set-Content -Path report.md -Value "x"', ['report.md']],
+  ['Get-Content a.md | Set-Content b.md', ['b.md']],
+  [
+    "cat > notes/summary.md <<'EOF'\n# Title\n; grep x y.md > z.md\nEOF\necho done",
+    ['notes/summary.md'],
+  ],
+  ['curl -sSL -o shot.png https://example.com/a', ['shot.png']],
+  ['powershell -Command "Set-Content -Path out.md -Value 1"', ['out.md']],
+  ['cmd /c "copy a.png b.png"', ['b.png']],
+  ['node tools/plot.js > out/plot.png 2>&1', ['out/plot.png']],
+  ['npx playwright screenshot http://localhost:5173 shots/home.png', ['shots/home.png']],
+  ['node tools/check.js docs/ISSUES.md data/table.json', []],
+  ['echo x | tee notes/a.md', ['notes/a.md']],
+];
+for (const [command, expected] of WRITES)
+  check(
+    'writes ' + JSON.stringify(expected) + ': ' + command.slice(0, 50),
+    same(files(command), expected),
+    files(command)
+  );
+
+// a file another panel held a file lock on since the command started is that agent's edit
+check('the lock record is there', typeof made.recordLocks === 'function');
+if (typeof made.recordLocks === 'function') {
+  const now = Date.now();
+  made.recordLocks([{ file: 'docs/ISSUES.md', paneId: 'other', name: 'Sol', at: now - 5000 }]);
+  check('another panel holds it: left out', made.heldByOther('me', 'docs/ISSUES.md', now - 1000));
+  check('the same panel holds it: kept', !made.heldByOther('other', 'docs/ISSUES.md', now - 1000));
+  check(
+    'an absolute or backslash path to the held file: left out',
+    made.heldByOther('me', 'C:/Users/x/Project TN.ai/docs/ISSUES.md', now) &&
+      made.heldByOther('me', 'docs\\ISSUES.md', now)
+  );
+  check('a bare name is another file of the project', !made.heldByOther('me', 'ISSUES.md', now));
+  made.recordLocks([]);
+  check(
+    'a hold that ended after the start: left out',
+    made.heldByOther('me', 'docs/ISSUES.md', now - 1000)
+  );
+  check(
+    'a hold that ended before the start: kept',
+    !made.heldByOther('me', 'docs/ISSUES.md', now + 60000)
+  );
+}
 check(
   'a script run with node may make a chart picture',
   made.find(ran('node tools/plot.js > out/plot.png', 5)).length === 1

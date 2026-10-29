@@ -1258,6 +1258,28 @@ async function peerChecks() {
   );
   check(ms < 400, 'it takes ' + Math.round(ms) + ' ms (limit 400)');
 
+  // A conversation whose last 2 MB is mostly a copy of a request (Claude Code 2.1.300+
+  // `api-request-blob`, up to 2.7 MB a line): the first read reaches further back, so the thread
+  // opens with the conversation, not only the newest reply (learned 2026-10-28).
+  {
+    const blobFile = path.join(folder, 'blob.jsonl');
+    const pairs = [];
+    for (let index = 1; index <= 40; index++) {
+      pairs.push(JSON.stringify(user('Question ' + index)));
+      pairs.push(JSON.stringify(assistant([{ type: 'text', text: 'Answer ' + index }])));
+    }
+    const blob = JSON.stringify({ type: 'api-request-blob', data: 'x'.repeat(3 * 1024 * 1024) });
+    const last = JSON.stringify(assistant([{ type: 'text', text: 'Newest answer' }]));
+    fs.writeFileSync(blobFile, [...pairs, blob, last].join('\n') + '\n');
+    const opened = await log.read({ ...record, sessionId: 'blob' }, -1, options);
+    const prompts = opened.entries.filter(entry => entry.kind === 'you').length;
+    check(prompts === 40, 'a request copy in the tail: the thread still opens with every prompt');
+    check(
+      opened.entries[opened.entries.length - 1].text === 'Newest answer',
+      'and it ends with the newest reply'
+    );
+  }
+
   fs.rmSync(scratch, { recursive: true, force: true });
   console.log(failed ? 'FAILED ' + failed + ' of ' + count : 'PASS ' + count + ' checks');
   process.exit(failed ? 1 : 0);

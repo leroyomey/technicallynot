@@ -127,6 +127,23 @@ contextBridge.exposeInMainWorld('tnaiNative', {
               ok: result.ok === true,
               error: String(result.error || ''),
               where: String(result.where || ''),
+
+              // the `tnai_preview` tool's answers (196): its switch, and the frame to act on
+              off: result.off === true,
+              ...(result.control && typeof result.control === 'object'
+                ? {
+                    control: {
+                      frame: String(result.control.frame || '').slice(0, 200),
+                      url: String(result.control.url || '').slice(0, 2000),
+                      rect: {
+                        x: Number(result.control.rect?.x) || 0,
+                        y: Number(result.control.rect?.y) || 0,
+                        w: Number(result.control.rect?.w) || 0,
+                        h: Number(result.control.rect?.h) || 0,
+                      },
+                    },
+                  }
+                : {}),
               ...(result.shot && typeof result.shot === 'object'
                 ? {
                     shot: {
@@ -262,6 +279,15 @@ contextBridge.exposeInMainWorld('tnaiNative', {
   // lead's plan. Composer attachments: save(name, bytes) → {ok, value: absolute path} in
   // Technically Not's own attachments folder. Git for the connected project folder
   // (git-service.js); onChanged fires when .git HEAD/index/refs change.
+  // Keep or undo one file a task changed (change-review.js): state({ paneId, folder, at, ms, files
+  // }) → one row per file; diff(id) → { ok, before, after } or { ok: false, why }; keep(review
+  // key); undo(id) → { ok } or { ok: false, why }.
+  changeReview: {
+    state: query => invoke('review:state', query),
+    diff: id => invoke('review:diff', String(id || '')),
+    keep: key => invoke('review:keep', String(key || '')),
+    undo: id => invoke('review:undo', String(id || '')),
+  },
   git: {
     status: () => invoke('git:status'),
 
@@ -433,6 +459,9 @@ contextBridge.exposeInMainWorld('tnaiNative', {
     cancelHeld: heldId => invoke('attention:cancelHeld', String(heldId)),
     sendHeldNow: heldId => invoke('attention:sendHeldNow', String(heldId)),
     inputEmpty: paneId => invoke('attention:inputEmpty', String(paneId)),
+
+    // a compact began or ended in a thread: its prompts wait meanwhile (158-cli-busy.js)
+    compacting: (paneId, on) => invoke('attention:compacting', String(paneId ?? ''), !!on),
 
     // the count on the taskbar icon (174): a PNG data address with the number, or '' for none
     badge: (picture, count) =>
@@ -657,6 +686,14 @@ contextBridge.exposeInMainWorld('tnaiNative', {
     createOnce: job => invoke('schedules:createOnce', job && typeof job === 'object' ? job : {}),
     onState: listen('schedules:state'),
   },
+  // The prompt and workflow library (desktop/prompt-library.js; 194): saved prompts and recipes.
+  // Main checks every field again, the window only asks.
+  promptLibrary: {
+    view: () => invoke('library:view'),
+    save: item => invoke('library:save', item && typeof item === 'object' ? item : {}),
+    remove: id => invoke('library:remove', String(id ?? '')),
+    onState: listen('library:state'),
+  },
   // The Board page's ideas, per project folder (desktop/board-ideas.js).
   board: {
     ideas: folder => invoke('board:ideas', String(folder ?? '')),
@@ -689,10 +726,38 @@ contextBridge.exposeInMainWorld('tnaiNative', {
     state: () => invoke('agentTurns:state'),
     on: listen('agent:turn'),
   },
+  // Connections (connections.js; docs/plans/plugin-mcp-manager.md 7.1): the user's MCP servers for
+  // every agent. A key's value only goes in; state() says only whether it is set.
+  connections: {
+    state: () => invoke('connections:state'),
+    add: request => invoke('connections:add', request),
+    adopt: (tool, name) => invoke('connections:adopt', String(tool || ''), String(name || '')),
+    remove: id => invoke('connections:remove', String(id || '')),
+    setEvery: (id, on) => invoke('connections:every', String(id || ''), !!on),
+    setThread: (id, instanceId, on) =>
+      invoke('connections:thread', String(id || ''), String(instanceId || ''), !!on),
+    setKey: (id, name, value) =>
+      invoke('connections:key', String(id || ''), String(name || ''), String(value ?? '')),
+    forThread: paneId => invoke('connections:forThread', String(paneId || '')),
+    onChanged: listen('connections:changed'),
+  },
+  // Learning from threads (task-learning.js): where a task that just ended spent its time; the
+  // project's lessons with the usual task and one task's record; "Tell agents" per lesson; a push
+  // when a project's lessons may have changed.
+  learning: {
+    split: (paneId, at, parts) => invoke('learning:split', paneId, at, parts),
+    view: (paneId, at) => invoke('learning:view', paneId, at),
+    mute: (paneId, key, muted) => invoke('learning:mute', paneId, key, !!muted),
+    note: (paneId, prompt) => invoke('learning:note', paneId, String(prompt || '')),
+    onChanged: listen('learning:changed'),
+  },
   // Settings › Usage: aggregated real token usage from the agent CLIs' own session logs
   // (usage-stats.js).
   usage: {
     stats: () => invoke('usage:stats'),
+    // Settings › Insights (usage-insights.js): 90 days, the tips, and conversation titles
+    insights: () => invoke('usage:insights'),
+    titles: ids => invoke('usage:titles', Array.isArray(ids) ? ids.slice(0, 16) : []),
     // plan-limits.js forAccounts: Claude Code per account + Codex's newest file reading
     limits: force => invoke('usage:limits', !!force),
   },
@@ -713,6 +778,7 @@ contextBridge.exposeInMainWorld('tnaiNative', {
     copy: (kind, id) => invoke('snapshots:copy', kind, id),
     remove: (kind, id) => invoke('snapshots:remove', kind, id),
     clear: () => invoke('snapshots:clear'),
+    picture: id => invoke('snapshots:picture', id),
     onChange: listen('snapshots:changed'),
   },
   // Agent mesh (agent-mesh.js): agent sessions incl. CLIs started by hand in a terminal, and the

@@ -274,6 +274,8 @@
       webglWaiting.delete(term);
       term.tnaiWebglRetry?.disconnect();
       term.tnaiWebglRetry = null;
+      if (term.tnaiWebglLater) clearTimeout(term.tnaiWebglLater);
+      term.tnaiWebglLater = 0;
       term.tnaiWebglOff?.();
       origDispose();
     };
@@ -349,18 +351,17 @@
 
       // Lost anyway (GPU reset): a new one the next time its box is shown. One on screen would wait
       // on the DOM renderer until a page switch, so it asks again on the next frame (useWebgl keeps
-      // the limit), once per 5 s so a GPU that stays down is not asked each frame.
+      // the limit), at most once per 5 s so a GPU that stays down is not asked each frame. Lost
+      // again within those 5 s, it asks when they are up, not never (learned 2026-10-28: a second
+      // loss left it on the DOM renderer until the next page switch).
       addon.onContextLoss(() => {
         const held = counted,
           now = performance.now(),
-          again = held && !boxHidden(term) && !(now - term.tnaiWebglLostAt < 5000);
+          since = now - term.tnaiWebglLostAt;
         if (held) term.tnaiWebglLostAt = now;
         release();
         retryWhenShown(term);
-        if (again)
-          (term.element.ownerDocument.defaultView || window).requestAnimationFrame(() => {
-            if (!boxHidden(term)) useWebgl(term);
-          });
+        if (held && !boxHidden(term)) retryOnScreen(term, since < WEBGL_RETRY_MS ? since : 0);
       });
       term.loadAddon(addon);
       counted = true;
@@ -373,6 +374,31 @@
     } catch {
       release();
     }
+  }
+
+  // A terminal on screen whose context was lost asks for a new one on a frame, once `waited` ms
+  // since its last loss reach WEBGL_RETRY_MS (0: at once). One waiting retry per terminal; it is
+  // cancelled when the terminal is disposed (wrapDispose) and does nothing once the terminal holds
+  // a context again or its box is hidden (retryWhenShown then takes over).
+  const WEBGL_RETRY_MS = 5000;
+
+  function retryOnScreen(term, waited) {
+    if (term.tnaiWebglLater) return;
+    const view = term.element?.ownerDocument.defaultView || window;
+    const ask = () => {
+      if (!term.tnaiDisposed && !term.tnaiWebglOff && !boxHidden(term)) useWebgl(term);
+    };
+    const onFrame = () => (term.tnaiFrame ? term.tnaiFrame(ask) : view.requestAnimationFrame(ask));
+    if (!waited) {
+      onFrame();
+      return;
+    }
+
+    // the main window's timer, so wrapDispose's clearTimeout finds it
+    term.tnaiWebglLater = setTimeout(() => {
+      term.tnaiWebglLater = 0;
+      onFrame();
+    }, WEBGL_RETRY_MS - waited);
   }
 
   // A terminal that found every context taken while its box was hidden (a new agent's panel made

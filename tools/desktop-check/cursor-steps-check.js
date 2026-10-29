@@ -137,6 +137,35 @@ const tools = () => events.filter(e => e.kind === 'tool');
     'a Write call keeps its name and shows its file: ' + JSON.stringify(tools()[1]?.detail)
   );
 
+  // Since cursor-agent 2026.10.17 the hook also fires inside a sub-agent; such a call carries
+  // parent_tool_call_id (the lead's Task call). It is the helper's step, never the lead's own.
+  const leadSteps = tools().length;
+  await post(
+    step,
+    '\uFEFF' +
+      JSON.stringify({
+        conversation_id: 'c',
+        parent_tool_call_id: 'toolu_task_1',
+        tool_name: 'Read',
+        tool_input: { file_path: 'C:\\proj\\c.txt' },
+        tool_use_id: 't2',
+        hook_event_name: 'preToolUse',
+        cursor_version: '2026.10.22',
+      })
+  );
+  await wait(50);
+  const helperStep = tools()[leadSteps];
+  check(
+    helperStep?.tool === 'Read' &&
+      helperStep.agentId === 'toolu_task_1' &&
+      tools()
+        .slice(0, leadSteps)
+        .every(e => !e.agentId),
+    "a call inside a Cursor sub-agent is the helper's step (agentId from parent_tool_call_id), " +
+      'the lead keeps its own: ' +
+      JSON.stringify(helperStep && { tool: helperStep.tool, agentId: helperStep.agentId })
+  );
+
   // A body that arrives in two pieces, cut in the middle of a character of several bytes, is still
   // read whole (the hook server decodes the stream, not each piece).
   const word = String.fromCharCode(0x4e2d, 0x6587),

@@ -5,15 +5,20 @@
 //
 // - Found by the app from the conversation's own entries (desktop/thread-log-*.js, so every CLI
 //   with a reader): a file the agent wrote whole ("Wrote", "Made an image") that is a picture, a
-//   video, a document, a data file or a page; a picture, video, document or data file a command
-//   named and changed while it ran (inferred from the file's change time, said so on hover); a site
+//   video, a document, a data file or a page; a picture, video, document or data file a part of a
+//   command writes (`>`, a copy or move target, `sed -i`, Set-Content, a known writer) and that
+//   changed while it ran, unless another panel held its file lock then (inferred from the file's
+//   change time, said so on hover); a site
 //   it showed or claimed (`tnai preview URL`, `tnai server claim URL`) or a local address a command
 //   printed, and Live preview's own record of which agent showed which address (31 `tabs`).
-// - The block's head says "Worked for 6m 12s · made 3 things, changed 4 files". Under it New (the
-//   site, pictures and videos as small pictures, documents and data as chips) and Changed (the code
-//   changes as one chip that opens the file list 122 already drew, and Details › Changes). A task
-//   that made nothing keeps its block as it was.
-// - A press previews in place at a fixed height (49 px of fade at the foot), with one button for
+// - The block's head says "Worked for 6m 12s · made 3 things, changed 4 files". Under it one
+//   neutral surface with a group per kind and its count (user 2026-10-28 chose "Proposed" in
+//   docs/plans/design-concepts/info-layout.html): Documents and Data as rows (name, then title or
+//   row count), Pictures, Pages and Sites as small cards, and Changed files last (the file list
+//   122 drew, with 192's Keep and Undo, and "Open Changes" for Details › Changes). A task that made
+//   nothing keeps its block as it was.
+// - A press previews in place, under the row or the group's cards, at a fixed height (49 px of
+//   fade at the foot), with one button for
 //   the full view: a site → Live preview; a picture → Open large (159's layer); a video → the
 //   computer's own player (the window's content rules play no video); a document → the Files tab;
 //   a data file → a bar or line of its first number column, or a table, and "Open the data".
@@ -28,7 +33,7 @@
 //   marked "opened by itself", one tab per address.
 //
 // window.TnaiWhatItMade (note, result, block, prefs, set, and for the test: find, sitesIn,
-// readTable, chartOf). Look: src/styles/51-what-it-made.css. Tests: node
+// readTable, chartOf, recordLocks, heldByOther). Look: src/styles/51-what-it-made.css. Tests: node
 // tools/what-it-made-test.js, desktop test `what-it-made`.
 (() => {
   'use strict';
@@ -44,13 +49,8 @@
   ];
   const kindOf = file => (KINDS.find(([, test]) => test.test(String(file || ''))) || [''])[0];
 
-  // a file named in a command: plain characters ending in one of the kinds' extensions
-  const FILE_IN_COMMAND =
-    /(?:^|[\s"'=(,])((?:[A-Za-z]:)?[\w./\\-]+\.(?:png|jpe?g|webp|gif|svg|mp4|webm|mov|m4v|md|txt|csv|tsv|json))\b/gi;
-
-  // commands that only look at, move or remove a file (as 159): a file they name was not made
-  const LOOKS_ONLY =
-    /^\s*(?:cat|type|less|more|head|tail|ls|dir|stat|file|git|rm|del|erase|Remove-Item|Get-Content|Get-Item|Get-ChildItem|Test-Path|start|explorer|code)\b/i;
+  // the kinds a command can make: a file written by a command ends in one of these
+  const FILE_FROM_COMMAND = /\.(?:png|jpe?g|webp|gif|svg|mp4|webm|mov|m4v|md|txt|csv|tsv|json)$/i;
   const MAX_FROM_COMMAND = 6;
 
   // `tnai preview URL` and `tnai server claim URL`, as typed in any shell
@@ -103,17 +103,240 @@
     const command = String(entry.full || what);
 
     // A file a command made can only be told by its change time: a command without a recorded
-    // start time adds none, and one that only looks at files adds none.
-    if (!entry.at || LOOKS_ONLY.test(command)) return made;
+    // start time adds none. Only a file a part of the command writes counts (writtenBy): a file
+    // it only reads, searches or checks is not made by it (learned 2026-10-28: `cd …; grep …
+    // ISSUES.md` showed ISSUES.md as made, because only the first word was judged).
+    if (!entry.at) return made;
     const seen = new Set();
-    FILE_IN_COMMAND.lastIndex = 0;
-    for (let match; (match = FILE_IN_COMMAND.exec(command));) {
-      const file = match[1];
+    for (const file of writtenBy(command)) {
       if (seen.has(file.toLowerCase()) || seen.size >= MAX_FROM_COMMAND) continue;
       seen.add(file.toLowerCase());
       made.push({ kind: kindOf(file), file, how: 'made', since: entry.at });
     }
     return made;
+  }
+
+  // ---------- which files a command writes ----------
+  // Every agent CLI's shell commands arrive here as typed (bash, PowerShell, cmd; Codex's and
+  // OpenCode's wrapped in `bash -lc` or `powershell -Command`). A command is cut into its parts
+  // (`;`, `&&`, `||`, `|`, a new line) and each part is judged on its own.
+
+  // programs that only read, search, list, check or remove: a file they name is not written
+  // (a redirect `> file` after them still is)
+  const READERS = new Set(
+    (
+      'cat type less more head tail ls dir stat file git rm del erase rmdir rd remove-item ri ' +
+      'get-content gc get-item gi get-childitem gci test-path start start-process explorer code ' +
+      'grep egrep fgrep rg ag findstr find select-string sls awk gawk wc sort uniq diff cmp fc ' +
+      'comm cut tr nl od xxd hexdump md5sum sha256sum certutil get-filehash where where.exe which ' +
+      'where-object select-object foreach-object measure-object format-table format-list echo ' +
+      'printf write-host write-output cd chdir set-location sl pushd popd jq yq tnai tnai.cmd ' +
+      'gh npm pnpm yarn exit true false sleep start-sleep test'
+    ).split(' ')
+  );
+
+  // programs whose files are all written (sed -i and perl -i are judged by their flag)
+  const TOUCHERS = new Set('touch tee tee-object'.split(' '));
+
+  // PowerShell cmdlets that write the file in -Path / -FilePath / -LiteralPath or their first
+  // plain argument
+  const CONTENT_WRITERS = new Set(
+    'set-content sc add-content ac out-file new-item ni export-csv export-clixml'.split(' ')
+  );
+
+  // copy and move: the last plain argument (or -Destination) is the one written
+  const COPIERS = new Set(
+    'cp copy copy-item cpi mv move move-item mi ren rename rename-item rni xcopy'.split(' ')
+  );
+
+  // tools whose last plain argument is the file they write
+  const LAST_IS_OUTPUT = new Set('ffmpeg magick convert'.split(' '));
+
+  // a shell that runs a script given after -c / -Command / /c: the script is judged instead
+  const SHELLS = new Set('bash sh zsh dash pwsh powershell cmd'.split(' '));
+  const SCRIPT_FLAG = /^(?:-l?c|-lc|-command|-c|\/c|\/k)$/i;
+
+  // flags that name the file a program writes, in any program
+  const OUTPUT_FLAG =
+    /^(?:-o|--out|--output|--outfile|--out-file|-outfile|-out|-destination|--target)$/i;
+
+  // a redirect into one of these writes no file
+  const NO_FILE = /^(?:\/dev\/null|\$null|nul|null)$/i;
+
+  // The words of one part, quotes taken off, with what each redirect points at:
+  // { words: [...], written: [...files after > or >>] }.
+  function wordsOf(part) {
+    const words = [];
+    const written = [];
+    let word = '';
+    let quoted = false;
+    let target = false;
+    const finish = () => {
+      if (word || quoted) {
+        if (target) {
+          if (!NO_FILE.test(word)) written.push(word);
+        } else words.push(word);
+        target = false;
+      }
+      word = '';
+      quoted = false;
+    };
+    for (let index = 0; index < part.length; index++) {
+      const char = part[index];
+      if (char === '"' || char === "'") {
+        const end = part.indexOf(char, index + 1);
+        const stop = end < 0 ? part.length : end;
+        word += part.slice(index + 1, stop);
+        quoted = true;
+        index = stop;
+      } else if (/\s/.test(char)) finish();
+      else if (char === '>') {
+        // `2>`, `*>` and `&>` name a stream, not a word; `>&1` copies a stream and writes no file
+        if (/^(?:\d|\*|&)$/.test(word) && !quoted) word = '';
+        finish();
+        if (part[index + 1] === '>') index++;
+        if (part[index + 1] === '&') {
+          index++;
+          while (/[\d-]/.test(part[index + 1] || '')) index++;
+          continue;
+        }
+        target = true;
+      } else if (char === '<') {
+        // what a command reads from is not written; a here-document's word is not a file
+        finish();
+        while (part[index + 1] === '<' || part[index + 1] === '-') index++;
+        word = '';
+        target = false;
+        const rest = part.slice(index + 1).match(/^\s*("[^"]*"|'[^']*'|\S+)/);
+        if (rest) index += rest[0].length;
+      } else word += char;
+    }
+    finish();
+    return { words, written };
+  }
+
+  // The parts of a command: cut at `;`, `&&`, `||`, `|` and new lines outside quotes. A
+  // here-document's lines and a PowerShell here-string are text, never parts.
+  function partsOf(command) {
+    const parts = [];
+    let part = '';
+    let heredoc = '';
+    const text = String(command || '');
+    for (let index = 0; index < text.length; index++) {
+      const char = text[index];
+      const pair = text.slice(index, index + 2);
+      if (char === '"' || char === "'") {
+        const end = text.indexOf(char, index + 1);
+        const stop = end < 0 ? text.length : end;
+        part += text.slice(index, stop + 1);
+        index = stop;
+      } else if (pair === "@'" || pair === '@"') {
+        const end = text.indexOf('\n' + pair[1] + '@', index + 2);
+        const stop = end < 0 ? text.length : end + 2;
+        part += pair[1] + text.slice(index + 2, stop - 1).replace(/[\r\n]/g, ' ') + pair[1];
+        index = stop;
+      } else if (pair === '<<' && !heredoc) {
+        const word = text.slice(index + 2).match(/^-?\s*(["']?)(\w+)\1/);
+        if (word) heredoc = word[2];
+        part += char;
+      } else if (char === '\n' || char === ';' || pair === '&&' || pair === '||' || char === '|') {
+        if (pair === '&&' || pair === '||') index++;
+        parts.push(part);
+        part = '';
+
+        // the lines of a here-document, up to its closing word, are skipped
+        if (char === '\n' && heredoc) {
+          const close = new RegExp('^[ \\t]*' + heredoc + '[ \\t]*$', 'm');
+          const after = text.slice(index + 1);
+          const found = close.exec(after);
+          index = found ? index + 1 + found.index + found[0].length : text.length;
+          heredoc = '';
+        }
+      } else part += char;
+    }
+    parts.push(part);
+    return parts.map(each => each.trim()).filter(Boolean);
+  }
+
+  // The plain arguments of a part (no flags, and no value of a PowerShell -Name value pair).
+  const SWITCHES = /^-(?:force|nonewline|append|recurse|confirm(?::\S*)?|whatif|passthru)$/i;
+
+  function plainArguments(args) {
+    const plain = [];
+    for (let index = 0; index < args.length; index++) {
+      const arg = args[index];
+      if (/^-/.test(arg)) {
+        // a PowerShell parameter takes the next word as its value unless it is a switch
+        if (/^-[A-Za-z]{2,}$/.test(arg) && !SWITCHES.test(arg)) index++;
+        continue;
+      }
+      plain.push(arg);
+    }
+    return plain;
+  }
+
+  // The value of a named parameter: -Path x, -Path:x.
+  function namedValue(args, names) {
+    for (let index = 0; index < args.length; index++) {
+      const [name, inline] = args[index].split(/:(.*)/s);
+      if (!names.test(name)) continue;
+      if (inline) return inline;
+      if (args[index + 1]) return args[index + 1];
+    }
+    return '';
+  }
+
+  // The files one part writes.
+  function writtenByPart(part, depth) {
+    const { words, written } = wordsOf(part);
+    const out = [...written];
+
+    // leading `NAME=value`, the call operator `&`, and `sudo` / `time` / `env` are not the program
+    while (words.length && /^(?:[A-Za-z_]\w*=.*|&|sudo|time|env|command|exec)$/.test(words[0]))
+      words.shift();
+    if (!words.length) return out;
+    const program = String(words[0].split(/[\\/]/).pop() || '')
+      .toLowerCase()
+      .replace(/\.(?:exe|cmd|bat|ps1)$/, '');
+    const args = words.slice(1);
+    const plain = plainArguments(args);
+    if (SHELLS.has(program)) {
+      const flag = args.findIndex(arg => SCRIPT_FLAG.test(arg));
+      if (flag >= 0 && args[flag + 1] && depth < 3)
+        out.push(...writtenBy(args.slice(flag + 1).join(' '), depth + 1));
+      return out;
+    }
+    if (program === 'sed' || program === 'perl') {
+      // only an in-place edit writes the files it names; `sed -n` and a plain sed only read
+      if (args.some(arg => /^(?:-[a-z]*i\S*|--in-place\S*)$/i.test(arg))) out.push(...plain);
+      return out;
+    }
+    if (READERS.has(program)) return out;
+
+    // `-o file`, `--output file`, `-OutFile file`: the program writes that file, whatever it is
+    const outputFlag = namedValue(args, OUTPUT_FLAG);
+    if (outputFlag) out.push(outputFlag);
+    if (TOUCHERS.has(program)) out.push(...plain);
+    else if (CONTENT_WRITERS.has(program))
+      out.push(namedValue(args, /^-(?:path|filepath|literalpath)$/i) || plain[0] || '');
+    else if (COPIERS.has(program))
+      out.push(namedValue(args, /^-destination$/i) || (plain.length > 1 ? plain.at(-1) : ''));
+    else if (LAST_IS_OUTPUT.has(program)) out.push(plain.at(-1) || '');
+    else {
+      // any other program (a script it runs, a renderer): a picture or a video it names may be
+      // its output; a document or data file it names is far more often what it reads
+      out.push(...plain.filter(arg => /^(?:picture|video)$/.test(kindOf(arg))));
+    }
+    return out;
+  }
+
+  // The files a whole command writes, of the kinds a command can make, in the order named.
+  function writtenBy(command, depth = 0) {
+    const files = [];
+    for (const part of partsOf(command))
+      for (const file of writtenByPart(part, depth))
+        if (file && FILE_FROM_COMMAND.test(file) && !files.includes(file)) files.push(file);
+    return files;
   }
 
   // The sites in an action and its result: what it showed or claimed, and a local address a
@@ -228,9 +451,60 @@
     return { type: 'table' };
   }
 
+  // ---------- files other panels held (file-locks.js, read only) ----------
+  // folded project-relative file → [{ paneId, from, to }]; `to` is 0 while the lock is held.
+  // A lock is taken by an agent's edit, so a hold that reaches past a command's start means that
+  // agent may have changed the file then.
+  const holds = new Map();
+  const HOLD_KEEP_MS = 6 * 3600 * 1000;
+  const SINCE_SLACK_MS = 3000;
+  const foldPath = file =>
+    String(file || '')
+      .replace(/\\/g, '/')
+      .replace(/^\.\//, '')
+      .toLowerCase();
+
+  function recordLocks(list) {
+    const now = Date.now();
+    const current = new Set();
+    for (const lock of Array.isArray(list) ? list : []) {
+      if (!lock?.file || !lock.paneId) continue;
+      const key = foldPath(lock.file);
+      current.add(key + '\n' + lock.paneId);
+      const known = holds.get(key) || [];
+      if (!known.some(hold => hold.paneId === lock.paneId && !hold.to))
+        known.push({ paneId: lock.paneId, from: Number(lock.at) || now, to: 0 });
+      holds.set(key, known);
+    }
+
+    // a hold that is no longer listed ended now; ended holds are kept a few hours
+    for (const [key, known] of holds) {
+      for (const hold of known)
+        if (!hold.to && !current.has(key + '\n' + hold.paneId)) hold.to = now;
+      const kept = known.filter(hold => !hold.to || now - hold.to < HOLD_KEEP_MS);
+      kept.length ? holds.set(key, kept) : holds.delete(key);
+    }
+  }
+
+  // Did another panel hold this file since `since`? A bare name is the project's own file; a
+  // path matches the lock's file by its end.
+  function heldByOther(paneId, file, since) {
+    const name = foldPath(file);
+    for (const [key, list] of holds) {
+      const same = name.includes('/')
+        ? name === key || name.endsWith('/' + key) || key.endsWith('/' + name)
+        : name === key;
+      if (!same) continue;
+      const other = hold =>
+        hold.paneId !== paneId && (!hold.to || hold.to >= Number(since || 0) - SINCE_SLACK_MS);
+      if (list.some(other)) return true;
+    }
+    return false;
+  }
+
   // the browser page and builds without the bridge: only the pure part is there (the test)
   if (!native?.made || !native?.designs || !window.TnaiAgents) {
-    window.TnaiWhatItMade = { find, sitesIn, readTable, chartOf, kindOf };
+    window.TnaiWhatItMade = { find, sitesIn, readTable, chartOf, kindOf, recordLocks, heldByOther };
     return;
   }
 
@@ -342,16 +616,82 @@
     list.push(view);
     blocks.set(state, list);
     list.forEach((other, index) => fold(other, index < list.length - 1));
+    checkMade(view);
     return true;
   }
 
   function headWords(view) {
     const things = view.task.made.length + view.task.sites.length;
     const parts = ['made ' + plural(things, 'thing', 'things')];
-
-    // with the file list, the count is the pill at the right of the line, so it is said once
-    if (view.changed && !view.files) parts.push('changed ' + plural(view.changed, 'file', 'files'));
+    if (view.changed) parts.push('changed ' + plural(view.changed, 'file', 'files'));
     return ' · ' + parts.join(', ');
+  }
+
+  // The groups of the block, in this order (user 2026-10-28 chose "Proposed" in
+  // docs/plans/design-concepts/info-layout.html): one neutral surface, a group per kind with its
+  // count, the kind's color only in the group's small icon (51). Documents and data are rows; a
+  // picture, a page and a site keep a small card (179's split icon sits on page and site cards).
+  // The changed files are the last group (changesGroup).
+  const GROUPS = [
+    { kind: 'document', icon: 'file-text', rows: true },
+    { kind: 'data', icon: 'table', rows: true },
+    { kind: 'picture', icon: 'image' },
+    { kind: 'page', icon: 'app-window' },
+    { kind: 'site', icon: 'globe' },
+  ];
+
+  // a video stands in the pictures' group
+  const groupKind = item => (item.kind === 'video' ? 'picture' : item.kind);
+
+  function groupItems(view, kind) {
+    if (kind === 'site') return view.task.sites;
+    return view.task.made.filter(item => groupKind(item) === kind);
+  }
+
+  function groupName(kind, items) {
+    if (kind === 'document') return 'Documents';
+    if (kind === 'data') return 'Data';
+    if (kind === 'page') return 'Pages';
+    if (kind === 'site') return 'Sites';
+    const videos = items.filter(item => item.kind === 'video').length;
+    if (!videos) return 'Pictures';
+    return videos === items.length ? 'Videos' : 'Pictures and videos';
+  }
+
+  // Each group's name and count from what is left in it; a group left empty goes.
+  function countGroups(view) {
+    for (const [kind, group] of view.groups) {
+      const items = groupItems(view, kind);
+      if (!items.length) {
+        group.box.remove();
+        view.groups.delete(kind);
+        continue;
+      }
+      group.name.textContent = groupName(kind, items);
+      group.count.textContent = String(items.length);
+    }
+  }
+
+  // One group's box: its head (icon, name, count) and what follows it.
+  function groupBox(kind, iconName) {
+    const box = make('section', 'tnt-made-group');
+    box.dataset.kind = kind;
+    const head = make('div', 'tnt-made-ghead');
+    head.innerHTML = icon(iconName, 14);
+    const name = make('span');
+    const count = make('em');
+    head.append(name, count);
+    box.append(head);
+    return { box, head, name, count };
+  }
+
+  // One thing of a group: a row for a document or data file, a small card for the rest.
+  function partFor(view, kind, item) {
+    if (kind === 'site') return withSplit(siteThumb(view, item), () => item.url, 'Site');
+    if (kind === 'page')
+      return withSplit(fileThumb(view, item), () => pageUrl(view, item), baseName(item.file));
+    if (kind === 'picture') return fileThumb(view, item);
+    return textRow(view, item);
   }
 
   function draw(view) {
@@ -366,30 +706,31 @@
     head.addEventListener('click', () => fold(view, view.node.dataset.folded !== 'true'));
     view.head = head;
 
-    // Round 3 (user 2026-10-21: "presentation for this is terrible"; mock
-    // docs/plans/design-concepts/what-it-made-r3.html): the head line with the changed files as one
-    // pill at its right, then every new thing as a card across the width that shows what it is.
+    // The head line, then one surface with a group per kind (GROUPS) and the changed files last.
     const top = make('div', 'tnt-made-top');
     top.append(head, make('span', 'tnt-made-grow'));
-    if (view.files) {
-      top.append(changesChip(view));
-      view.files.hidden = true;
-    }
     first ? first.replaceWith(top) : node.prepend(top);
+    Object.assign(view, { first, top, thumbs: new Map(), groups: new Map() });
 
     const body = make('div', 'tnt-made-body');
-    const grid = make('div', 'tnt-made-grid');
-    for (const site of view.task.sites)
-      grid.append(withSplit(siteThumb(view, site), () => site.url, 'Site'));
-    for (const item of view.task.made) {
-      if (item.kind === 'page')
-        grid.append(
-          withSplit(fileThumb(view, item), () => pageUrl(view, item), baseName(item.file))
-        );
-      else if (item.kind === 'picture' || item.kind === 'video') grid.append(fileThumb(view, item));
-      else grid.append(textThumb(view, item));
+    const groups = make('div', 'tnt-made-groups');
+    for (const { kind, icon: iconName, rows } of GROUPS) {
+      const items = groupItems(view, kind);
+      if (!items.length) continue;
+      const group = groupBox(kind, iconName);
+      const holder = rows ? group.box : make('div', 'tnt-made-cards');
+      for (const item of items) {
+        const part = partFor(view, kind, item);
+        if (kind !== 'site') view.thumbs.set(item, part);
+        holder.append(part);
+      }
+      if (!rows) group.box.append(holder);
+      view.groups.set(kind, group);
+      groups.append(group.box);
     }
-    if (grid.childElementCount) body.append(grid);
+    countGroups(view);
+    if (view.files) groups.append(changesGroup(view));
+    body.append(groups);
     view.preview = make('div', 'tnt-made-preview');
     view.preview.hidden = true;
     body.append(view.preview);
@@ -430,6 +771,9 @@
     }
     view.open = key;
     press.setAttribute('aria-pressed', 'true');
+
+    // in place: under a pressed row, or under the cards of the pressed card's group
+    (press.closest('.tnt-made-cards') || press).after(view.preview);
     view.preview.hidden = false;
     view.preview.replaceChildren(make('p', 'tnt-made-none', 'Opening…'));
     fill(view.preview);
@@ -501,39 +845,38 @@
     return words;
   }
 
-  // A document or data file as a card: its own first lines where a picture would be, read once
-  // the card is near the screen.
-  function textThumb(view, item) {
+  // A document or data file as a row: its name, then its title (a document's first line) or its
+  // row count (a CSV or TSV), read once the row is near the screen. A press opens its first lines
+  // in place under the row (toggle, fillText).
+  function textRow(view, item) {
     const name = baseName(item.file);
-    const kind = item.kind === 'data' ? 'data' : 'document';
-    const thumb = pressable('tnt-made-thumb', name + ' · ' + HOW[item.how], press =>
+    const row = pressable('tnt-made-row', name + ' · ' + HOW[item.how], press =>
       toggle(view, 'file ' + item.file, press, box => fillFile(view, item, box))
     );
-    const picture = make('i', 'tnt-made-ttext');
-    picture.innerHTML = icon(item.kind === 'data' ? 'chart-pie' : 'file-text', 18);
-    thumb.dataset.kind = kind;
-    thumb.append(picture, cardWords(name, item.how === 'made' ? 'made by a command' : '', kind));
-    thumb.tntMadeLoad = () =>
+    row.dataset.kind = item.kind === 'data' ? 'data' : 'document';
+    const fact = make('small', '', item.how === 'made' ? 'made by a command' : '');
+    row.append(make('b', '', name), fact);
+    row.tntMadeLoad = () =>
       native.made
         .text(view.state.paneId, item.file)
         .then(found => {
           if (!found?.ok) {
-            if (item.how === 'made') thumb.remove();
-            else thumb.dataset.gone = 'true';
+            if (item.how === 'made') dropThing(view, item, row);
+            else row.dataset.gone = 'true';
             return;
           }
           const lines = String(found.text || '')
             .split(/\r?\n/)
-            .filter(line => line.trim())
-            .slice(0, 12);
+            .filter(line => line.trim());
           if (!lines.length) return;
-          const first = make('b', '', lines[0].replace(/^#+\s*/, '').slice(0, 80));
-          const rest = make('span', '', lines.slice(1).join('\n'));
-          picture.replaceChildren(first, rest);
+          if (/\.(csv|tsv)$/i.test(item.file))
+            fact.textContent = plural(Math.max(0, lines.length - 1), 'row', 'rows');
+          else if (item.kind !== 'data')
+            fact.textContent = lines[0].replace(/^#+\s*/, '').slice(0, 120);
         })
         .catch(() => {});
-    if (view.state.paneId) nearScreen.observe(thumb);
-    return thumb;
+    if (view.state.paneId) nearScreen.observe(row);
+    return row;
   }
 
   // the small picture, asked once the block is near the screen (as 159's cards)
@@ -560,7 +903,7 @@
         .then(found => {
           if (!found?.ok) {
             // a file a command only named, or one that is gone, is not something it made
-            if (item.how === 'made') thumb.remove();
+            if (item.how === 'made') dropThing(view, item, thumb);
             else thumb.dataset.gone = 'true';
             return;
           }
@@ -576,32 +919,73 @@
     nearScreen.observe(thumb);
   }
 
-  function changesChip(view) {
-    const count = view.changed;
-    const chip = pressable('tnt-made-chip', 'The files this task changed', press =>
-      toggle(view, 'changes', press, box => {
-        // the added and removed line counts 122 drew in the list's own head
-        const counts = make('span', 'tnt-made-meta');
-        view.files
-          .querySelectorAll(':scope > .tnt-files-head > :not(b)')
-          .forEach(part => counts.append(part.cloneNode(true)));
-        const top = previewTop(plural(count, 'file changed', 'files changed'), counts, [
-          action('Open Changes', () => openChanges()),
-        ]);
-        view.files.hidden = false;
-        const holder = make('div', 'tnt-made-pbody');
-        holder.append(view.files);
-        box.replaceChildren(top, holder);
-      })
-    );
-    chip.innerHTML = icon('git-branch');
-    chip.append(make('span', '', plural(count, 'file changed', 'files changed')));
+  // A thing a command only named is let go: its card leaves, the head says the new count, and a
+  // block left with nothing goes back to the plain "Worked for" line it was.
+  function dropThing(view, item, thumb) {
+    const list = view.task.made;
+    if (list.includes(item)) list.splice(list.indexOf(item), 1);
+    (thumb || view.thumbs?.get(item))?.remove();
+    if (view.groups) countGroups(view);
+    if (view.head) view.head.lastElementChild.textContent = headWords(view);
+    if (list.length || view.task.sites.length || view.top?.parentNode !== view.node) return;
+    view.node.classList.remove('tnt-made');
+    delete view.node.dataset.folded;
+    view.first ? view.top.replaceWith(view.first) : view.top.remove();
 
-    // the added and removed line counts beside the words, in the diff colors (51)
+    // the file list goes back where 122 put it, out of the group that leaves with the body
+    if (view.files) {
+      view.files.hidden = false;
+      view.body.before(view.files);
+    }
+    view.body.remove();
+    const views = blocks.get(view.state) || [];
+    if (views.includes(view)) views.splice(views.indexOf(view), 1);
+    views.forEach((other, index) => fold(other, index < views.length - 1));
+  }
+
+  // Each thing a command made is checked as soon as the block is drawn, not when its card comes
+  // near the screen, so the head's count is true at once: the file must have changed since the
+  // command started (made:check), and no other panel may have held a file lock on it since then
+  // (another agent's edit is not this command's).
+  function checkMade(view) {
+    const paneId = view.state.paneId;
+    for (const item of [...view.task.made]) {
+      if (item.how !== 'made') continue;
+      if (heldByOther(paneId, item.file, item.since)) {
+        dropThing(view, item);
+        continue;
+      }
+      Promise.resolve(native.made.check(paneId, item.file, item.since))
+        .then(found => {
+          if (!found?.ok) dropThing(view, item);
+        })
+        .catch(() => {});
+    }
+  }
+
+  const readLocks = () =>
+    Promise.resolve(safe(() => native.locks?.list?.(), null))
+      .then(recordLocks)
+      .catch(() => {});
+  readLocks();
+  safe(() => native.locks?.onChange?.(readLocks), null);
+
+  // The changed files as the block's last group: 122's own file list moved in whole, so every
+  // row keeps 192's diff, Keep and Undo; its head line is said by the group's head instead (51).
+  function changesGroup(view) {
+    const group = groupBox('changes', 'git-branch');
+    group.name.textContent = 'Changed files';
+    group.count.textContent = String(view.changed);
+    group.head.append(make('span', 'tnt-made-grow'));
+
+    // the added and removed line counts 122 drew in the list's own head, in the diff colors (51)
     view.files
       .querySelectorAll(':scope > .tnt-files-head > :is(u, s)')
-      .forEach(part => chip.append(part.cloneNode(true)));
-    return chip;
+      .forEach(part => group.head.append(part.cloneNode(true)));
+    group.head.append(action('Open Changes', () => openChanges()));
+    view.files.hidden = false;
+    group.box.append(view.files);
+    return group.box;
   }
 
   function openChanges() {
@@ -1037,5 +1421,7 @@
     readTable,
     chartOf,
     kindOf,
+    recordLocks,
+    heldByOther,
   };
 })();

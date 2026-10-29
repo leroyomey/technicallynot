@@ -82,9 +82,14 @@ const check = (ok, text) => {
       check(false, id + ' has no row in INSTALL');
       continue;
     }
+
+    // A tool with no one-line installer (Mistral Vibe: uv, then `uv tool install`) has its page
+    // only, and the tile offers no Install button.
     const fine = how.needsNode
       ? /^npm install -g (@[a-z0-9-]+\/)?[a-z0-9-]+$/.test(how.command)
-      : !win || /^irm ('?)https:\/\/[^ ']+\1 \| iex$/.test(how.command);
+      : !win ||
+        /^irm ('?)https:\/\/[^ ']+\1 \| iex$/.test(how.command) ||
+        (!how.command && /^https:\/\//.test(how.page));
     check(
       fine && (!how.page || /^https:\/\//.test(how.page)),
       id + ': ' + (how.command || '(page only)') + (how.needsNode ? '  [needs Node.js]' : '')

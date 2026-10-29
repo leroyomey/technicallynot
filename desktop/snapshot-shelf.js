@@ -127,6 +127,14 @@ async function copy(kind, id) {
   return { ok: false, error: { message: 'Unknown kind.' } };
 }
 
+// One picture's full PNG, for the markup dialog (151): the page draws on it and sends the marked
+// copy as a new attachment. The kept picture itself never changes.
+function picture(id) {
+  const item = pictures.find(one => one.id === id);
+  if (!item) return { ok: false, error: { message: 'This snapshot is no longer in the box.' } };
+  return { ok: true, value: { png: item.png, width: item.width, height: item.height } };
+}
+
 // Deletes one: a picture leaves memory, a clip's files leave the disk.
 async function remove(kind, id) {
   if (kind === 'picture') {
@@ -150,4 +158,4 @@ async function clear() {
   return { ok: true, value: true };
 }
 
-module.exports = { init, addPicture, addClip, list, copy, remove, clear, MAX };
+module.exports = { init, addPicture, addClip, list, copy, picture, remove, clear, MAX };

@@ -206,6 +206,7 @@ const PAGES = [
   { row: 'Board', name: 'board', there: mode('board'), picture: true },
   { row: 'Live preview', name: 'preview', there: mode('preview'), picture: true },
   { row: 'Skills', name: 'skills', there: mode('skills'), picture: true },
+  { row: 'Connections', name: 'connections', there: mode('connections'), picture: true },
   { row: 'Devices and own relay', name: 'devices', there: mode('devices'), picture: true },
   { row: 'Settings', name: 'settings', there: settingsTab('general'), picture: true },
 
@@ -256,6 +257,8 @@ const STANDING_ROWS = [
   'Live preview',
   'Projects',
   'Skills',
+  // the Connections page (190), right after Skills (user decision 2026-10-28)
+  'Connections',
   'Usage and accounts',
   'Devices and own relay',
   'Snapshots',

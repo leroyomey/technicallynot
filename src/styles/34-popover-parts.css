@@ -204,3 +204,70 @@
 .snap-shelf .snap-note:empty {
   display: none;
 }
+
+/* Mark up and send (the second part of 151-snapshot-shelf.js): the Devices page's wide dialog
+   (`.dv-scrim`, `.dv-dlg.dv-wide`, 26) with the picture in the middle, the tools above it and the
+   thread and the line of text under it. The ink colors come from the picture's own inks. */
+.snap-mark {
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+.snap-mark-tools {
+  align-items: center;
+  justify-content: space-between;
+}
+.snap-mark-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel-2);
+  overflow: hidden;
+}
+/* The picture takes what the window has left beside the dialog's other rows (about 340 px with a
+   mouse, 400 px under touch), so Send stays on screen in a low window. */
+.snap-mark {
+  --snap-mark-rows: 340px;
+}
+.snap-mark-stage canvas {
+  display: block;
+  max-width: 100%;
+  max-height: clamp(160px, calc(100vh - var(--snap-mark-rows)), 560px);
+  touch-action: none;
+  cursor: crosshair;
+}
+.snap-mark .dv-btn.snap-mark-ink {
+  width: 24px;
+  padding: 0;
+  border-color: transparent;
+  border-radius: 50%;
+  background: var(--snap-ink);
+}
+.snap-mark .dv-btn.snap-mark-ink:hover:not(:disabled) {
+  background: var(--snap-ink);
+}
+.snap-mark .dv-btn.snap-mark-ink[aria-checked='true'] {
+  box-shadow:
+    0 0 0 2px var(--pg-panel-solid),
+    0 0 0 4px var(--pg-text);
+}
+.snap-mark .snap-mark-note {
+  position: absolute;
+  width: min(240px, 60%);
+  height: 30px;
+  font-weight: 600;
+}
+.snap-mark-threads {
+  max-height: 102px;
+  margin: -3px;
+  padding: 3px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+.snap-mark .snap-mark-hint:empty {
+  display: none;
+}

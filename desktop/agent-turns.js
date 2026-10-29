@@ -306,8 +306,21 @@ const turnKey = t =>
 // attention-service.js: a task ended, so prompts held for a working agent can go
 const endListeners = new Set();
 
+// change-review.js: a task started, so its files' state at the start is noted
+const startListeners = new Set();
+
 function publish(t) {
   if (turns.get(t.paneId) !== t || !t.startedAt) return;
+
+  // a turn first seen already ended (a resumed session's last task) never started here
+  if (!t.startSaid && !t.endedAt) {
+    t.startSaid = true;
+    for (const fn of startListeners) {
+      try {
+        fn(t.paneId);
+      } catch {}
+    }
+  }
   if (t.endedAt && !t.endSaid) {
     t.endSaid = true;
     for (const fn of endListeners) {
@@ -1787,6 +1800,92 @@ async function attachCursor(paneId, chatId) {
   }
 }
 
+// ---------- Tools run through the ACP connector (acp-connector.js) ----------
+// The bridge's own record of the session (one JSON line each): a `user` line is a task sent to the
+// agent (the bridge holds a prompt typed while one runs and sends it after, so every user line
+// starts a task), `say` lines hold its words, `end` (with the agent's own stop reason) and `error`
+// end it. Exact, from the agent over ACP, not read off the screen.
+function readAcp(c, lines = readLines(c.reader)) {
+  let changed = false;
+  for (const line of lines) {
+    const j = parse(line);
+    if (!j) continue;
+    if (j.type === 'user') {
+      c.turn = {
+        paneId: c.paneId,
+        agent: c.agent,
+        source: 'acp-record',
+        startedAt: j.at || Date.now(),
+        endedAt: 0,
+        tokens: null,
+        task: clip(String(j.text || ''), TASK_MAX),
+        result: '',
+        log: c.reader.file,
+      };
+      c.answer = '';
+      changed = true;
+      if (c.live) {
+        consume(c.paneId, String(j.text || ''));
+        submitted(c.paneId);
+      }
+    } else if (j.type === 'say' && typeof j.text === 'string') c.answer = j.text;
+    else if (
+      (j.type === 'end' || j.type === 'error' || j.type === 'exit') &&
+      c.turn &&
+      !c.turn.endedAt
+    ) {
+      c.turn.endedAt = j.at || Date.now();
+      c.turn.endedBy =
+        j.type === 'end' ? (j.stopReason === 'cancelled' ? 'aborted' : 'stop') : 'error';
+      if (j.type !== 'end') c.turn.error = clip(String(j.text || ''), 300);
+      c.turn.result = clip(c.answer, RESULT_MAX);
+      changed = true;
+      settle(c.paneId);
+      if (!c.live) c.turn.history = true;
+    }
+  }
+  if (!changed || !c.turn) return;
+  turns.set(c.paneId, c.turn);
+  publish(c.turn);
+}
+
+async function attachAcp(paneId, sessionId) {
+  const p = panes.get(paneId);
+  if (!p || !sessionId || !require('./agent-registry').isAcp(p.agent)) return;
+  if (p.acp?.sessionId === sessionId || p.finding === sessionId) return;
+  const file = require('./acp-connector').recordFile(sessionId);
+  if (!file) return;
+  p.finding = sessionId;
+  try {
+    const c = {
+      paneId,
+      sessionId,
+      agent: p.agent,
+      reader: { file, pos: 0, rest: null },
+      turn: null,
+      answer: '',
+    };
+
+    // a new session's record is written with its first line: the watch waits for it, on the
+    // records folder, which is the app's own (made here when it is the first ACP session)
+    await fs.promises.mkdir(path.dirname(file), { recursive: true }).catch(() => {});
+    const history = taken(c.reader, await readAhead(c.reader).catch(() => null)) || [];
+    if (panes.get(paneId) !== p || p.finding !== sessionId) return;
+    unwatch(p.acp);
+    p.acp = c;
+    readAcp(c, history);
+    c.live = true;
+    const follow = () =>
+      readLater(c.reader, lines => {
+        if (c.watcher) readAcp(c, lines);
+      });
+    watchFile(c, file, follow);
+    follow();
+  } finally {
+    if (p.finding === sessionId) p.finding = null;
+  }
+}
+
 module.exports = {
   init(sender, opts = {}) {
     send = sender;
@@ -1885,6 +1984,11 @@ module.exports = {
     endListeners.add(fn);
     return () => endListeners.delete(fn);
   },
+  // Called with the paneId once per task, when it starts (change-review.js).
+  onStart(fn) {
+    startListeners.add(fn);
+    return () => startListeners.delete(fn);
+  },
   // pty:start: a new process for the pane starts with no turn; a resumed Codex session is attached
   // at once.
   started(paneId, agent, accountDir, sessionId, cwd) {
@@ -1895,6 +1999,11 @@ module.exports = {
 
     // a resumed chat (`--resume`) shows its last task
     if (agent === 'Cursor Agent' && sessionId) attachCursor(paneId, sessionId).catch(() => {});
+
+    // a tool run through the ACP connector: its record is named by the id given at start, so it
+    // is watched from its first line (a reopened one shows its last task)
+    if (sessionId && require('./agent-registry').isAcp(agent))
+      attachAcp(paneId, sessionId).catch(() => {});
   },
   // Events from pty-service: Codex's session id found; a process ended mid-task ends the task.
   fromPty(channel, payload) {
@@ -1910,6 +2019,7 @@ module.exports = {
         attachCodex(payload.paneId, payload.sessionId).catch(() => {});
         attachOpenCode(payload.paneId, payload.sessionId);
         attachCursor(payload.paneId, payload.sessionId).catch(() => {});
+        attachAcp(payload.paneId, payload.sessionId).catch(() => {});
       }
       if (channel === 'pty:exit') {
         // The process is gone: its transcript / rollout watchers close (the turn itself stays
@@ -1921,6 +2031,7 @@ module.exports = {
         if (p?.codex?.watcher) readCodex(p.codex);
         else if (p?.opencode?.watcher) readOpenCode(p.opencode);
         else if (p?.cursor?.watcher) readCursor(p.cursor);
+        else if (p?.acp?.watcher) readAcp(p.acp);
 
         // a change still waiting on the debounce
         else if (last?.agent === 'Claude Code' && last.watcher) readClaude(last);
@@ -1928,6 +2039,7 @@ module.exports = {
         unwatch(p?.codex);
         unwatch(p?.opencode);
         unwatch(p?.cursor);
+        unwatch(p?.acp);
         const t = turns.get(payload.paneId);
         if (t && !t.endedAt) {
           t.endedAt = Date.now();
@@ -1947,6 +2059,7 @@ module.exports = {
     unwatch(p?.codex);
     unwatch(p?.opencode);
     unwatch(p?.cursor);
+    unwatch(p?.acp);
     queues.delete(paneId);
     pasted.delete(paneId);
     checklists.delete(paneId);

@@ -7,6 +7,9 @@
 // once per folder and when its menu opens (154). A paint only reads what is kept here. Each new
 // answer fires `tnai:thread-changes` with { folder } on window.
 //
+// The same section is the thread's git view (feature build 2026-10-28, feature 9): the last
+// commits, the other local branches and a row that leads to keep or undo (192), all read only.
+//
 // window.TnaiThreadChanges = { ask, get, known, wantFor, build, OPEN_MS, TURN_MS }.
 (() => {
   'use strict';
@@ -91,6 +94,160 @@
     return box;
   }
 
+  // ---------------------------------------------------------------- the git view (feature 9)
+  // Read only: the rows below show branches and commits; none of them switches, commits, stashes,
+  // resets or checks out (refused in a folder agents share).
+
+  // A commit's time: the clock today, the day this year, the day and year before that. A fixed
+  // time, never "3 min ago", so a section left open does not grow stale.
+  function commitTime(at) {
+    const when = new Date(at);
+    const today = new Date();
+    if (when.toDateString() === today.toDateString())
+      return when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const day = { month: 'short', day: 'numeric' };
+    if (when.getFullYear() !== today.getFullYear()) day.year = 'numeric';
+    return when.toLocaleDateString([], day);
+  }
+
+  // The last commits in the look of "Recent activity": time, a mark, the message over its author
+  // and what it changed; the short id and full time on hover.
+  function commitList(make, commits) {
+    const list = make('ol', 'ttd-timeline ttd-commits');
+    commits.forEach(commit => {
+      const row = make('li');
+      const time = make('time', '', commitTime(commit.at));
+      time.dateTime = new Date(commit.at).toISOString();
+      const mark = make('i', 'ttd-step');
+      mark.innerHTML = window.TnaiIcon?.('git-branch', { size: 12 }) || '';
+      const changed = commit.merge
+        ? 'merge'
+        : plural(commit.files, 'file') + ' · +' + commit.added + ' −' + commit.removed;
+      row.title =
+        commit.hash + ' · ' + commit.subject + '\n' + new Date(commit.at).toLocaleString();
+      row.append(
+        time,
+        mark,
+        make('b', '', commit.subject || '(no message)'),
+        make('span', '', commit.author + ' · ' + changed)
+      );
+      list.append(row);
+    });
+    return list;
+  }
+
+  // The other local branches as names, newest first, with their last commit's time on hover;
+  // the ones past the first few are counted.
+  function branchChips(make, branches, count) {
+    const box = make('div', 'ttd-chips');
+    branches.forEach(branch => {
+      const chip = make('span', 'ttd-chip');
+      chip.title = branch.name + ' · last commit ' + new Date(branch.at).toLocaleString();
+      chip.append(make('span', '', branch.name));
+      box.append(chip);
+    });
+    if (count > branches.length)
+      box.append(make('span', 'ttd-chip', '+' + (count - branches.length) + ' more'));
+    return box;
+  }
+
+  // Keep or undo lives in the conversation, under each finished task's "Worked for" files (192);
+  // this row only leads there. The open thread's conversation box, from 120's event.
+  let viewHost = null;
+  let viewPane = '';
+  window.addEventListener('tnai:thread-view', event => {
+    const detail = event.detail || {};
+    if (detail.host) viewHost = detail.host;
+    viewPane = detail.mode === 'read' ? detail.paneId || '' : '';
+  });
+
+  // The last "Worked for" file list in the thread's conversation, shown the way the scrollbar
+  // map's marks are (186): scrolled to, 122 told not to follow the newest line meanwhile, and
+  // lit for a moment.
+  function revealList(list) {
+    const talk = viewHost;
+    const block = list.closest('.tnt-worked') || list;
+    const box = talk.getBoundingClientRect();
+    const top =
+      block.getBoundingClientRect().top - box.top + talk.scrollTop - talk.clientHeight / 3;
+    const goal = Math.min(Math.max(0, top), talk.scrollHeight - talk.clientHeight);
+    const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (Math.abs(goal - talk.scrollTop) > 1) window.TnaiThreadReadable?.leaveEnd?.(talk, goal);
+    talk.scrollTo({ top: goal, behavior: still ? 'auto' : 'smooth' });
+    block.classList.remove('tmap-flash');
+    void block.offsetWidth;
+    block.classList.add('tmap-flash');
+    setTimeout(() => block.classList.remove('tmap-flash'), 1500);
+    list.querySelector('button')?.focus({ preventScroll: true });
+  }
+
+  // A press: opens the thread's conversation when another is shown, then waits a moment for it
+  // to be read (up to 2 s) before saying there is no such list yet.
+  function showReviewList(paneId, small) {
+    const find = () => {
+      if (!viewHost?.isConnected || viewPane !== paneId) return null;
+      const lists = viewHost.querySelectorAll('.tnt-worked .tnt-files');
+      return lists[lists.length - 1] || null;
+    };
+    if (!find()) window.TnaiThreads?.show?.(paneId);
+    let tries = 0;
+    const attempt = () => {
+      const list = find();
+      if (list) {
+        small.textContent = 'in the conversation';
+        revealList(list);
+      } else if (++tries < 10) setTimeout(attempt, 200);
+      else small.textContent = 'no finished task with changed files in its conversation yet';
+    };
+    attempt();
+  }
+
+  function reviewRow(make, paneId) {
+    const box = make('div', 'ttd-links');
+    const button = make('button', 'ttd-link');
+    const small = make('small', '', 'in the conversation');
+    button.type = 'button';
+    button.dataset.review = paneId;
+    button.title =
+      'Go to the files the last task changed, where each one can be kept or undone on its own';
+    button.append(make('span', '', 'Keep or undo changed files'), small);
+    button.addEventListener('click', () => showReviewList(paneId, small));
+    box.append(button);
+    return box;
+  }
+
+  // The git view's nodes, under the branch facts: the link to keep or undo, the last commits and
+  // the other local branches. Each list stands under a one-line remark, as lists in Details do.
+  function gitView(parts, session, changes) {
+    const { make, note } = parts;
+    const out = [];
+
+    // only for this computer's own folder (another computer's answer carries no folder) and
+    // when the app can undo there
+    if (changes.folder && changes.uncommitted && window.tnaiNative?.changeReview)
+      out.push(reviewRow(make, session.paneId));
+    const commits = Array.isArray(changes.commits) ? changes.commits : [];
+    if (commits.length) {
+      const group = make('div', 'ttd-git');
+      group.append(
+        note(commits.length === 1 ? 'Last commit' : 'Last ' + commits.length + ' commits'),
+        commitList(make, commits)
+      );
+      out.push(group);
+    }
+    const branches = Array.isArray(changes.otherBranches) ? changes.otherBranches : [];
+    if (branches.length) {
+      const count = Math.max(changes.otherBranchCount || 0, branches.length);
+      const group = make('div', 'ttd-git');
+      group.append(
+        note(count === 1 ? '1 other local branch' : count + ' other local branches'),
+        branchChips(make, branches, count)
+      );
+      out.push(group);
+    }
+    return out;
+  }
+
   // The section's nodes for one answer. `parts` are 139's own building blocks ({ make, facts,
   // note }), so the rows look and fold like every other section's.
   function build(parts, session, changes) {
@@ -146,6 +303,9 @@
             ' minutes, because it cannot tell a desktop app when something changes.'
         )
       );
+
+    // The git view: keep or undo, the last commits, the other local branches (read only).
+    out.push(...gitView(parts, session, changes));
     return out;
   }
 

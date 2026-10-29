@@ -389,6 +389,8 @@
       devices: ['devices-mode'],
       // the Board page (157), opened from the three-dots menu
       board: ['board-mode'],
+      // the Connections page (190), opened from the three-dots menu
+      connections: ['connections-mode'],
     },
     ALL_MODES = [...new Set(Object.values(MODES).flat())];
 
@@ -442,6 +444,8 @@
     else if (view === 'settings') window.dispatchEvent(new CustomEvent('tnai:settings-page-shown'));
     else if (view === 'devices') window.dispatchEvent(new CustomEvent('tnai:devices-page-shown'));
     else if (view === 'board') window.dispatchEvent(new CustomEvent('tnai:board-page-shown'));
+    else if (view === 'connections')
+      window.dispatchEvent(new CustomEvent('tnai:connections-page-shown'));
   }
   window.TnaiRoute = route;
 

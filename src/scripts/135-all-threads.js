@@ -20,8 +20,13 @@
  * 126, which laid them out as pages, stands down while this view is on. Window tests use 105's
  * mode `terminals`, which this file leaves alone.
  *
- * `window.TnaiAllThreads` (`on`, `state`, `go`, `show`). Look: src/styles/38-all-threads.css.
- * Tests `all-threads`, `all-threads-asks`.
+ * "Same prompt" beside "New thread" sends one prompt to several threads (picked cards, and new
+ * threads started with a chosen tool) and stands them side by side to compare (feature 4,
+ * 2026-10-28; the section "the same prompt to several threads" below).
+ *
+ * `window.TnaiAllThreads` (`on`, `state`, `go`, `show`, `sameRoute`, `sendSame`, `picking`). Look:
+ * src/styles/38-all-threads.css. Tests `all-threads`, `all-threads-asks`; the same prompt:
+ * `node tools/same-prompt-check.js` (headless Chrome).
  */
 (() => {
   const view = document.getElementById('terminalView');
@@ -208,7 +213,14 @@
     const more = headButton('tat-act-more', 'ellipsis', 'More for this thread');
     more.setAttribute('aria-haspopup', 'menu');
     more.setAttribute('aria-expanded', 'false');
-    head.append(dot, text, chips, handoff, side, work, power, blur, more, open);
+
+    // whether this thread gets the same prompt as the others (shown only while "Same prompt" is on)
+    const pick = headButton('tat-act-pick', 'square', 'Pick for the same prompt');
+    pick.hidden = true;
+    pick.setAttribute('aria-pressed', 'false');
+
+    // before the bubbles, so the head's buttons keep their own spacing while it is hidden (38)
+    head.append(dot, text, pick, chips, handoff, side, work, power, blur, more, open);
     const body = make('div', 'tnt-talk tat-body');
     body.setAttribute('role', 'log');
 
@@ -242,6 +254,8 @@
       age,
       power,
       work,
+      pick,
+      picked: null,
       powerShows: '',
       blur,
       body,
@@ -402,6 +416,7 @@
     paintPower(paneId, card);
     window.TnaiThreadActions?.paintCard?.(paneId, card.work);
     paintBlur(paneId, card);
+    paintPick(paneId, card);
     window.TnaiThreadView?.paintAge?.(card.age, paneId);
   }
 
@@ -528,6 +543,296 @@
     if (newButton.disabled !== off) newButton.disabled = off;
   }
 
+  // ---------- the same prompt to several threads ----------
+  // "Same prompt" beside "New thread" turns picking on: each card shows a pick box, and "Add a
+  // tool" starts a new thread with a chosen tool, picked at once. While picking is on and at least
+  // one thread is picked, the prompt box under the row sends its prompt to every picked thread
+  // (11's `deliver` asks `sameRoute` and hands the send to `sendSame`), and the threads that got
+  // it then stand side by side at the front of the row, to compare their answers. Every agent CLI
+  // a thread runs gets it the way a typed prompt reaches it (the "[TN.ai]" mark for a Claude Code
+  // lead only, the skill note, a lone slash command as typed). Attachments go to one thread at a
+  // time: with any in the box nothing is sent and the box says why.
+  let picking = false;
+  let picked = [];
+
+  // new threads still starting: paneId → the promise of their session
+  const starting = new Map();
+  let sendingSame = false;
+
+  // The tools a new thread can start with, in the start screen's order (140). Copilot CLI is not
+  // there: its task start and end are not read yet, so it cannot start as a thread.
+  const TOOLS = ['Claude Code', 'Codex', 'Cursor Agent', 'OpenCode'];
+
+  // A slash command alone reaches the CLI exactly as typed (tnai-threads 9b).
+  const SLASH_ONLY = /^\/[\w:-]+(?:[ \t][^\n]*)?$/;
+
+  const sessionOf = paneId =>
+    (window.TnaiAgents?.sessions?.() || []).find(session => session.paneId === paneId) || null;
+  const toast = words => {
+    try {
+      window.toast?.(words);
+    } catch {}
+  };
+
+  const sameButton = make('button', 'terminal-tool tat-new tat-same');
+  sameButton.type = 'button';
+  sameButton.setAttribute('aria-pressed', 'false');
+  sameButton.title =
+    'Send one prompt to several threads: pick them, then type it in the prompt box';
+  const sameWords = make('span', '', 'Same prompt');
+  sameButton.innerHTML = icon('copy', 14);
+  sameButton.append(sameWords);
+  sameButton.addEventListener('click', () => setPicking(!picking));
+
+  const addButton = make('button', 'terminal-tool tat-new tat-add-tool');
+  addButton.type = 'button';
+  addButton.hidden = true;
+  addButton.title = 'Start a new thread with a tool you choose; it is picked for the same prompt';
+  addButton.setAttribute('aria-haspopup', 'menu');
+  addButton.setAttribute('aria-label', 'Add a tool');
+  addButton.innerHTML = icon('plus', 14) + '<span>Add a tool</span>';
+  addButton.addEventListener('click', () => openTools());
+  newButton.after(sameButton, addButton);
+
+  function setPicking(on) {
+    picking = !!on;
+    if (!picking) picked = [];
+
+    // a page that opens with picking on starts from the thread the prompt box sends to
+    if (picking && !picked.length && order.includes(target())) picked = [target()];
+    paintSame();
+  }
+
+  function paintPick(paneId, card) {
+    const on = picking && picked.includes(paneId);
+    card.pick.hidden = !picking;
+    card.el.classList.toggle('tat-picked', on);
+    if (card.picked === on) return;
+    card.picked = on;
+    card.pick.setAttribute('aria-pressed', String(on));
+    card.pick.innerHTML = icon(on ? 'check' : 'square', 14);
+    const label = on
+      ? 'Picked for the same prompt: press to leave it out'
+      : 'Pick for the same prompt';
+    card.pick.title = label;
+    card.pick.setAttribute('aria-label', label);
+  }
+
+  // The button, the cards and the prompt box's hint, from `picking` and `picked`.
+  function paintSame() {
+    sameButton.setAttribute('aria-pressed', String(picking));
+    addButton.hidden = !picking;
+    view.classList.toggle('tat-picking', picking);
+    setText(sameWords, picking ? 'Same prompt · ' + picked.length + ' picked' : 'Same prompt');
+
+    // the name for a narrow window, where only the icon shows (38)
+    sameButton.setAttribute('aria-label', sameWords.textContent);
+    for (const [paneId, card] of cards) {
+      // picking turned off: the boxes go, and each card is painted fresh next time
+      if (!picking) card.picked = null;
+      paintPick(paneId, card);
+    }
+    window.TnaiLiveTasks?.paintRoute?.();
+  }
+
+  // A press on a pick box, or on a card's head outside its buttons and name field. True when it
+  // was.
+  function pressPick(pressedNode, paneId) {
+    const onBox = pressedNode.closest('.tat-act-pick');
+    const onHead =
+      pressedNode.closest('.tat-head') && !pressedNode.closest('button, input, .tat-helpers');
+    if (!onBox && !onHead) return false;
+    if (picked.includes(paneId)) picked = picked.filter(one => one !== paneId);
+    else picked = [...picked, paneId];
+    paintSame();
+    return true;
+  }
+
+  // The names of the picked threads, for the hint and the toast.
+  function pickedNames() {
+    return picked.map(paneId => {
+      const name = list()?.thread?.(paneId)?.name || sessionOf(paneId)?.name;
+      return name || (starting.has(paneId) ? 'a new thread' : 'a thread');
+    });
+  }
+
+  // The prompt box's hint while the prompt goes to the picked threads, else ''. Only while this
+  // page shows: on any other page the prompt box sends as it always does.
+  function sameRoute() {
+    if (!picking || !picked.length || !isOn()) return '';
+    const count = picked.length;
+    return (
+      '→ Same prompt to ' +
+      count +
+      (count === 1 ? ' thread: ' : ' threads: ') +
+      pickedNames().join(', ')
+    );
+  }
+
+  // "Add a tool": the tools as rows of the "..." menu's own list (137 `openList`), one per
+  // signed-in account; a tool that cannot start says why on its row.
+  function toolRows() {
+    let options = [];
+    let info = [];
+    try {
+      options = window.TnaiLiveTasks?.startOptions?.() || [];
+      info = window.TnaiAgents?.info?.() || [];
+    } catch {}
+    const rows = [];
+    for (const tool of TOOLS) {
+      const mine = options.filter(option => option.agent === tool);
+      mine.forEach((option, index) =>
+        rows.push({
+          id: 'tool-' + tool + '-' + index,
+          label: option.label || tool,
+          icon: 'plus',
+          go: () => startTool(option.agent, option.accountId),
+        })
+      );
+      if (mine.length) continue;
+      const known = info.find(entry => entry.id === tool);
+      const why = known?.installed ? 'not signed in' : 'not installed';
+      rows.push({
+        id: 'tool-' + tool,
+        label: tool,
+        icon: 'plus',
+        off: why,
+        go: () => toast(tool + ' is ' + why + '. Start a thread with it and sign in first.'),
+      });
+    }
+    return rows;
+  }
+
+  function openTools() {
+    const more = window.TnaiThreadMore;
+    if (!more?.openList) return;
+    if (more.isOpen?.()) {
+      more.close(true);
+      return;
+    }
+
+    // the menu wants a thread to stand for; these rows act on none
+    more.openList(addButton, order[0] || 'tat-same', {
+      name: 'Add a tool',
+      label: 'Start a new thread with',
+      rows: toolRows(),
+    });
+  }
+
+  // Starts a thread with the tool, picked as soon as its card can stand, sent to once it is ready.
+  function startTool(agent, accountId) {
+    const team = window.TnaiTeam;
+    if (!team?.startLead) {
+      toast('A new thread needs the Technically Not desktop app.');
+      return;
+    }
+    let paneId = '';
+    const ready = team
+      .startLead({
+        here: true,
+        agent,
+        accountId: accountId || undefined,
+        onOpened: opened => {
+          paneId = opened;
+          starting.set(opened, ready);
+          if (!picked.includes(opened)) picked = [...picked, opened];
+          paintSame();
+          soon();
+        },
+      })
+      .then(session => {
+        if (!session?.paneId) {
+          toast(session?.error || agent + ' could not start.');
+          picked = picked.filter(one => one !== paneId);
+        }
+        return session;
+      })
+      .catch(() => null)
+      .finally(() => {
+        starting.delete(paneId);
+        paintSame();
+      });
+  }
+
+  // What the agent gets: the user's words with the same additions a typed prompt has.
+  function forAgent(session, words) {
+    const plain = String(words || '').trim();
+    if (SLASH_ONLY.test(plain)) return plain;
+    const mark = session.agent === 'Claude Code' && window.TnaiTeam ? '[TN.ai] ' : '';
+    let skills = '';
+    try {
+      skills = window.TnaiSessionSkills?.note?.(session.paneId) || '';
+    } catch {}
+    return mark + plain + skills;
+  }
+
+  // One thread: held while its agent works, a stopped one woken with it. True when it left.
+  function deliverOne(paneId, full, typed) {
+    const session = sessionOf(paneId);
+    if (!session || session.agent === 'Terminal') return false;
+    const agents = window.TnaiAgents;
+    const message = forAgent(session, full);
+    let sent = false;
+    if (session.running)
+      sent = !!agents?.send?.(paneId, message, { userText: typed, holdIfBusy: true });
+    else sent = !!agents?.wake?.(paneId, message);
+    if (sent)
+      window.TnaiLiveTasks?.record?.(paneId, typed, session.name + ' (' + session.agent + ')');
+    return sent;
+  }
+
+  // The prompt box's send while the picked threads get it (11 `deliver`). The box empties at once;
+  // true when at least one thread got it, so 11 puts the draft back only when none did.
+  async function sendSame(input) {
+    if (sendingSame || !input) return false;
+    const typed = input.value.trim();
+    if (!typed) return false;
+    if (window.TnaiAttachments?.count?.()) {
+      toast(
+        'Not sent: attachments go to one thread at a time. Remove them to send to several threads.'
+      );
+      return false;
+    }
+    const full = window.TnaiPastedText?.expand?.(typed) ?? typed;
+    const targets = [...picked];
+    sendingSame = true;
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const results = [];
+    try {
+      // a new thread still starting is waited for (the start gives up by itself after 30 s)
+      await Promise.all(targets.map(paneId => starting.get(paneId)).filter(Boolean));
+      for (const paneId of targets) results.push({ paneId, sent: deliverOne(paneId, full, typed) });
+    } finally {
+      sendingSame = false;
+    }
+    const got = results.filter(one => one.sent).map(one => one.paneId);
+    const missed = results.filter(one => !one.sent).map(one => one.paneId);
+    const nameOf = paneId =>
+      sessionOf(paneId)?.name || list()?.thread?.(paneId)?.name || 'a thread';
+    if (!got.length) {
+      toast('Not sent: none of the picked threads is running. Your prompt is back in the box.');
+      return false;
+    }
+    window.TnaiPromptRecall?.sent?.(typed, full);
+    let words = 'Sent to ' + got.length + (got.length === 1 ? ' thread: ' : ' threads: ');
+    words += got.map(nameOf).join(', ');
+    if (missed.length)
+      words += ' · not sent to ' + missed.map(nameOf).join(', ') + ' (not running)';
+    toast(words);
+    gather(got);
+    return true;
+  }
+
+  // The threads that got the prompt stand side by side at the front of the row.
+  function gather(paneIds) {
+    const front = paneIds.filter(paneId => order.includes(paneId));
+    if (!front.length) return;
+    order = [...front, ...order.filter(paneId => !front.includes(paneId))];
+    first = 0;
+    render();
+  }
+
   // The room the threads ask of the Live preview column beside them (38 works the width out of
   // these two numbers): up to three threads, and the arrows when there are more. It comes from
   // the number of threads only, never from a measured width, so the row is placed once.
@@ -562,6 +867,9 @@
     view.classList.toggle('tat-on', on);
     if (title) setText(title, on ? 'All threads' : titleWas);
     layout.classList.toggle('tat-on', on);
+
+    // the prompt box's hint follows: picked threads get its prompt only while this page shows
+    paintSame();
     if (!on) {
       for (const card of cards.values()) {
         letGoOfAsks(card);
@@ -595,6 +903,13 @@
         card.el.remove();
         cards.delete(paneId);
       }
+
+    // a closed thread is no longer picked (one still starting has no card yet and stays)
+    const stillPicked = picked.filter(paneId => order.includes(paneId) || starting.has(paneId));
+    if (stillPicked.length !== picked.length) {
+      picked = stillPicked;
+      paintSame();
+    }
     order.forEach((paneId, index) => {
       let card = cards.get(paneId);
       if (!card) {
@@ -730,6 +1045,9 @@
     if (!cardEl) return;
     const paneId = cardEl.dataset.pane;
     const card = cards.get(paneId);
+
+    // while "Same prompt" is on, the pick box and the card's head pick the thread or let it go
+    if (picking && card && pressPick(event.target, paneId)) return;
     if (pressCardButton(event.target, paneId, card)) return;
     if (event.target.closest('.tat-open, .tat-screen')) {
       window.TnaiThreads?.show?.(paneId);
@@ -857,6 +1175,14 @@
     go,
     show,
     render,
+
+    // the same prompt to several threads (11 asks and hands the send over)
+    sameRoute,
+    sendSame,
+    picking: on => {
+      if (on !== undefined) setPicking(on);
+      return { on: picking, picked: [...picked], starting: [...starting.keys()] };
+    },
   };
   soon();
 })();

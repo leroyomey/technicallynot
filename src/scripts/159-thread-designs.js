@@ -14,6 +14,11 @@
  * as a row with their names, or have a card of their own. Nothing runs inside a card: the still
  * picture is an image, and it is asked for only when the card comes into view.
  *
+ * A page is never shown before it is made (user 2026-10-28): a page the agent wrote waits with
+ * "Making the page…" until the agent's task ends, then "Loading the preview…" until its picture is
+ * decoded, which then fades in. A part of a page (NAME.body.html) is never drawn raw: the card
+ * shows the page built from it (NAME.html) when that is there, or says it is a part.
+ *
  * Open large lays the page over the window in a frame cut off from the app and the network, the
  * way `tnai show` pages are (show-file.js, and the preview frame's name so WebRTC is taken away
  * too), or a picture at its full size. Live preview opens the page there, by the same request `tnai
@@ -78,7 +83,7 @@
         // A page only when written whole: an edit of a site's index.html is part of the
         // site, not a design to look at.
         else if (verb === 'Wrote' && PAGE.test(name))
-          found.push({ kind: 'page', file: name, how: 'wrote' });
+          found.push({ kind: 'page', file: name, how: 'wrote', at: entry.at || 0 });
       }
       return found;
     }
@@ -128,6 +133,9 @@
       );
       if (!same) wait.items.push(item);
       else if (item.how === 'showed') same.how = 'showed';
+
+      // written twice: the later write is the one the page waits for
+      else if (item.at) same.at = item.at;
     }
   }
 
@@ -157,6 +165,44 @@
     if (!ended) return;
     for (const state of [...waitingStates]) if (state.paneId === paneId) place(state);
   });
+
+  // ---------- a page is shown only once it is made ----------
+  // A page the agent wrote is shown when the agent's task has ended, so a page it writes and then
+  // keeps editing is never shown half-made. Whether the task still runs is what the tool reports
+  // (42: Claude Code and Codex). A CLI without that report is read from its session (not running
+  // any more means done) and from the thread list's tone (inferred from its output, 119). A write
+  // from before the current task started belongs to an earlier task, so it is done. A page the
+  // agent showed with `tnai show` is one it says is ready.
+  const making = new Set();
+
+  function stillMaking(state, item) {
+    if (item.how !== 'wrote') return false;
+    const paneId = state.paneId;
+    let turn = null;
+    try {
+      turn = window.TnaiTurns?.get?.(paneId) || null;
+    } catch {}
+    if (turn) {
+      if (!turn.startedAt || turn.endedAt) return false;
+      return !(item.at && item.at < turn.startedAt);
+    }
+    let session = null;
+    let thread = null;
+    try {
+      session = window.TnaiAgents?.sessions?.().find(each => each.paneId === paneId) || null;
+      thread = window.TnaiThreadList?.thread?.(paneId) || null;
+    } catch {}
+    if (session && !session.running) return false;
+    if (session?.startedAt && item.at && item.at < session.startedAt) return false;
+    return thread?.tone === 'work';
+  }
+
+  // A task ended or a thread changed its state: the pages that waited for it go on.
+  function recheckMaking() {
+    for (const parts of [...making]) if (!stillMaking(parts.state, parts.item)) whenMade(parts);
+  }
+  window.addEventListener('tnai:turn', recheckMaking);
+  window.addEventListener('tnai:threads-painted', recheckMaking);
 
   // ---------- the cards ----------
   const HOW = {
@@ -211,19 +257,21 @@
     const frame = make('button', 'tnt-design-frame');
     frame.type = 'button';
     frame.title = 'A still picture of the page: press to use it here';
+
+    // `target` is the page the buttons open: the file itself, or the page built from a part
+    const parts = { state, item, target: item, card, frame };
     const live = button('Live preview', 'Open this page in Live preview', press =>
-      toPreview(state, item, press)
+      toPreview(state, parts.target, press)
     );
     const large = button('Open large', 'Open this page large, over the thread', () =>
-      openLarge({ kind: 'page', state, item, opener: large })
+      openLarge({ kind: 'page', state, item: parts.target, opener: large })
     );
     const still = button('Make still', 'Stop using the page here (Esc)', () => stopHere());
     still.hidden = true;
-    frame.addEventListener('click', () => useHere(state, item, card, frame, still));
-    card.append(
-      cardTop('file-text', baseName(item.file), HOW.page[item.how], [still, large, live]),
-      frame
-    );
+    frame.addEventListener('click', () => useHere(state, parts.target, card, frame, still));
+    const top = cardTop('file-text', baseName(item.file), HOW.page[item.how], [still, large, live]);
+    Object.assign(parts, { live, large, top });
+    card.append(top, frame);
     if (pictures.length)
       foundPictures(state, pictures).then(list => {
         if (list.length) card.append(pictureRow(state, list));
@@ -237,20 +285,109 @@
           else card.remove();
           return;
         }
+        parts.whole = found.whole;
         card.hidden = false;
-        card.tntDesignLoad = () => paintShot(state, item, card, frame);
-        nearScreen.observe(card);
+        if (!stillMaking(state, item)) {
+          whenMade(parts);
+          return;
+        }
+        waitInFrame(parts, 'making');
+        making.add(parts);
       })
       .catch(() => card.remove());
     return card;
   }
 
+  // The frame while the page is not ready: a thin sliding line and a few words, in the frame's own
+  // place and size, so nothing moves when the picture comes. While it is made, nothing opens it.
+  const WAIT = {
+    making: {
+      words: 'Making the page…',
+      title: 'Shown once the agent’s task ends, so the page is never shown half-made',
+    },
+    loading: { words: 'Loading the preview…', title: 'Taking a still picture of the page' },
+  };
+
+  function waitInFrame(parts, kind) {
+    const { card, frame, live, large } = parts;
+    card.dataset.state = kind;
+    const box = make('span', 'tnt-design-wait');
+    box.setAttribute('role', 'status');
+    box.append(make('span', 'tnt-live-bar'), make('span', '', WAIT[kind].words));
+    frame.replaceChildren(box);
+    frame.title = WAIT[kind].title;
+    const shut = kind === 'making';
+    frame.disabled = shut;
+    live.disabled = shut;
+    large.disabled = shut;
+  }
+
+  // A file that is not a whole page: a part another file is built from (`NAME.body.html`, as the
+  // mock-ups in docs/plans/design-concepts are), or one the app found without <html> or <head>
+  // (`whole: false`). Drawn on its own it is bare text, so it is never drawn.
+  const PART = /\.body(\.html?)$/i;
+  const isPart = parts => PART.test(parts.item.file) || parts.whole === false;
+
+  // The page is made: its still picture is asked for when the card comes near the screen. A part
+  // shows the page built from it beside it (the same name without ".body") when that is there and
+  // holds itself, and otherwise the card says what it is and draws nothing.
+  function whenMade(parts) {
+    making.delete(parts);
+    const { state, item } = parts;
+    if (!isPart(parts)) {
+      showPage(parts, item);
+      return;
+    }
+    if (!PART.test(item.file)) {
+      showPart(parts);
+      return;
+    }
+    const built = { ...item, file: item.file.replace(PART, '$1'), how: 'built' };
+    native.designs
+      .page(state.paneId, built.file, { shot: false })
+      .then(found => {
+        if (found?.ok && !found.refs?.length && found.whole !== false) showPage(parts, built);
+        else showPart(parts);
+      })
+      .catch(() => showPart(parts));
+  }
+
+  function showPage(parts, target) {
+    const { state, item, card, frame, top } = parts;
+    parts.target = target;
+    if (target !== item) {
+      const title = top.querySelector('b');
+      title.textContent = baseName(target.file);
+      title.title = target.file;
+      top.querySelector('.tnt-design-how').textContent =
+        '· the page built from ' + baseName(item.file);
+    }
+    waitInFrame(parts, 'loading');
+    frame.title = 'A still picture of the page: press to use it here';
+    card.tntDesignLoad = () => paintShot(state, target, card, frame);
+    nearScreen.observe(card);
+  }
+
+  function showPart(parts) {
+    const { card, frame, live, large } = parts;
+    card.dataset.state = 'part';
+    live.hidden = true;
+    large.hidden = true;
+
+    // a block, so a wrapped line keeps the card's side room
+    frame.replaceWith(
+      make('div', 'tnt-design-none', 'A part of a page, not a page on its own, so not drawn here')
+    );
+  }
+
+  // The picture goes in only once it is decoded, and fades in (46), so the frame never shows it
+  // half drawn.
   function paintShot(state, item, card, frame) {
     native.designs
       .page(state.paneId, item.file)
       .then(found => {
-        card.dataset.state = found?.image ? 'ready' : 'none';
         if (!found?.image) {
+          card.dataset.state = 'none';
           frame.replaceChildren(make('span', 'tnt-design-none', 'No still picture of this page'));
           return;
         }
@@ -258,10 +395,16 @@
         image.alt = 'The page ' + baseName(item.file) + ', small';
         image.decoding = 'async';
         image.src = found.image;
-        frame.replaceChildren(image);
+        return Promise.resolve(image.decode?.())
+          .catch(() => {})
+          .then(() => {
+            card.dataset.state = 'ready';
+            frame.replaceChildren(image);
+          });
       })
       .catch(() => {
         card.dataset.state = 'none';
+        frame.replaceChildren(make('span', 'tnt-design-none', 'No still picture of this page'));
       });
   }
 

@@ -37,6 +37,11 @@ const TAIL = 2 * 1024 * 1024;
 // the most that one read hands over
 const STEP = 4 * 1024 * 1024;
 
+// A first read with fewer prompts and replies than this reaches further back, never past MAX_TAIL
+// from the end (read).
+const MIN_FIRST = 30;
+const MAX_TAIL = 32 * 1024 * 1024;
+
 const READERS = new Map(
   [
     require('./thread-log-claude'),
@@ -44,7 +49,10 @@ const READERS = new Map(
     require('./thread-log-opencode'),
     require('./thread-log-cursor'),
     require('./thread-log-copilot'),
-  ].map(reader => [reader.agent, reader])
+
+    // one reader for every tool run through the ACP connector (`agents`: their names)
+    require('./thread-log-acp'),
+  ].flatMap(reader => (reader.agents || [reader.agent]).map(name => [name, reader]))
 );
 
 // Whether this app can read a tool's conversation as entries.
@@ -110,9 +118,30 @@ async function read(record, from = -1, options) {
 
   // before the read, so nothing written between this read and the watch is missed
   follow(record, file, options);
-  const part = await readFile(file, from, lines => reader.entries(lines, record, options), options);
+  const toEntries = lines => reader.entries(lines, record, options);
+  let part = await readFile(file, from, toEntries, options);
+
+  // A first read whose tail is mostly lines the window never shows starts further back, up to
+  // MAX_TAIL: since Claude Code 2.1.300 its record keeps a copy of each request
+  // (`api-request-blob`, up to 2.7 MB a line, written when a session starts or after a compact),
+  // and a 2 MB tail held 3 to 9 replies and none of the user's prompts (learned 2026-10-28, three
+  // real records).
+  let tail = options?.tail || TAIL;
+  while (
+    !(Number.isFinite(from) && from >= 0) &&
+    part.cut &&
+    talked(part.entries) < MIN_FIRST &&
+    tail < MAX_TAIL
+  ) {
+    tail = Math.min(tail * 4, MAX_TAIL);
+    part = await readFile(file, -1, toEntries, { ...options, tail, step: tail });
+  }
   return { readable: true, found: !!file, ...part };
 }
+
+// The entries a reader sees as the conversation itself: the user's prompts and the agent's words.
+const talked = entries =>
+  (entries || []).filter(entry => entry.kind === 'you' || entry.kind === 'say').length;
 
 // ---------- a read for another computer (desktop/remote-log.js) ----------
 // Never through read() above: no file is watched and no window is told, so another computer that

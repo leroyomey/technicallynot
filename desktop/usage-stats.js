@@ -868,6 +868,8 @@ const records = async () => (await collect()).allRecords.filter(r => r.cli !== '
 module.exports = {
   stats,
   records,
+  // every record with OpenCode's, and the sources (usage-insights.js, Settings › Insights)
+  collect,
   lastScan: () => ({ ...scan }),
   cacheSaved: () => saving || Promise.resolve(),
 }; // the last two: usage-cache-check.js

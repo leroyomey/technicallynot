@@ -221,6 +221,10 @@ function setItem(paneId, kind, detail, inferred) {
     detail,
     since: old?.since || Date.now(),
     inferred,
+
+    // a question still on screen that only changed its words was read again already
+    // (recheckGuess): no second redraw
+    ...(old?.rechecked ? { rechecked: true } : null),
   });
   changed(paneId);
 }
@@ -318,9 +322,11 @@ function payload() {
     for (const it of p.items.values()) if (!(asked && it.kind === 'menu')) items.push({ ...it });
 
     // why: what it waits for now (question: the user must answer; draft: the user's unsent text;
-    // busy: the agent's task; queue: earlier held ones).
+    // busy: the agent's task; compact: the agent compacts its conversation; queue: earlier held
+    // ones).
     const asking = p.held.length && !!blocker(paneId),
-      busy = p.held.length && working(paneId);
+      busy = p.held.length && working(paneId),
+      squeezing = p.held.length && compacting(paneId);
     for (const h of p.held)
       // remote: from is another computer's name
       held.push({
@@ -337,7 +343,9 @@ function payload() {
             ? 'draft'
             : busy
               ? 'busy'
-              : 'queue',
+              : squeezing
+                ? 'compact'
+                : 'queue',
         ...(h.remote ? { remote: true } : {}),
       });
   }
@@ -381,7 +389,105 @@ function closeNotes(paneId) {
 // own queue where nothing can be done with it. It goes out by itself when the task ends
 // (turns.onEnd).
 const working = paneId => !!turns?.busy?.(paneId);
-const waitsOn = (p, paneId) => blocker(paneId) || (working(paneId) ? { kind: 'busy' } : null);
+
+// A compacting agent holds them too. A compact is no task (no task start or end), so a prompt sent
+// during it went straight into the CLI: Claude Code keeps it in its own queue until the compact
+// ends and writes it nowhere the thread can show (a queue-operation "enqueue" with no text), so
+// it seemed to vanish. Held here, it stands in the conversation as waiting and goes out when the
+// compact ends. The window tells when a compact begins and ends (158-cli-busy.js, which joins the
+// PreCompact hook, a /compact from the prompt box and each CLI's compact line for every CLI).
+// A compact the window never ends is let go after COMPACT_LIMIT_MS (158 keeps the same limit).
+const COMPACT_LIMIT_MS = 10 * 60 * 1000;
+
+// paneId -> { since, timer }
+const compacts = new Map();
+const compacting = paneId => compacts.has(paneId);
+
+// on: a compact began in that thread; off: it ended. An empty paneId with on false: the window
+// started anew and knows of no compact, so none is kept.
+function setCompacting(paneId, on) {
+  const id = String(paneId ?? '');
+  if (!id) {
+    if (on) return;
+    for (const known of [...compacts.keys()]) setCompacting(known, false);
+    return;
+  }
+  const had = compacts.get(id);
+  if (on) {
+    if (had) return;
+    const timer = setTimeout(() => setCompacting(id, false), COMPACT_LIMIT_MS);
+    timer.unref?.();
+    compacts.set(id, { since: Date.now(), timer });
+    emit();
+    return;
+  }
+  if (!had) return;
+  clearTimeout(had.timer);
+  compacts.delete(id);
+
+  // the prompts held for it go out now (schedule, through changed)
+  changed(id);
+}
+
+const waitsOn = (p, paneId) =>
+  blocker(paneId) ||
+  (working(paneId) ? { kind: 'busy' } : compacting(paneId) ? { kind: 'compact' } : null);
+
+// ---- A guessed question is read again ----
+// The 'menu' item is a guess from the raw output: a reply that merely ended with words such as
+// "Do you want to proceed" looks like a question when the CLI does not draw its idle footer again
+// after it (a CLI that redraws only the rows that changed). Such a guess held every message to that
+// agent until it printed something new or the user pressed a key, so opening its thread (which
+// fits the screen and makes the CLI redraw) seemed to unstick it (bug sweep 2026-10-28,
+// helpers-click). So when that guess is the only thing holding messages, the CLI is asked once
+// per guess to draw its screen again (one row less and back). The quiet timer in `output` then
+// reads the fresh screen: a real question is drawn again and keeps holding, a reply ends under
+// the idle footer and the messages go. Exact questions (permission hooks, OpenCode's own,
+// 'trust') and a working or compacting agent never get here.
+let RECHECK_MS = 3000;
+const NUDGE_BACK_MS = 80;
+
+// (paneId) → asks the CLI to draw its screen again; init's deps.redraw replaces it in a test
+let redrawFn = paneId => {
+  const ptys = require('./pty-service');
+
+  // the live session's size (a pane with no process has none and is not resized)
+  const session = ptys.replay(paneId);
+  if (!session || !(session.rows > 5) || !session.cols) return;
+  ptys.resize(paneId, session.cols, session.rows - 1);
+
+  // back, unless a view set another size meanwhile (that size stays)
+  setTimeout(() => {
+    const now = ptys.replay(paneId);
+    if (now?.cols === session.cols && now?.rows === session.rows - 1)
+      ptys.resize(paneId, session.cols, session.rows);
+  }, NUDGE_BACK_MS);
+};
+
+function onlyGuess(p, paneId) {
+  const guess = p.items.get('menu');
+  if (!guess || !guess.inferred || p.items.has('trust')) return false;
+  if (permissionsOf(paneId).length || openCodeLink.state(paneId)?.questions[0]) return false;
+  return !working(paneId) && !compacting(paneId);
+}
+
+function recheckGuess(p, paneId) {
+  const guess = p.items.get('menu');
+  if (p.recheckTimer || guess.rechecked) return;
+  p.recheckTimer = setTimeout(() => {
+    p.recheckTimer = null;
+    if (panes.get(paneId) !== p || !p.held.length || !onlyGuess(p, paneId)) return;
+    const now = p.items.get('menu');
+
+    // once per guess: a real question drawn again keeps the same item, so no loop of redraws
+    if (now.rechecked) return;
+    now.rechecked = true;
+    try {
+      redrawFn(paneId);
+    } catch {}
+  }, RECHECK_MS);
+  p.recheckTimer.unref?.();
+}
 
 // After a task ended: END_SETTLE_MS for a Claude Code panel whose held prompts all waited only for
 // its task (none was held for a question, none came from another computer), else SETTLE_MS.
@@ -398,6 +504,7 @@ function settleAfterEnd(paneId) {
 // wait: how long the delivery timer waits (SETTLE_MS, or settleAfterEnd's answer at a task end)
 function schedule(paneId, wait = SETTLE_MS) {
   const p = panes.get(paneId);
+  if (p?.held.length && onlyGuess(p, paneId)) recheckGuess(p, paneId);
   if (!p || !p.held.length || p.delivering || p.deliverTimer || waitsOn(p, paneId)) return;
   p.deliverTimer = setTimeout(async () => {
     p.deliverTimer = null;
@@ -465,10 +572,11 @@ function done(h, paneId, result) {
 function holdIfBlocked(paneId, { text, paste = true, agent, ifBusy = false } = {}) {
   const b = blocker(paneId),
     p = panes.get(paneId),
-    busy = !b && ifBusy && working(paneId);
+    busy = !b && ifBusy && working(paneId),
+    compact = !b && !busy && ifBusy && compacting(paneId);
 
   // remoteIn: a prompt from another computer is being typed into that input right now
-  if (!b && !busy && !p?.held.length && !p?.remoteIn) return null;
+  if (!b && !busy && !compact && !p?.held.length && !p?.remoteIn) return null;
   const h = {
     id: 'held-' + Date.now().toString(36) + '-' + ++seq,
     paneId,
@@ -486,7 +594,9 @@ function holdIfBlocked(paneId, { text, paste = true, agent, ifBusy = false } = {
     b ||
     (busy
       ? { kind: 'busy', detail: 'It is still working on its task.' }
-      : { kind: 'queue', detail: 'Earlier prompts for this thread are still held.' });
+      : compact
+        ? { kind: 'compact', detail: 'It is compacting its conversation.' }
+        : { kind: 'queue', detail: 'Earlier prompts for this thread are still held.' });
   return { ok: true, state: 'held', heldId: h.id, reason: why.kind, detail: why.detail };
 }
 
@@ -1164,12 +1274,18 @@ function cliEnded(paneId) {
 }
 
 function exited(paneId) {
+  const compact = compacts.get(paneId);
+  if (compact) {
+    clearTimeout(compact.timer);
+    compacts.delete(paneId);
+  }
   const p = panes.get(paneId);
   if (!p) return;
   clearTimeout(p.timer);
   clearTimeout(p.deliverTimer);
   clearTimeout(p.remoteTimer);
   clearTimeout(p.remoteInTimer);
+  clearTimeout(p.recheckTimer);
   p.offSubmit?.();
   p.offDraft?.();
   for (const h of p.held)
@@ -1244,6 +1360,7 @@ module.exports = {
     submitFn = deps.submit;
     if (deps.window) getWin = deps.window;
     if (deps.cli) cliFn = deps.cli;
+    if (deps.redraw) redrawFn = deps.redraw;
     turns?.onEnd?.(paneId => {
       clearItem(paneId, 'unsent');
       remoteGone(paneId);
@@ -1289,6 +1406,10 @@ module.exports = {
   blocker,
   holdIfBlocked,
   holdIfDraft,
+
+  // the window: a compact began or ended in a thread (158-cli-busy.js); compacting: tests
+  setCompacting,
+  compacting,
   cancelHeld,
   hasDraft: paneId => !!panes.get(paneId)?.draft || !!speaking,
   inputEmpty,
@@ -1323,6 +1444,9 @@ module.exports = {
     },
     remoteHoldMs: ms => {
       REMOTE_HOLD_MS = ms;
+    },
+    recheckMs: ms => {
+      RECHECK_MS = ms;
     },
   },
 };

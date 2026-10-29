@@ -14,6 +14,8 @@
     // a "..." row or button that cannot work for another computer's thread (164 sets data-off)
     '.tnt-menu-row[data-off]',
     '.tnr-past-one .tnh-resume[data-off]',
+    // Settings › Insights (197): how close a past day came to the 5-hour limit is not recorded
+    '.ins-limit-off',
     '.repository-rail:not(:has(.repo-connect[data-state=connected])) #repoRefresh',
     '.repository-rail:not(:has(.repo-connect[data-state=connected])) #repoRailSearch',
   ];
@@ -80,14 +82,22 @@
     if ('disabled' in el && el.tagName !== 'DIV' && !el.disabled) el.disabled = true;
     if (el.getAttribute('tabindex') !== '-1') el.tabIndex = -1;
   };
+
+  // Only what mark() changed is given back, and only while it still stands: the control's owner
+  // may have changed it meanwhile (learned 2026-10-28: 164 enabled its resume button when a
+  // computer gave full control, and the disabled state kept from before was written back over it).
   const off = (el, orig) => {
     marked.delete(el);
     if (!el.isConnected) return;
-    if (orig.aria === null) el.removeAttribute('aria-disabled');
-    else el.setAttribute('aria-disabled', orig.aria);
-    if (orig.disabled !== undefined && el.tagName !== 'DIV') el.disabled = orig.disabled;
-    if (orig.tabindex === null) el.removeAttribute('tabindex');
-    else el.setAttribute('tabindex', orig.tabindex);
+    if (orig.aria !== 'true' && el.getAttribute('aria-disabled') === 'true') {
+      if (orig.aria === null) el.removeAttribute('aria-disabled');
+      else el.setAttribute('aria-disabled', orig.aria);
+    }
+    if (orig.disabled === false && el.tagName !== 'DIV' && el.disabled) el.disabled = false;
+    if (orig.tabindex !== '-1' && el.getAttribute('tabindex') === '-1') {
+      if (orig.tabindex === null) el.removeAttribute('tabindex');
+      else el.setAttribute('tabindex', orig.tabindex);
+    }
   };
   const mark = () => {
     const now = new Set(document.querySelectorAll(selector));
@@ -150,7 +160,9 @@
       any = true;
       if (full) continue;
       if (r.type === 'attributes') {
-        if (wide && r.target.matches(wide)) full = true;
+        // data-off alone greys a control that is already on the page (137, 164)
+        if (r.attributeName === 'data-off') touched.add(r.target);
+        else if (wide && r.target.matches(wide)) full = true;
         continue;
       }
       for (const n of r.addedNodes) if (n.nodeType === 1) touched.add(n);
@@ -165,7 +177,7 @@
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ['data-state'],
+    attributeFilter: ['data-state', 'data-off'],
   });
 
   // a route change is a change of its mode classes (08 writes them only when they differ)

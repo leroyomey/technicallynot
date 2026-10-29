@@ -1,0 +1,431 @@
+/*
+ * Technically Not · 69-usage-insights.css — Settings › Insights (src/scripts/197-usage-insights.js),
+ * from the approved mockup docs/plans/design-concepts/usage-insights.html (round B7). The three
+ * sections are Usage's cards (.uz-card, 20); what sits in them is a lighter card with no outline
+ * (fewer boxes, 25). Chart series: the first day --pg-hue-chart-1, the second --pg-hue-chart-2
+ * (both checked against the Dark and Light ground with the dataviz validator, 2026-10-28). Tokens
+ * only; Dark and Light come from the tokens.
+ */
+
+/* The section head holds Updated and Refresh, as Usage's does (20). */
+:root:not(#pg) #settingsPanel-insights {
+  gap: 16px;
+}
+:root:not(#pg) #settingsPanel-insights > .settings-section-head {
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 16px;
+}
+:root:not(#pg) #settingsPanel-insights .tnai-usage-head {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+#settingsPage .ins-body {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* ---------- the three sections ---------- */
+#settingsPage .ins-sec h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 12px;
+  color: var(--pg-text);
+  font: 500 14px/1.3 var(--pg-sans);
+}
+#settingsPage .ins-sec h3 em {
+  color: var(--pg-text-3);
+  font: 400 12.5px/1.3 var(--pg-sans);
+  font-style: normal;
+}
+#settingsPage .ins-hide {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+#settingsPage .ins-empty {
+  margin: 0;
+  color: var(--pg-text-3);
+  font: 12.5px/1.5 var(--pg-sans);
+}
+
+/* ---------- Compare ---------- */
+#settingsPage .ins-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--pg-text-2);
+  font: 13px/1.3 var(--pg-sans);
+}
+#settingsPage .ins-pick label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+#settingsPage .ins-pick select.set-input {
+  min-width: 200px;
+}
+#settingsPage .ins-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+#settingsPage .ins-a {
+  background: var(--pg-hue-chart-1);
+}
+#settingsPage .ins-b {
+  background: var(--pg-hue-chart-2);
+}
+#settingsPage .ins-lead {
+  margin: 0 0 12px;
+  color: var(--pg-text);
+  font: 14px/1.5 var(--pg-sans);
+}
+#settingsPage .ins-lead b {
+  font-weight: 600;
+}
+/* Card grids follow the section's own width, so no row is left half empty: Compare's four cards
+   are 4 or 2 by 2, A day's three are 3, or the hours above the other two. */
+#settingsPage .ins-sec {
+  container-type: inline-size;
+}
+#settingsPage .ins-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+#settingsPage .ins-day .ins-grid > :first-child {
+  grid-column: 1 / -1;
+}
+@container (min-width: 1040px) {
+  #settingsPage [data-cards].ins-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@container (min-width: 700px) {
+  #settingsPage .ins-day .ins-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  #settingsPage .ins-day .ins-grid > :first-child {
+    grid-column: auto;
+  }
+}
+/* A tablet's column: the day's cards one under another, so thread names keep their room. */
+@container (max-width: 560px) {
+  #settingsPage .ins-day .ins-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@container (max-width: 460px) {
+  #settingsPage .ins-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+#settingsPage .ins-card {
+  min-width: 0;
+  padding: 12px;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel-2);
+  color: var(--pg-text-2);
+  font: 12.5px/1.45 var(--pg-sans);
+}
+#settingsPage .ins-card h4 {
+  margin: 0 0 8px;
+  color: var(--pg-text-2);
+  font: 500 12.5px/1.3 var(--pg-sans);
+}
+#settingsPage .ins-card h4 b {
+  color: var(--pg-text);
+  font-weight: 600;
+}
+#settingsPage .ins-big {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 18px;
+}
+#settingsPage .ins-big b {
+  color: var(--pg-text);
+  font: 600 22px/1.2 var(--pg-mono);
+}
+#settingsPage .ins-big span {
+  color: var(--pg-text-3);
+}
+#settingsPage .ins-sub,
+#settingsPage .ins-line {
+  margin: 8px 0 0;
+  color: var(--pg-text-2);
+}
+#settingsPage .ins-line:first-of-type {
+  margin-top: 0;
+}
+
+/* by hour: 24 columns, one bar per series, rounded ends on the data side */
+#settingsPage .ins-hours {
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  gap: 2px;
+  align-items: end;
+  height: 70px;
+}
+#settingsPage .ins-hours div {
+  display: flex;
+  gap: 1px;
+  align-items: end;
+  height: 100%;
+}
+#settingsPage .ins-hours div:hover {
+  background: var(--pg-panel-hover-soft);
+  border-radius: 2px;
+}
+#settingsPage .ins-hours i {
+  flex: 1;
+  min-height: 0;
+  border-radius: 2px 2px 0 0;
+}
+#settingsPage .ins-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  color: var(--pg-text-3);
+  font: 10.5px/1.2 var(--pg-mono);
+}
+
+/* rows of paired bars: name, bars, the first day's value */
+#settingsPage .ins-rows > div {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) 54px;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0;
+}
+#settingsPage .ins-rows-wide > div {
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 54px;
+}
+#settingsPage .ins-rows span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#settingsPage .ins-pair {
+  display: grid;
+  gap: 2px;
+}
+#settingsPage .ins-pair i {
+  display: block;
+  min-width: 2px;
+  height: 6px;
+  border-radius: 0 3px 3px 0;
+}
+#settingsPage .ins-rows small {
+  color: var(--pg-text-3);
+  font: 11.5px/1.2 var(--pg-mono);
+  text-align: right;
+}
+
+/* ---------- A day up close ---------- */
+#settingsPage .ins-cal {
+  display: grid;
+  grid-template-rows: repeat(7, 22px);
+  grid-auto-flow: column;
+  grid-auto-columns: 22px;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 3px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+}
+#settingsPage .ins-cal button,
+#settingsPage .ins-callegend i {
+  background: color-mix(in srgb, var(--pg-hue-chart-1) var(--p), var(--pg-panel-2));
+}
+#settingsPage .ins-cal button {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+#settingsPage .ins-cal button:hover {
+  outline: 1px solid var(--pg-text-3);
+  outline-offset: 1px;
+}
+#settingsPage .ins-cal button[aria-pressed='true'] {
+  outline: 2px solid var(--pg-text);
+  outline-offset: 1px;
+}
+#settingsPage .ins-callegend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--pg-text-3);
+  font: 11.5px/1.2 var(--pg-sans);
+}
+#settingsPage .ins-callegend i {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+#settingsPage .ins-day {
+  margin-top: 12px;
+}
+#settingsPage .ins-meter {
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 4px;
+  background: var(--pg-line-2);
+  overflow: hidden;
+}
+#settingsPage .ins-meter i {
+  display: block;
+  width: 0;
+  height: 100%;
+}
+#settingsPage .ins-limit-off {
+  margin-top: 8px;
+}
+
+/* ---------- Ways to use fewer tokens ---------- */
+#settingsPage .ins-tips {
+  display: grid;
+  gap: 10px;
+}
+#settingsPage .ins-tip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel-2);
+}
+#settingsPage .ins-tip > i {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--pg-accent-soft);
+  color: var(--pg-accent-2);
+}
+#settingsPage .ins-tip b {
+  display: block;
+  color: var(--pg-text);
+  font: 600 13.5px/1.3 var(--pg-sans);
+}
+#settingsPage .ins-tip p {
+  margin: 3px 0 0;
+  color: var(--pg-text-2);
+  font: 12.5px/1.45 var(--pg-sans);
+}
+#settingsPage .ins-tip small {
+  display: block;
+  margin-top: 4px;
+  color: var(--pg-text-3);
+  font: 11.5px/1.4 var(--pg-sans);
+}
+#settingsPage .ins-tip-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+#settingsPage .ins-tip-list[hidden] {
+  display: none;
+}
+#settingsPage .ins-tip-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+  color: var(--pg-text-2);
+  font: 12px/1.4 var(--pg-sans);
+}
+#settingsPage .ins-tip-list li span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#settingsPage .ins-tip-list li small {
+  margin: 0;
+  font-family: var(--pg-mono);
+}
+#settingsPage .ins-save {
+  color: var(--pg-text-2);
+  font: 12px/1.4 var(--pg-sans);
+  text-align: right;
+  white-space: nowrap;
+}
+#settingsPage .ins-save strong {
+  display: block;
+  color: var(--pg-text);
+  font: 600 15px/1.2 var(--pg-mono);
+}
+#settingsPage .ins-more {
+  display: block;
+  height: 28px;
+  margin: 6px 0 0 auto;
+  padding: 0 10px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--pg-text);
+  font: 500 12.5px/1 var(--pg-sans);
+  cursor: pointer;
+}
+#settingsPage .ins-more:hover {
+  border-color: var(--pg-accent);
+  background: var(--pg-panel-hover);
+}
+#settingsPage .ins-more:focus-visible {
+  outline: 2px solid var(--pg-accent);
+  outline-offset: 2px;
+}
+#settingsPage .ins-note {
+  margin: 10px 2px 0;
+  color: var(--pg-text-3);
+  font: 12px/1.5 var(--pg-sans);
+}
+
+/* Narrow windows and tablets: the saving moves under the tip's words. */
+@media (max-width: 900px) {
+  #settingsPage .ins-tip {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  #settingsPage .ins-save {
+    grid-column: 2;
+    text-align: left;
+    white-space: normal;
+  }
+  #settingsPage .ins-more {
+    margin-left: 0;
+  }
+}
+
+/* Under touch the buttons grow to 44 (36-thread-touch.css rule for every pressable control). */
+@media (pointer: coarse) {
+  #settingsPage .ins-more {
+    height: 44px;
+  }
+  /* 30 px: the 13 or 14 weeks still fit a tablet's Settings column */
+  #settingsPage .ins-cal {
+    grid-template-rows: repeat(7, 30px);
+    grid-auto-columns: 30px;
+  }
+  #settingsPage .ins-cal button {
+    width: 30px;
+    height: 30px;
+  }
+}

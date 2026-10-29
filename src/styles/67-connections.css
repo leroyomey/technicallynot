@@ -1,0 +1,307 @@
+/* Technically Not · 67-connections.css — the Connections page (src/scripts/190-connections-page.js)
+   and its section in a thread's Details tab (191-thread-connections.js), built from the approved
+   mock docs/plans/design-concepts/connections-page.html (user 2026-10-28: "Yes, build it as
+   shown"). The page is the Skills page's own frame and parts (13-skills-purple.css: header,
+   chips, groups, cards, detail panel, switch); only what the Skills page lacks is here: the page in
+   `connections-mode`, the tools a connection reaches, its key and command, the threads, the add
+   sheet and the Details lines. Tokens only. data-pg: the remap engine skips it. */
+
+/* ---------------------------------------------------------------- the page in the layout */
+/* It carries the Skills page's class for its look, so it stays out of the Skills page's mode. */
+.layout:not(.connections-mode) > .cn-page {
+  display: none !important;
+}
+.layout.connections-mode {
+  grid-template-columns: var(--nav-width, 205px) minmax(0, 1fr) !important;
+  background: transparent;
+}
+.layout.connections-mode > .sidebar {
+  grid-column: 1;
+  grid-row: 1;
+}
+.layout.connections-mode > .cn-page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.layout.connections-mode > .overview-view,
+.layout.connections-mode > .workspace,
+.layout.connections-mode > .preview,
+.layout.connections-mode > .tnai-resizer {
+  display: none !important;
+}
+
+/* The page sends nothing by itself, so the docked prompt box stays out of the way (as Skills). */
+body:has(.layout.connections-mode) .composer {
+  display: none !important;
+}
+
+/* The Skills page's header rules that are tied to its id. */
+#connectionsPage .sk-head h1::before {
+  display: none;
+}
+#connectionsPage .sk-title > .sk-sum {
+  display: block;
+  margin: 5px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pg-text-3);
+  font: 400 12.5px var(--pg-sans);
+}
+
+/* The Skills page's group count says "skills"; this page's says what it counts. */
+#connectionsPage .skills-group > header span:not(:empty)::after {
+  content: ' connections';
+}
+
+/* With the detail panel open in a narrow window the list can be narrower than one card: a card
+   then takes the whole width instead of being cut, and a group's name, count and words stack. */
+#connectionsPage .skills-library {
+  container-type: inline-size;
+}
+#connectionsPage .skills-group .sk-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr));
+}
+@container (max-width: 420px) {
+  #connectionsPage .sk-body.has-detail .skills-group > header {
+    grid-auto-flow: row;
+  }
+}
+
+/* ---------------------------------------------------------------- cards and the detail panel */
+.cn-add-btn {
+  margin-left: auto;
+}
+.cn-reach {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cn-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--pg-panel-2);
+  color: var(--pg-text-2);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.cn-tool i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pg-ready);
+}
+.cn-tool[data-state='blocked'] i {
+  background: var(--pg-wait);
+}
+.cn-tool:is([data-state='no'], [data-state='unknown']) i {
+  background: var(--pg-idle);
+}
+.cn-thread {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 0;
+  font-size: 12.5px;
+}
+.cn-thread + .cn-thread {
+  box-shadow: inset 0 1px 0 var(--pg-line);
+}
+.cn-thread small {
+  margin-left: 6px;
+  color: var(--pg-text-3);
+}
+.cn-code {
+  display: block;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel-2);
+  color: var(--pg-text-2);
+  font: 11.5px/1.5 var(--pg-mono);
+  overflow-wrap: anywhere;
+}
+.cn-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cn-key b {
+  font-weight: 500;
+}
+.cn-ok {
+  color: var(--pg-work-text);
+}
+.cn-miss {
+  color: var(--pg-wait);
+}
+.cn-key-note {
+  display: block;
+  flex-basis: 100%;
+  color: var(--pg-text-3);
+  font-size: 11.5px;
+}
+#connectionsPage .sk-d-facts dd:has(.cn-key-note) {
+  flex-wrap: wrap;
+}
+
+/* A key field: a password box and Save, under the key's state. */
+.cn-key-field {
+  display: flex;
+  flex-basis: 100%;
+  gap: 6px;
+  margin-top: 4px;
+}
+.cn-key-field .cn-input {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
+}
+.cn-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+  margin-top: 5px;
+  padding: 0 10px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text);
+  font: 12px var(--pg-mono);
+}
+
+/* ---------------------------------------------------------------- the add sheet */
+/* Over the page; what floats takes --tnt-over. */
+.cn-sheet-wrap {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  border-radius: var(--pg-r);
+  background: rgb(0 0 0 / 0.28);
+}
+.cn-sheet-wrap[hidden] {
+  display: none;
+}
+.cn-sheet {
+  box-sizing: border-box;
+  width: min(460px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pg-line-2) transparent;
+  padding: 18px 20px;
+  border-radius: var(--pg-r);
+  background: var(--tnt-over);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 18px 50px rgb(0 0 0 / 0.3);
+  color: var(--pg-text);
+  font-family: var(--pg-sans);
+}
+.cn-sheet h2 {
+  margin: 0 0 4px;
+  font: 600 16px/1.3 var(--pg-sans);
+}
+.cn-sheet p {
+  margin: 8px 0;
+  color: var(--pg-text-2);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.cn-sheet label {
+  display: block;
+  margin-top: 12px;
+  color: var(--pg-text-2);
+  font-size: 12px;
+}
+.cn-sheet .cn-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+.cn-sheet-reach {
+  margin-top: 6px;
+}
+.cn-or {
+  align-self: center;
+  color: var(--pg-text-3);
+  font-size: 12px;
+}
+.cn-safe {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: var(--pg-r-sm);
+  background: color-mix(in srgb, var(--pg-wait) 10%, transparent);
+  color: var(--pg-text-2);
+  font-size: 12px;
+}
+.cn-safe > :first-child {
+  flex: none;
+}
+.cn-sheet .cn-sheet-error {
+  color: var(--pg-err);
+}
+
+/* ---------------------------------------------------------------- in a thread's Details */
+.ttd-sec[data-sec='connections'] {
+  --tone: var(--pg-hue-page);
+}
+.cn-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 10px;
+  padding: 8px 0;
+  box-shadow: inset 0 -1px 0 var(--pg-line);
+  font-size: 12.5px;
+}
+.cn-line:last-of-type {
+  box-shadow: none;
+}
+.cn-line > span {
+  overflow-wrap: anywhere;
+}
+.cn-line small {
+  grid-column: 1;
+  color: var(--pg-text-3);
+  font-size: 11.5px;
+}
+.cn-line .sk-switch {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: start;
+}
+
+/* A link in words: the accent, no fill and no line of its own. */
+.ttd button.cn-manage {
+  display: block;
+  margin: 8px 0 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--pg-accent);
+  font: 400 12px var(--pg-sans);
+  cursor: pointer;
+}
+.ttd button.cn-manage:hover {
+  text-decoration: underline;
+}
+.ttd button.cn-manage:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}

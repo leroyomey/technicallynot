@@ -9,13 +9,14 @@
     const t = document.getElementById('toast').getBoundingClientRect(),
       top = document.querySelector('header.top').getBoundingClientRect(),
       st = document.querySelector('.top-right .status').getBoundingClientRect();
+    const inside = t.top >= top.top && t.bottom <= top.bottom;
+    const leftOf = t.right <= st.left;
+    const opacity = getComputedStyle(document.getElementById('toast')).opacity;
+    log('inside the top bar:', inside, '| left of the status:', leftOf, '| visible:', opacity);
     log(
-      'inside the top bar:',
-      t.top >= top.top && t.bottom <= top.bottom,
-      '| left of the status:',
-      t.right <= st.left,
-      '| visible:',
-      getComputedStyle(document.getElementById('toast')).opacity
+      inside && leftOf && opacity === '1' ? 'PASS' : 'FAIL',
+      'the note sits in the thread layout top bar, left of the status:',
+      document.documentElement.classList.contains('tnt-on')
     );
   } catch (e) {
     log('ERROR', e.message);

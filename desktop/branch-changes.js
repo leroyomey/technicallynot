@@ -2,7 +2,10 @@
 // the "Changes" section of a thread's Details tab (src/scripts/139-thread-details.js): the branch,
 // lines added and removed and files changed since the default branch (uncommitted changes
 // included), commits ahead and behind, uncommitted files, and the branch's pull request with its
-// checks when the GitHub CLI (`gh`) is installed and signed in.
+// checks when the GitHub CLI (`gh`) is installed and signed in. Also the git view of that section
+// (feature build 2026-10-28, feature 9): the other local branches and the last commits.
+//
+// Read only: nothing here switches a branch, commits, stashes, resets or checks out.
 //
 // The folder is the thread's own (an agent may work in its own git worktree), not always the
 // project folder. Git runs through git-service.js's runner (no shell, never prompts, read-only
@@ -19,6 +22,61 @@ const GH_MS = 15000;
 // window decides when to ask (when Details opens, when a turn ends, at most once a minute while
 // the agent works); this only stops two copies of Details from running everything twice.
 const KEEP_MS = 5000;
+
+// How many other local branches and recent commits one answer carries. The rest of the branches
+// is only counted ("+9 more"), so a folder with hundreds of worktree branches stays one small
+// answer.
+const BRANCHES_SHOWN = 12;
+const COMMITS_SHOWN = 5;
+
+// Separators of the `git log` lines below: one record per commit, one field per fact.
+const RECORD = '\x1e';
+const FIELD = '\x1f';
+
+// The output of `git log --format=<RECORD>%h<FIELD>%P<FIELD>%an<FIELD>%ct<FIELD>%s --shortstat`
+// made into plain facts: short id, message, author, time (ms), merge, files and lines changed.
+// A merge commit has no --shortstat line, so its counts stay 0 and `merge` says why.
+function parseLog(text) {
+  return String(text || '')
+    .split(RECORD)
+    .map(record => record.trim())
+    .filter(Boolean)
+    .map(record => {
+      const [head, ...rest] = record.split(/\r?\n/);
+      const [hash, parents, author, seconds, ...subject] = head.split(FIELD);
+      const stat = rest.join(' ');
+      const number = pattern => Number((pattern.exec(stat) || [])[1]) || 0;
+      return {
+        hash: String(hash || '').slice(0, 40),
+        subject: subject.join(FIELD).slice(0, 300),
+        author: String(author || '').slice(0, 120),
+        at: (Number(seconds) || 0) * 1000,
+        merge:
+          String(parents || '')
+            .trim()
+            .split(/\s+/).length > 1,
+        files: number(/(\d+) files? changed/),
+        added: number(/(\d+) insertions?\(\+\)/),
+        removed: number(/(\d+) deletions?\(-\)/),
+      };
+    })
+    .filter(commit => commit.hash);
+}
+
+// The output of `git for-each-ref --format=%(refname:short)%09%(committerdate:unix) refs/heads`
+// (newest first) without the branch the folder is on: the first BRANCHES_SHOWN with their last
+// commit's time, and how many there are in all.
+function parseBranches(text, current) {
+  const all = String(text || '')
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map(line => {
+      const [name, seconds] = line.split('\t');
+      return { name: String(name || '').slice(0, 200), at: (Number(seconds) || 0) * 1000 };
+    })
+    .filter(branch => branch.name && branch.name !== current);
+  return { otherBranches: all.slice(0, BRANCHES_SHOWN), otherBranchCount: all.length };
+}
 
 // A check run's ending, as GitHub names it, in three groups.
 const PASSED = new Set(['SUCCESS', 'NEUTRAL', 'SKIPPED']);
@@ -192,10 +250,42 @@ function createBranchChanges({ git, parseStatus, numstat, runGh = runGhHere, now
       files: 0,
       pr: null,
       gh: '',
+      otherBranches: [],
+      otherBranchCount: 0,
+      commits: [],
     };
 
     // A repository with no commit yet has nothing to compare.
     if (status.initial) return result;
+
+    // The other local branches and the last commits of this one: read only, for the git view in
+    // the same section (153). Both run at once; each is one small git command.
+    const [refs, log] = await Promise.all([
+      git(
+        [
+          'for-each-ref',
+          '--sort=-committerdate',
+          '--format=%(refname:short)%09%(committerdate:unix)',
+          'refs/heads',
+        ],
+        { cwd, okCodes: [0, 128] }
+      ),
+      git(
+        [
+          'log',
+          '-n',
+          String(COMMITS_SHOWN),
+          '--encoding=UTF-8',
+          '--format=' + RECORD + '%h' + FIELD + '%P' + FIELD + '%an' + FIELD + '%ct' + FIELD + '%s',
+          '--shortstat',
+          'HEAD',
+          '--',
+        ],
+        { cwd, okCodes: [0, 128] }
+      ),
+    ]);
+    Object.assign(result, parseBranches(refs.stdout, status.detached ? '' : status.branch));
+    result.commits = parseLog(log.stdout);
 
     // Lines are counted from where the branch left the default branch to the files on disk, so
     // what the agent has not committed yet counts too. On the default branch itself (or with
@@ -254,4 +344,12 @@ function createBranchChanges({ git, parseStatus, numstat, runGh = runGhHere, now
 }
 
 // pr-watch.js reads and merges a thread's pull request with the same gh runner and readers.
-module.exports = { createBranchChanges, countChecks, parsePullRequest, ghReason, runGhHere };
+module.exports = {
+  createBranchChanges,
+  countChecks,
+  parsePullRequest,
+  ghReason,
+  runGhHere,
+  parseLog,
+  parseBranches,
+};

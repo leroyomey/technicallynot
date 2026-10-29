@@ -518,7 +518,7 @@
 .tnai-voice-btn{position:relative;display:grid;place-items:center;box-sizing:border-box;width:30px;height:30px;padding:0;border:0;border-radius:7px;background:transparent;color:#8e9088;line-height:1;flex:none;cursor:pointer;touch-action:none;transition:box-shadow .08s linear,background .12s,color .12s}
 .tnai-voice-btn svg{display:block;pointer-events:none}
 .tnai-voice-btn:hover{background:#f1f3ee;color:#3e4438}
-.tnai-voice-btn:focus-visible{outline:var(--pg-ring,2px) solid #8da56c;outline-offset:2px}
+.tnai-voice-btn:focus-visible{outline:var(--pg-ring,2px) solid var(--pg-accent);outline-offset:2px}
 .tnai-voice-btn[data-state=listening]{border-radius:50%;background:var(--ac-coral-fg);color:var(--ac-coral-on);box-shadow:0 0 0 calc(2px + var(--tnai-voice-lvl,0) * 5px) color-mix(in srgb,var(--ac-coral-line) 40%,transparent)}
 .tnai-voice-btn[data-state=listening]:hover{background:var(--ac-coral-fg);color:var(--ac-coral-on);filter:brightness(.95)}
 .composebox{transition:border-color .2s ease,box-shadow .2s ease}

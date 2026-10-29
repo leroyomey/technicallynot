@@ -328,7 +328,7 @@ function pad(s, n) {
     if (!releases.find(r => r.id === id)?.feed)
       gaps.push(
         id +
-          ": no release feed in agent-registry.js RELEASES, so the release watcher (tools/cli-watch) can't follow its updates."
+          ': no release feed in agent-registry.js RELEASES, so its release notes have no address to read when it updates.'
       );
 
     if (!d.installed) {
@@ -361,8 +361,14 @@ function pad(s, n) {
         (d.loggedIn === null ? 'no login needed' : 'logged ' + (d.loggedIn ? 'in' : 'out')) +
         ')';
 
+    // A tool run through the ACP connector: its rules go with the first prompt and a conversation
+    // is reopened with the agent's own session/load (acp-bridge.js), both proven by
+    // tools/acp-bridge-test.js and, with a real agent, tools/acp-real-check.js.
+    const viaAcp = registry.isAcp(id);
+
     // Work rules / live hooks delivery.
-    if (RULES_CHECK[id]) {
+    if (viaAcp) row.rules = 'ACP';
+    else if (RULES_CHECK[id]) {
       try {
         const r = await RULES_CHECK[id](d.path);
         row.rules = r.ok ? 'yes' : 'FAIL';
@@ -374,7 +380,7 @@ function pad(s, n) {
     } else row.rules = 'n/a';
 
     // Resume.
-    const rc = await resumeCheck(id, d.path, cap);
+    const rc = viaAcp ? { supported: true, ok: true } : await resumeCheck(id, d.path, cap);
     if (!rc.supported) row.resume = rc.mentionsResume ? 'n/a*' : 'n/a';
     else {
       row.resume = rc.ok ? 'yes' : 'FAIL';

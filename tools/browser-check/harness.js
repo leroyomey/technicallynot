@@ -44,9 +44,24 @@
       e.message + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno + ':' + e.colno
     );
   });
-  addEventListener('unhandledrejection', e =>
-    errors.push('unhandled rejection: ' + (e.reason?.message || e.reason))
-  );
+
+  // A rejection names where it came from (the first two lines of its stack), or "Cannot convert
+  // object to primitive value" alone says nothing about which file threw it.
+  addEventListener('unhandledrejection', e => {
+    const where = String(e.reason?.stack || '')
+      .split('\n')
+      .slice(1, 3)
+      .map(line =>
+        line
+          .trim()
+          .replace(/^at /, '')
+          .replace(/https?:\/\/[^/]+\//, '')
+      )
+      .join(' < ');
+    errors.push(
+      'unhandled rejection: ' + (e.reason?.message || e.reason) + (where ? ' @' + where : '')
+    );
+  });
   setTimeout(() => {
     check.log('TIMEOUT: test did not call check.done()');
     check.done();

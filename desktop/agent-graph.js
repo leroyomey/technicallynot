@@ -613,6 +613,20 @@ function findChild(parent, key) {
   return byId.length === 1 ? byId[0] : null;
 }
 
+// A sub-agent by the id tnai_delegate, tnai_subagents and tnai_wait give (its graph id, or 6+ of
+// its first characters): its panel and conversation, or null. The mesh turns it into the id
+// `tnai agents` lists, so `tnai send | ask | read | close` reach the helper by either id
+// (agent-mesh.js helperIds; learned 2026-10-28: leads were given an id those commands refused).
+function nodeById(key) {
+  key = String(key || '')
+    .trim()
+    .toLowerCase();
+  if (key.length < 6) return null;
+  const hits = [...nodes.values()].filter(n => !n.root && n.id.startsWith(key));
+  if (hits.length !== 1) return null;
+  return { paneId: hits[0].paneId || '', sessionId: hits[0].sessionId || '' };
+}
+
 // The checks every delegation passes. Anything refused tells the agent why and what to do instead.
 function refuse(parent, purpose, task, why, agent = 'Claude Code') {
   if (purpose.length < 3 || task.length < 20)
@@ -1434,11 +1448,14 @@ function settle(n) {
   publish();
 }
 
-// A finished sub-agent closes after the grace period once its report has reached its parent, also
-// while the parent keeps working: a lead that cycles many sub-agents would otherwise collect every
-// finished panel until its whole task ends. One whose report has not arrived yet waits, as before,
-// until the parent is at rest (its turn over, none of its sub-agents working). A parent whose pane
-// is gone counts as at rest. A closed sub-agent stays revivable for related work.
+// A finished sub-agent closes after the grace period once its report is kept, also while the
+// parent keeps working: a lead that cycles many sub-agents would otherwise collect every finished
+// panel until its whole task ends. The report is kept on the node (`report`) and still reaches the
+// parent at its next idle moment (flush leaves out only working ones, and a hidden node keeps its
+// report), so the panel is not needed for it (user 2026-10-28: "Make sure your agents know to close
+// if they're done and no longer needed so they don't idle for no reason"; before, one whose report
+// had not reached a busy parent stayed open until the parent's whole turn ended). A parent at rest
+// or whose pane is gone closes them too. A closed sub-agent stays revivable for related work.
 function armClose(parentId) {
   const parent = nodes.get(parentId);
   const rest =
@@ -1446,7 +1463,7 @@ function armClose(parentId) {
     (!busy.has(parent.paneId) && !children(parentId).some(k => ACTIVE.has(k.status)));
   let changed = false;
   for (const k of children(parentId)) {
-    const due = rest || !!k.reported;
+    const due = rest || !!k.reported || !!k.report;
     if (k.persistent || !k.paneId || k.status !== 'done' || due === !!k.closesAt) continue;
     if (due) scheduleClose(k);
     else cancelClose(k);
@@ -1648,6 +1665,7 @@ module.exports = {
   call,
   sentByParent,
   resend,
+  nodeById,
   onEvent,
   onTurn,
   output,

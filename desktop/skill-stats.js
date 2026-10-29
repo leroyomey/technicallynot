@@ -90,9 +90,66 @@ function pane(id) {
         pending: new Set(),
         required: new Set(),
         held: false,
+        ...freshTask(),
       })
     );
   return p;
+}
+
+// ---------- the learning check (user 2026-10-28: "the system inside this app should know to do
+// it on its own") ----------
+// What one task did that should teach a skill: the user corrected the agent, it fixed a bug, or
+// it added new code files. At the task's end, when it changed no skill and did not say why none
+// needed it, the agent is held once (agent-hooks.js Stop) and asked to decide. The same rule is
+// written for every agent in desktop/hidden-skills/60-write-skills.md; this makes Claude Code
+// keep it without the user asking.
+const freshTask = () => ({
+  corrected: false,
+  bugTask: false,
+  codeEdits: 0,
+  newCode: 0,
+  skillEdits: 0,
+  learnHeld: false,
+});
+
+// a prompt about something broken
+const BUG_WORDS =
+  /\b(bugs?|fix(es|ed|ing)?|broken|breaks?|errors?|fails?|failing|failed|crash(es|ed)?|wrong|not working|doesn'?t work|does not work|issues?)\b/i;
+
+// a file a skill or rule lives in: project, Codex and agents skills, the app's own hidden skills,
+// the library skills in the settings folder, CLAUDE.md and AGENTS.md
+const SKILL_FILE =
+  /([\\/]\.(claude|codex|agents)[\\/]skills[\\/])|([\\/]hidden-skills[\\/])|([\\/]TechnicallyNot\.ai[\\/]skills[\\/])|([\\/](CLAUDE|AGENTS)\.md$)|([\\/]docs[\\/]CODE_STYLE\.md$)/i;
+const CODE_FILE = /\.(c?js|mjs|ts|tsx|jsx|css|html|py|ps1|cmd|sh|json)$/i;
+
+// the final answer already says what happened to the skills
+const SKILL_SAID =
+  /\b(skill improved|improved (the )?skill|added (the |a )?(lesson|rule) to|no skill (needed|change|update)|none needed|(skill|rule)s? (doesn'?t|does not|didn'?t|did not) need|why none needed)\b/i;
+
+// PostToolUse of an edit by the main agent (agent-hooks.js): what kind of file it changed.
+function edited(paneId, file, tool) {
+  const name = String(file || '');
+  if (!name) return;
+  const p = pane(paneId);
+  if (SKILL_FILE.test(name)) p.skillEdits++;
+  else if (CODE_FILE.test(name)) {
+    p.codeEdits++;
+    if (tool === 'Write') p.newCode++;
+  }
+}
+
+// At the task's end: why this task should teach a skill, or '' (once per task; nothing while
+// Settings › Agents › Write skills is off: `on` false).
+function learnCheck(paneId, finalText, on = true) {
+  const p = pane(paneId);
+  if (!on || p.learnHeld || p.skillEdits) return '';
+  if (SKILL_SAID.test(String(finalText || '').slice(-4000))) return '';
+  let why = '';
+  if (p.corrected) why = 'the user corrected you in this task';
+  else if (p.bugTask && p.codeEdits) why = 'this task fixed a bug';
+  else if (p.newCode) why = 'this task added new code files';
+  if (why) p.learnHeld = true;
+  return why;
 }
 
 // Only clear signals count; anything else (a new task, a question) says nothing about the skill. A
@@ -115,6 +172,12 @@ function prompted(paneId, prompt) {
   p.pending.clear();
   p.required.clear();
   p.held = false; // a new task: what the last one required no longer applies
+
+  // the learning check starts again with each task
+  Object.assign(p, freshTask(), {
+    corrected: v === 'corrected',
+    bugTask: BUG_WORDS.test(String(prompt || '').slice(0, 4000)),
+  });
 }
 
 // The finish check: skills this task was told to read — two or more
@@ -205,6 +268,8 @@ module.exports = {
   offered,
   require: require_,
   hold,
+  edited,
+  learnCheck,
   tool,
   readIn,
   known,

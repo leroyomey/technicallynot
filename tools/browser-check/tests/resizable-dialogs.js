@@ -28,8 +28,11 @@
     ev('pointermove', box, cx, cy);
     const hot = box.hasAttribute('data-tnai-rz-hot');
     ev('pointerdown', document.elementFromPoint(cx, cy) || box, cx, cy);
-    const grow = box.querySelector('[data-tnai-grow]:not([data-tnai-grow-col])'),
-      g0 = grow?.getBoundingClientRect();
+
+    // what grows with the box: the part 67 marked, or the box itself when it scrolls as a whole
+    // (a list in several columns keeps its own height, since 2026-10-28)
+    const grow = box.querySelector('[data-tnai-grow]:not([data-tnai-grow-col])') || box,
+      g0 = grow.getBoundingClientRect();
     for (let s = 1; s <= 6; s++) {
       ev('pointermove', window.document.body, cx + (dx * s) / 6, cy + (dy * s) / 6);
       await wait(30);
@@ -117,19 +120,45 @@
     await wait(250);
     const a = await resize('shortcuts', keys, 160, 140);
     const b = await resize('shortcuts shrink', keys, -260, -260);
-    const g = q('.tnai-keys [data-tnai-grow]');
+    const g = q('.tnai-keys [data-tnai-grow]') || q('.tnai-keys');
     log(
       'shrunk content scrolls:',
       !!g && g.scrollHeight > g.clientHeight + 2,
       '| header kept',
       Math.round(q('.tnai-keys-head').getBoundingClientRect().height)
     );
-    await resize('shortcuts again', keys, 200, 300);
+    const c = await resize('shortcuts again', keys, 200, 300);
+
+    // The dialog opens nearly as tall as the window, so the first drag grows mostly its width;
+    // the one after the shrink has room both ways.
     log(
       'grew:',
-      a.r1.width > a.r0.width + 100 && a.r1.height > a.r0.height + 100,
+      a.r1.width > a.r0.width + 100 && c.r1.height > c.r0.height + 100,
       '| content grew with it:',
-      a.g1.height > a.g0.height + 80
+      c.g1.height > c.g0.height + 80
+    );
+
+    // No two rows of the list lie on each other after the drags (they did: the two-column list
+    // was taken apart into a stack whose sections spilled over each other, 2026-10-28).
+    const rows = [...document.querySelectorAll('.tnai-keys-row')].map(row =>
+      row.getBoundingClientRect()
+    );
+    const overlapping = rows.filter((one, index) =>
+      rows.some(
+        (other, at) =>
+          at > index &&
+          one.left < other.right - 1 &&
+          other.left < one.right - 1 &&
+          one.top < other.bottom - 1 &&
+          other.top < one.bottom - 1
+      )
+    ).length;
+    log(
+      overlapping ? 'FAIL' : 'PASS',
+      'no shortcut rows lie on each other after the drags:',
+      overlapping,
+      'overlapping of',
+      rows.length
     );
   } catch (e) {
     log('ERROR', e.message, e.stack);

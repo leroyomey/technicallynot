@@ -19,7 +19,8 @@
  * Tokens come from the record (Claude Code writes them on every request) or, for the task that
  * just ended in any CLI, from 42 `TnaiTurns`. Hooks in 122: `note` for every entry, `block` when
  * the "Worked for" block is built. The pure parts (`split`, `cost`) are tested by
- * tools/task-time-test.js.
+ * tools/task-time-test.js. The split of a task that just ended also goes to the project's learning
+ * record (desktop/task-learning.js).
  */
 (() => {
   // ---------- the pure part: entries in, numbers out ----------
@@ -262,6 +263,7 @@
     }
     tip.innerHTML = html;
     tip.hidden = false;
+    tip.tntFor = target;
     const box = target.getBoundingClientRect();
     const width = tip.offsetWidth;
     const height = tip.offsetHeight;
@@ -379,6 +381,18 @@
       if (sameTurn) helpers = totalOf(turn.subTokens);
     }
 
+    // where a task that just ended spent its time goes into the project's learning record
+    // (desktop/task-learning.js)
+    if (live && timing) {
+      safe(
+        () =>
+          window.tnaiNative?.learning
+            ?.split(state.paneId, entry.at || Date.now(), timing.parts)
+            ?.catch?.(() => {}),
+        null
+      );
+    }
+
     let word = null;
     if (tokens && totalOf(tokens)) {
       word = make('button', 'ttt-cost');
@@ -423,7 +437,7 @@
           Math.round((part.ms / whole) * 100) +
           '%'
       );
-      piece.tntPart = { part, whole, state };
+      piece.tntPart = { part, whole, state, end: timing.end };
       bar.append(piece);
     }
     const most = [...timing.parts].sort((a, b) => b.ms - a.ms)[0];
@@ -441,6 +455,95 @@
     }
   }
 
+  // ---------- what the project's past tasks taught (desktop/task-learning.js) ----------
+  // Asked when a tip opens, kept 5 s (moving along the bar asks once), forgotten when a task is
+  // kept or a "Tell agents" switch changes.
+  const learnedViews = new Map();
+
+  function learned(paneId, at) {
+    const key = paneId + ' ' + Math.round(at || 0);
+    const kept = learnedViews.get(key);
+    if (kept && Date.now() - kept.asked < 5000) return kept.promise;
+    const promise = Promise.resolve(window.tnaiNative?.learning?.view?.(paneId, at) ?? null).catch(
+      () => null
+    );
+    learnedViews.set(key, { asked: Date.now(), promise });
+    if (learnedViews.size > 50) learnedViews.delete(learnedViews.keys().next().value);
+    return promise;
+  }
+  safe(() => window.tnaiNative?.learning?.onChanged?.(() => learnedViews.clear()), null);
+
+  // The token tip: this task against the usual task of this agent here, from 1.5 times up, and
+  // why when it began with a heavy conversation.
+  function costLearned(info, view) {
+    const usual = view?.usual;
+    const total = totalOf(info.tokens);
+    if (!usual?.median || total < usual.median * 1.5) return '';
+    const times = total / usual.median;
+    let html =
+      '<div class="ttt-learned"><b>' +
+      (times >= 10 ? Math.round(times) : times.toFixed(1)) +
+      '× your usual task here</b><small>Usual ' +
+      escape(usual.agent) +
+      ' task in this project: ' +
+      shortNumber(usual.median) +
+      ' (median of ' +
+      usual.tasks +
+      ').</small>';
+    const start = view.task?.ctxStart;
+    const context = view.lessons.find(lesson => lesson.key === 'context');
+    if (start >= view.heavy && context?.lightMedian) {
+      html +=
+        '<small>Why: it began with a ' +
+        shortNumber(start) +
+        ' conversation, and every step re-reads it. Tasks begun over ' +
+        shortNumber(view.heavy) +
+        ' use about ' +
+        Math.round(context.heavyMedian / context.lightMedian) +
+        '× more here. /compact at a break, or a new thread for a new topic.</small>';
+    }
+    return html + '</div>';
+  }
+
+  // The "Running commands" tip: a command that is a task's slowest step again and again here,
+  // this part's own slowest command when it is one of them.
+  function partLearned(part, view) {
+    const slow = view?.lessons.find(lesson => lesson.key === 'slow');
+    if (part.kind !== 'run' || !slow) return '';
+    const mine = String(part.slowest?.what || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const item = slow.commands.find(command => command.what === mine) || slow.commands[0];
+    return (
+      '<div class="ttt-learned"><small><code>' +
+      escape(item.what) +
+      '</code> was the slowest step in ' +
+      item.tasks +
+      ' tasks here, median ' +
+      duration(item.median) +
+      '.' +
+      (slow.muted ? '' : ' Agents are told to run it once at the end.') +
+      '</small></div>'
+    );
+  }
+
+  // After a tip opens: add what was learned, if the tip still belongs to the same target.
+  function extendTip(target) {
+    const about = target.tntPart
+      ? { paneId: target.tntPart.state?.paneId, at: target.tntPart.end }
+      : target.tntCost
+        ? { paneId: target.tntCost.paneId, at: target.tntCost.end }
+        : null;
+    if (!about?.paneId) return;
+    learned(about.paneId, about.at).then(view => {
+      if (!view || !tip || tip.hidden || tip.tntFor !== target) return;
+      const extra = target.tntPart
+        ? partLearned(target.tntPart.part, view)
+        : costLearned(target.tntCost, view);
+      if (extra) safe(() => showTip(target, tipFor(target) + extra), null);
+    });
+  }
+
   // ---------- hover and press ----------
   const HOVERABLE = '.ttt-seg, .ttt-cost';
   const tipFor = target =>
@@ -452,7 +555,9 @@
   for (const type of ['mouseover', 'focusin']) {
     document.addEventListener(type, event => {
       const target = event.target.closest?.(HOVERABLE);
-      if (target) safe(() => showTip(target, tipFor(target)), null);
+      if (!target) return;
+      safe(() => showTip(target, tipFor(target)), null);
+      safe(() => extendTip(target), null);
     });
   }
   for (const type of ['mouseout', 'focusout']) {

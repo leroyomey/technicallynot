@@ -170,6 +170,14 @@
           go: route('skills'),
         },
         {
+          // The Connections page (190): tools such as GitHub or a browser for every agent at
+          // once (user 2026-10-28: the row is "Connections", right after Skills).
+          label: 'Connections',
+          icon: 'layout-grid',
+          words: 'mcp servers plugins tools github browser figma slack database integrations',
+          go: route('connections'),
+        },
+        {
           // The one way to end every running agent at once. In the list only while an agent
           // runs, and it asks before anything is stopped.
           label: 'Stop all agents',

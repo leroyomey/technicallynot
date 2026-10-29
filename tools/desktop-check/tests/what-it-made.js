@@ -1,7 +1,10 @@
 // Technically Not tools · desktop-check/tests/what-it-made.js — "What it made" in the "Worked for"
 // block that ends a task (src/scripts/170-what-it-made.js), from a made-up Claude Code transcript
-// (what-it-made.main.js writes it, the files it names and a stand-in local site; a real Claude
-// Code panel is started and gets no prompt, so nothing is spent). Checked here: the head says
+// (what-it-made.main.js writes it, the files it names and a stand-in local site). The panel runs
+// agent-mesh's fake `claude` (a plain Node script, put first on PATH by the .main.js), never the
+// real Claude Code: nothing is spent, and the test no longer stalls while a real CLI starts (up to
+// 405 s, bug sweep 2026-10-28 item 12). The app still names the panel's session, so the made-up
+// transcript stands where the app reads it. Checked here: the head says
 // "made N things, changed M files"; New holds the site, the picture it wrote and the one a command
 // made as small pictures, the document and the data file as chips, and leaves out a picture a
 // command only named; Changed is one chip that opens the file list and "Open Changes"; a data file
@@ -55,8 +58,8 @@ const view = () => window.TnaiThreadView;
 const made = window.TnaiWhatItMade;
 let pane = '';
 
-// Claude Code's screen, replayed into a scratch terminal: only to answer its folder-trust question
-// and to see that it reached its empty prompt (as thread-designs.js).
+// The fake CLI's screen, replayed into a scratch terminal: only to see that it started (its first
+// line says "FAKE-claude start"). It asks nothing, so there is no question to answer.
 async function replayed(paneId) {
   const result = await native.pty.replay(paneId);
   if (!result?.buffer) return [];
@@ -75,17 +78,7 @@ async function replayed(paneId) {
   return rows;
 }
 const ready = paneId =>
-  until(async () => {
-    const rows = await replayed(paneId);
-    const text = rows.join('\n');
-    if (/project you created or one you trust|trust the files in this folder/i.test(text)) {
-      const selected = rows.find(row => row.includes('❯')) || '';
-      native.pty.write(paneId, /Yes/i.test(selected) ? '\r' : '\x1b[B');
-      await wait(700);
-      return false;
-    }
-    return /\? for shortcuts|shift\+tab to cycle|manual mode on/i.test(text);
-  }, 60000);
+  until(async () => /FAKE-claude start/.test((await replayed(paneId)).join('\n')), 15000);
 
 // ---------- the files and the made-up conversation ----------
 function picture(color) {
@@ -239,8 +232,7 @@ try {
   const head = newest.querySelector('.tnt-made-head');
   check(
     /Worked for 6m 12s/.test(head?.textContent) &&
-      /made 5 things/.test(head?.textContent) &&
-      !/changed/.test(head?.textContent),
+      /made 5 things, changed 4 files/.test(head?.textContent),
     'the head says what it made: "' + head?.textContent.trim() + '"'
   );
   check(
@@ -249,39 +241,44 @@ try {
   );
   check(newest.dataset.folded === 'false', 'the newest task is open');
 
-  // ---- the cards (round 3: every new thing a card across the width; Changed a pill in the top)
-  // ----
-  const cards = () => [...newest.querySelectorAll('.tnt-made-grid > .tnt-made-thumb')];
+  // ---- the groups (feature 14, mock info-layout.html "Proposed": a group per kind with its
+  // count; documents and data as rows, pictures and the site as small cards, the changed files
+  // last) ----
+  const cards = () => [
+    ...newest.querySelectorAll('.tnt-made-group > .tnt-made-row, .tnt-made-cards .tnt-made-thumb'),
+  ];
   const names = () =>
-    cards().map(card => card.querySelector('.tnt-made-wtext b')?.textContent || '');
+    cards().map(card => card.querySelector(':scope > b, .tnt-made-wtext b')?.textContent || '');
   await until(() => !names().includes('old.png') && names().length === 5, 6000);
   check(
     JSON.stringify([...names()].sort()) ===
       JSON.stringify(['PRICING.md', 'Site', 'hero.png', 'made.png', 'sales.csv']),
-    'every new thing is a card: ' +
+    'every new thing is in a group: ' +
       names().join(', ') +
       ' (a picture a command only named is left out)'
   );
+  const groupWords = [...newest.querySelectorAll('.tnt-made-group > .tnt-made-ghead')].map(
+    groupHead =>
+      groupHead.querySelector('span').textContent + ' ' + groupHead.querySelector('em').textContent
+  );
   check(
-    cards().every(card => card.querySelector('.tnt-made-kind')),
-    'each card names its kind'
+    groupWords.join(' | ') === 'Documents 1 | Data 1 | Pictures 2 | Sites 1 | Changed files 4',
+    'the groups name their kind and count: ' + groupWords.join(' | ')
   );
   check(
     !!(await until(
       () =>
-        /Three plans|PRICING|plan/i.test(
-          cards()
-            .find(card => /PRICING/.test(card.textContent))
-            ?.querySelector('.tnt-made-ttext')?.textContent || ''
-        ),
+        !!cards()
+          .find(card => /PRICING/.test(card.textContent))
+          ?.querySelector('small')?.textContent,
       6000
     )),
-    "a document's card shows its own first lines"
+    "a document's row shows its title"
   );
-  const changes = newest.querySelector('.tnt-made-top .tnt-made-chip');
+  const changes = newest.querySelector('.tnt-made-group[data-kind="changes"]');
   check(
-    !!changes && /4 files changed/.test(changes.textContent),
-    'Changed is one pill in the top line: "' + changes?.textContent + '"'
+    !!changes?.querySelector(':scope > .tnt-files') && !newest.querySelector('.tnt-made-chip'),
+    'the changed files are the last group, no pill'
   );
 
   // ---- previews ----
@@ -311,14 +308,14 @@ try {
     'a picture shows large, with "Open large"'
   );
 
-  await press(changes);
   check(
-    !!preview.querySelector('.tnt-files') && /Open Changes/.test(preview.textContent),
-    'Changed opens the file list and "Open Changes"'
+    changes?.querySelectorAll(':scope > .tnt-files > .tnt-file').length === 4 &&
+      /Open Changes/.test(changes.querySelector('.tnt-made-ghead')?.textContent || ''),
+    'the changed files group lists the files, with "Open Changes" on its head'
   );
 
   // ---- the site ----
-  const siteThumb = newest.querySelectorAll('.tnt-made-thumb')[0];
+  const siteThumb = newest.querySelector('.tnt-made-group[data-kind="site"] .tnt-made-thumb');
   check(
     !!(await until(() => /running/.test(siteThumb.textContent), 6000)),
     'the site says running while it answers: "' + siteThumb.textContent + '"'

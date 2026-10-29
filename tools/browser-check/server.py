@@ -32,9 +32,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             test, phase = self.params()
             page = open(os.path.join(ROOT, 'index.html'), encoding='utf-8').read()
             tests = os.path.join(HERE, 'tests')
-            head = script(os.path.join(HERE, 'harness.js')) + script(os.path.join(tests, test + '.head.js'))
+            # Every test runs on the thread layout: the empty desktop bridge (stand-in.js) comes
+            # before the test's own head, which may put in parts of its own (window.__standIn).
+            # Without it the page drew the deleted old frame.
+            head = (
+                script(os.path.join(HERE, 'harness.js'))
+                + script(os.path.join(HERE, 'stand-in.js'))
+                + script(os.path.join(tests, test + '.head.js'))
+            )
             tail = script(os.path.join(tests, test + '.js')) + f'<img alt="" style="display:none" src="/__hold?test={test}&phase={phase}">'
             page = page.replace('<head>', '<head>' + head, 1).replace('</body>', tail + '</body>', 1)
+            # Since 0.3.74 index.html's CSP has default-src 'none' and no connect-src, which blocks
+            # the harness's report POST (every test printed "NO LOG"). Only this test page allows
+            # requests to its own server; the app's own policy is unchanged.
+            page = page.replace("default-src 'none';", "default-src 'none'; connect-src 'self';", 1)
             body = page.encode('utf-8')
             self.send_response(200)
             self.send_header('Content-Type', 'text/html; charset=utf-8')

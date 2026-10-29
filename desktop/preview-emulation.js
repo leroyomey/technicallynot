@@ -506,7 +506,20 @@ async function emulate(contents, id) {
   return true;
 }
 
+// The `tnai_preview` tool (preview-control.js): the protocol session of one preview frame by its
+// name, newest first, as { dbg, sessionId, contents } (contents: the window the frame is in), or
+// null while it is not attached.
+function frameSession(name) {
+  name = String(name || '');
+  if (!NAME.test(name)) return null;
+  let found = null;
+  for (const [sessionId, s] of sessions)
+    if (s.name === name) found = { dbg: s.dbg, sessionId, contents: s.contents };
+  return found;
+}
+
 module.exports = {
+  frameSession,
   watch,
   set,
   forget,

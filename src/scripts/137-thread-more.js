@@ -15,6 +15,7 @@
  *                 were icons of the top row until 2026-10-24 (user, tab 5 of app-polish.html:
  *                 the top row keeps Preview, Split, Stop or Start and "..."); each is done by the
  *                 file that owns it (138, 102, 120 `TnaiThreadBlur`, 154)
+ *   Agent uses preview: off / on   whether this thread's agent may use Live preview (196)
  *   Stop / Start  Stop while the session runs (it asks first, as the old page does), Start while
  *                 it is stopped (10 `TnaiAgents.stop` / `start`)
  *   Open in VS Code / Cursor / File Explorer   the thread's own folder (its worktree when it has
@@ -199,6 +200,7 @@
   const openPast = () => window.TnaiThreadHistory?.open?.(button || menuButton());
   const openActions = paneId => window.TnaiThreadActions?.open?.(button || menuButton(), paneId);
   const openHandoffs = paneId => window.TnaiHandoffHistory?.open?.(paneId || '');
+  const openLibrary = paneId => window.TnaiPromptLibrary?.open?.(button || menuButton(), paneId);
 
   // Smaller and Larger text for the CLI screen (10's text size of the thread view, "focus"): a
   // row is greyed at its limit, and says the size it is at now.
@@ -278,12 +280,33 @@
         go: id => window.TnaiThreadBlur.toggle(id),
       });
     }
+
+    // whether this thread's agent may click, type and take pictures in Live preview (196); off
+    // until the user turns it on, the row says which
+    if (window.TnaiPreviewControl && hasConversation(paneId)) {
+      const lets = window.TnaiPreviewControl.on(paneId);
+      rows.push({
+        id: 'preview-control',
+        label: 'Agent uses preview: ' + (lets ? 'on' : 'off'),
+        icon: 'monitor-play',
+        go: id => window.TnaiPreviewControl.toggle(id),
+      });
+    }
     if (!card && window.TnaiThreadActions?.shows?.(paneId))
       rows.push({
         id: 'actions',
         label: 'Commit, pull request, review…',
         icon: 'git-branch',
         go: openActions,
+      });
+
+    // the prompt and workflow library (194): saved prompts and recipes for this thread
+    if (!card && window.TnaiPromptLibrary && session.agent !== 'Terminal')
+      rows.push({
+        id: 'library',
+        label: 'Saved prompts and recipes…',
+        icon: 'library',
+        go: openLibrary,
       });
 
     // the thread's own folder in an editor found on this computer, or the file manager

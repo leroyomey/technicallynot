@@ -67,9 +67,13 @@ class FakeNode {
   }
   querySelector(selector) {
     const name = selector.replace(/^\./, '');
+
+    // ".name" is a class; a bare word is a tag
+    const byTag = !selector.startsWith('.');
     const walk = node => {
       for (const child of node.children) {
-        if (String(child.className).split(' ').includes(name)) return child;
+        if (byTag && child.tagName === name.toUpperCase()) return child;
+        if (!byTag && String(child.className).split(' ').includes(name)) return child;
         const deeper = walk(child);
         if (deeper) return deeper;
       }
@@ -84,15 +88,20 @@ class FakeNode {
   }
 }
 
-function loadWindowHalf(native) {
+// `extra` adds to the window (stand-ins for TnaiTurns and the like); `heard` keeps the window's
+// event listeners, so a test can send `tnai:turn`.
+function loadWindowHalf(native, extra = {}, heard = {}) {
   const source = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'scripts', '159-thread-designs.js'),
     'utf8'
   );
   const window = {
     tnaiNative: native,
-    addEventListener() {},
+    addEventListener(type, listener) {
+      (heard[type] = heard[type] || []).push(listener);
+    },
     matchMedia: () => ({ matches: true }),
+    ...extra,
   };
   const sandbox = {
     window,
@@ -283,7 +292,86 @@ async function mainHalf() {
   fs.rmSync(top, { recursive: true, force: true });
 }
 
-mainHalf()
+// ---------- the window's half: a page is shown only once it is made ----------
+// The card waits ("making") while the agent's task runs, then asks for its picture ("loading").
+// A part of a page (NAME.body.html) is never drawn raw: the page built from it, or no drawing.
+async function windowWaits() {
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  const turn = { startedAt: 1000, endedAt: 0 };
+  const heard = {};
+  const there = new Set(['mock.html', 'parts/a.body.html', 'parts/a.html', 'b.body.html']);
+  const waits = loadWindowHalf(
+    {
+      designs: {
+        page: (_paneId, file) =>
+          Promise.resolve(there.has(file) ? { ok: true, refs: [] } : { ok: false }),
+        picture: () => Promise.resolve({ ok: true }),
+      },
+    },
+    { TnaiTurns: { get: () => ({ ...turn }) } },
+    heard
+  );
+  const cards = [];
+  const put = node => cards.push(node);
+  const one = (file, at) => {
+    const state = { paneId: 'p1' };
+    waits.note(state, act('Wrote', file, { at }), put);
+    waits.place(state, put);
+  };
+  const frameOf = card => card.children.find(node => node.className === 'tnt-design-frame');
+  const words = card => allText(card);
+
+  one('mock.html', 2000);
+  one('parts/a.body.html', 2000);
+  one('b.body.html', 2000);
+  one('mock.html', 500);
+  await settle();
+  const [page, part, lonePart, earlier] = cards;
+  check(
+    'a page written while the task runs waits',
+    page.dataset.state === 'making' &&
+      words(page).includes('Making the page') &&
+      frameOf(page).disabled === true,
+    page.dataset.state
+  );
+  check(
+    'its buttons do not open the half-made page',
+    page.children[0].children.at(-1).children.every(press => press.hidden || press.disabled)
+  );
+  check(
+    'a page written in an earlier task is not held',
+    earlier.dataset.state === 'loading',
+    earlier.dataset.state
+  );
+
+  turn.endedAt = 3000;
+  heard['tnai:turn'].forEach(listener => listener({ detail: { paneId: 'p1' } }));
+  await settle();
+  await settle();
+  check(
+    'the task ended: the page asks for its picture',
+    page.dataset.state === 'loading' &&
+      words(page).includes('Loading the preview') &&
+      frameOf(page).disabled === false,
+    page.dataset.state
+  );
+  check(
+    'a part shows the page built from it',
+    part.dataset.state === 'loading' &&
+      words(part).includes('a.html') &&
+      words(part).includes('the page built from a.body.html'),
+    words(part)
+  );
+  check(
+    'a part with no built page is not drawn',
+    lonePart.dataset.state === 'part' && !frameOf(lonePart),
+    lonePart.dataset.state
+  );
+}
+
+windowWaits()
+  .catch(error => check('window waits ran', false, error?.stack || String(error)))
+  .then(mainHalf)
   .catch(error => check('main half ran', false, error?.stack || String(error)))
   .then(() => {
     console.log(passed + ' passed, ' + failed + ' failed');

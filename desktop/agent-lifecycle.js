@@ -1115,6 +1115,13 @@ module.exports = {
   retire,
   successorOf,
   instanceOf: paneId => byPane.get(paneId) || '',
+  // the agent id of the instance that runs a conversation ('' when none): a closed sub-agent
+  // named by its graph id is found through its conversation (agent-mesh.js helperIds)
+  instanceOfContext: contextId => {
+    if (!contextId) return '';
+    const n = [...instances.values()].find(i => i.contextId === contextId && i.state !== 'cleared');
+    return n ? n.id : '';
+  },
   // Starts asked by a paired computer: the request, its mark, whether a panel started under one,
   // and how many such panels this computer's user has not closed yet (stopped ones count; kept
   // across restarts in agent-lifecycle.json).

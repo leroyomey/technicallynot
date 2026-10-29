@@ -41,6 +41,7 @@
     'settings-mode',
     'devices-mode',
     'board-mode',
+    'connections-mode',
   ];
   const visible = () => layout.classList.contains('preview-mode');
 

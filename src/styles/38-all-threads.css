@@ -394,6 +394,39 @@
   display: block;
 }
 
+/* ---------------------------------------------------------------- the same prompt (135) */
+/* "Same prompt" stands beside "New thread"; "Add a tool" only while picking is on. On, the button
+   keeps its own hover look (accent edge, soft accent ground). */
+#terminalView.tat-on .tat-new[hidden] {
+  display: none;
+}
+:root:not(#pg) #terminalView .tat-same[aria-pressed='true'] {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+}
+
+/* In a narrower window the row also holds the thread list's room and Live preview's button:
+   the two keep only their icons (their names stay in the tooltip and for screen readers). */
+@media (max-width: 1279px) {
+  #terminalView.tat-on :is(.tat-same, .tat-add-tool) > span {
+    display: none;
+  }
+}
+
+/* A picked card has the soft accent edge of the card the prompt box sends to, and its pick box
+   the accent ground; while picking, the card's head picks it, so it shows the hand. */
+.tat-card.tat-picked {
+  border-color: color-mix(in srgb, var(--pg-accent) 45%, var(--pg-line));
+  background: color-mix(in srgb, var(--pg-accent) 5%, var(--tnt-glass, var(--pg-panel)));
+}
+#terminalView.tat-picking .tat-head {
+  cursor: pointer;
+}
+.tat-head .tat-act.tat-act-pick[aria-pressed='true'] {
+  background: var(--pg-accent-soft);
+  color: var(--pg-accent);
+}
+
 /* ---------------------------------------------------------------- questions for you */
 /* A thread's questions stand at the foot of its card (121 fills the row): the same amber surface
    as in the open thread (29 `.tnt-asks > .tnt-ask`), in a narrower column, so the answers go under

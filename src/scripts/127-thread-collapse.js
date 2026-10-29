@@ -64,6 +64,7 @@
     'settings-mode',
     'devices-mode',
     'board-mode',
+    'connections-mode',
     'preview-mode',
     'code-mode',
   ];

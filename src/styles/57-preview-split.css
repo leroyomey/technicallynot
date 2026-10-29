@@ -127,3 +127,66 @@ html.tnt-open:not(#tnt):not(#pg) .layout.threads-mode.tnt-split-moving {
 .tnt-split-chart {
   overflow: auto;
 }
+
+/* several charts beside the thread, one under another (179's stack): the same large card, an
+   even gap between cards, the column scrolls */
+.tnt-split-stack {
+  position: relative;
+  padding: 4px 0 14px;
+  overscroll-behavior: contain;
+}
+.tnt-split-stack .tnt-chart-big {
+  margin: 0 14px;
+}
+.tnt-split-item + .tnt-split-item {
+  margin-top: 12px;
+}
+.tnt-split-item {
+  transition:
+    opacity 0.18s var(--pg-ease),
+    transform 0.18s var(--pg-ease);
+}
+
+/* a new card fades and rises in, a closed one fades out (no hard cuts) */
+.tnt-split-item.tnt-split-new {
+  animation: tnt-split-in 0.24s var(--pg-ease) both;
+}
+.tnt-split-item.tnt-split-leaving {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+@keyframes tnt-split-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* a chart pressed again when it is already there: its card flashes once in the accent */
+.tnt-split-item.tnt-split-flash .tnt-chart-big {
+  animation: tnt-split-flash 1.2s var(--pg-ease);
+}
+@keyframes tnt-split-flash {
+  0%,
+  35% {
+    border-color: var(--pg-accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--pg-accent) 35%, transparent);
+  }
+}
+
+/* a large card's own close sits where the small card has its split icon */
+.tnt-chart-head .tnt-split-drop {
+  margin-left: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tnt-split-item,
+  .tnt-split-item.tnt-split-new {
+    transition: none;
+    animation: none;
+  }
+  .tnt-split-item.tnt-split-flash .tnt-chart-big {
+    animation: none;
+    border-color: var(--pg-accent);
+  }
+}

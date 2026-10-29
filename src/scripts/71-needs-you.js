@@ -145,7 +145,7 @@
   // A prompt held only because its agent is still working gets no card
   // either: it is not waiting on the user. It shows in that agent's queue on the Agents page (25),
   // with Send now, Edit and Remove.
-  const waiting = h => h.why === 'busy' || h.why === 'queue';
+  const waiting = h => h.why === 'busy' || h.why === 'compact' || h.why === 'queue';
   const quiet = h => waiting(h) || (h.waitDraft && typingIn(h.paneId));
   const heldChanged = () => window.dispatchEvent(new CustomEvent('tnai:held'));
 
@@ -595,7 +595,12 @@
           at: Date.now(),
           local: true,
         });
-      if (why === 'busy' || why === 'queue')
+      if (why === 'compact')
+        say(
+          nameOf(paneId) +
+            ' is compacting · your message waits at the end of its thread and goes out when it is done'
+        );
+      else if (why === 'busy' || why === 'queue')
         say(
           nameOf(paneId) +
             ' is still working · your message waits at the end of its thread (send now, edit or remove)'

@@ -18,7 +18,8 @@
 // created closes when that agent's terminal panel closes, or when that agent runs `tnai preview
 // close [URL]`. Side-by-side (65): mirror(host, device) adds one more real, emulated iframe of the
 // shown tab's address at a fixed device, made only while shown. window.TnaiLivePreview (mount,
-// mirror, laneName, tabs, localUrl, addUrl, addScript, start, stop, close, select, scripts,
+// mirror, show (the `tnai_preview` tool's open, through 196), laneName, tabs, localUrl, addUrl,
+// addScript, start, stop, close, select, scripts,
 // project, status).
 (() => {
   const native = window.tnaiNative;
@@ -2078,9 +2079,28 @@
       },
     };
   }
+
+  // The `tnai_preview` tool's "open" (desktop/preview-control.js through 196): the same as
+  // `tnai preview`, in the project open now.
+  async function controlShow(req) {
+    await syncProject();
+    return showRequest({ ...req, project: root });
+  }
+
+  // A request of the `tnai_preview` tool (control: true) is answered by 196.
+  const controlAnswer = req =>
+    window.TnaiPreviewControl?.answer?.(req) ||
+    Promise.resolve({ ok: false, error: 'preview control is not loaded' });
   native.preview?.onShow?.(req => {
     if (!req?.id) return;
-    (req.shot ? shotRequest(req) : req.close ? closeRequest(req) : showRequest(req)).then(
+    const answer = req.control
+      ? controlAnswer(req)
+      : req.shot
+        ? shotRequest(req)
+        : req.close
+          ? closeRequest(req)
+          : showRequest(req);
+    answer.then(
       r => native.preview.shown(req.id, r),
       error => native.preview.shown(req.id, { ok: false, error: error?.message || String(error) })
     );
@@ -2093,6 +2113,7 @@
   window.TnaiLivePreview = {
     mount,
     mirror,
+    show: controlShow,
     deviceBox,
     laneName,
     localUrl,

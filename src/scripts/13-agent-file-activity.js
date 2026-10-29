@@ -52,6 +52,24 @@
   const statCache = new Map(); // path -> { exists, at }
   const lastAction = new Map(); // paneId -> { verb, path, at } latest thing the agent did to a file
 
+  // paneId -> Map(lowercased path -> time) of files the agent changed itself: its own file tools
+  // (hooks), the edit lines its CLI prints, and the file locks it holds. A folder change credited
+  // from output that only names a file (a `git status` list, a message) is not in it, so "Working
+  // with" never pairs agents over a file only one of them changed (learned 2026-10-28, bug sweep
+  // L2: Sol and Sable were shown sharing a check page only the Lead wrote).
+  const edited = new Map();
+  const EDIT_KEEP = 30 * 60 * 1000;
+  const EDIT_VERB =
+    /^(?:Write|Writing|Wrote|Edit|Edited|Editing|MultiEdit|Update|Updated|Updating|Create|Created|Creating|Modified|Delete|Deleted|WriteFile|Replace|Patch|Patched|Added)$/;
+
+  function noteEdit(paneId, path, at = Date.now()) {
+    if (!paneId || !path) return;
+    let paths = edited.get(paneId);
+    if (!paths) edited.set(paneId, (paths = new Map()));
+    const key = String(path).replace(/\\/g, '/').toLowerCase();
+    if (!(paths.get(key) >= at)) paths.set(key, at);
+  }
+
   // paneId -> Map(lowercased skill name -> { name, at }) skills seen in use
   const skillUse = new Map();
 
@@ -254,6 +272,7 @@
       relative(m[2], place).then(hit =>
         real(hit).then(ok => {
           if (ok) {
+            if (EDIT_VERB.test(verb)) noteEdit(paneId, hit.key);
             act(paneId, verb, hit.key);
             touch(paneId, hit.key);
           }
@@ -510,6 +529,10 @@
         due(Math.max(sessions.get(key).lastOutputAt, touched) + IDLE_CLEAR);
     }
     for (const paneId of recent.keys()) if (!sessions.has(paneId)) recent.delete(paneId);
+    for (const [paneId, paths] of edited) {
+      for (const [path, at] of paths) if (now - at > EDIT_KEEP) paths.delete(path);
+      if (!sessions.has(paneId) || !paths.size) edited.delete(paneId);
+    }
     for (const paneId of lastAction.keys())
       if (!sessions.has(paneId)) {
         lastAction.delete(paneId);
@@ -711,6 +734,9 @@
       relative(e.detail, place).then(hit =>
         real(hit).then(ok => {
           if (!ok) return;
+
+          // a sub-agent's edit is its lead's panel's edit too
+          if (FILE_VERB[e.tool] !== 'Read') noteEdit(e.paneId, hit.key);
           if (!e.agentId) act(key, FILE_VERB[e.tool], hit.key);
           touch(key, hit.key);
         })
@@ -735,6 +761,20 @@
   });
   agents.onChange(schedule);
 
+  // File locks (file-locks.js, read only) are taken by an agent's own edits, for every CLI (the
+  // edit hook, `tnai lock`, or a disk change only that agent could have made): a held file is one
+  // its holder changed.
+  const readLocks = () =>
+    Promise.resolve(native.locks?.list?.())
+      .then(list => {
+        for (const lock of Array.isArray(list) ? list : [])
+          if (lock?.file && lock.paneId)
+            noteEdit(lock.paneId, lock.file, Number(lock.last || lock.at) || Date.now());
+      })
+      .catch(() => {});
+  readLocks();
+  native.locks?.onChange?.(readLocks);
+
   // A sub-agent's end: 19 fires tnai:team-changed for every change to its sub-agents (and for every
   // hook event, at most once a frame), so a render is asked for only when a sub-agent that still
   // holds tags is no longer running there (it replaced a look every 500 ms).
@@ -755,6 +795,15 @@
     // lanePath ("⎇<lane id>/<path>") for a file in its lane.
     forPane: paneId =>
       [...(activity.get(paneId) || new Map())].sort((a, b) => b[1] - a[1]).map(([path]) => path),
+    // Of those, the files the agent changed itself (its file tools, its CLI's edit lines, its file
+    // locks), most recent first: what "Working with" pairs agents by.
+    editedBy: paneId => {
+      const own = edited.get(paneId);
+      if (!own) return [];
+      return window.TnaiFileActivity.forPane(paneId).filter(path =>
+        own.has(path.replace(/\\/g, '/').toLowerCase())
+      );
+    },
     // The agent's latest file action parsed from its output or credited from a folder change: {
     // verb, path, at } or null.
     now: paneId => {

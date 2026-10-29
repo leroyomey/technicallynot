@@ -109,6 +109,39 @@
   object-fit: cover;
   object-position: top center;
 }
+.tnt-design-frame:disabled {
+  cursor: default;
+}
+
+/* A page not ready yet (159): the live line's sliding bar (30) and a few words in the frame's
+   place, then the still picture fades in once it is decoded */
+.tnt-design-wait {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  color: var(--pg-text-3);
+  font: 500 12.5px/1.4 var(--pg-sans);
+}
+.tnt-design-wait .tnt-live-bar {
+  --tone: var(--pg-work);
+  width: 96px;
+}
+.tnt-design[data-kind='page'] .tnt-design-frame img {
+  animation: tnt-design-in 220ms var(--pg-ease) both;
+}
+@keyframes tnt-design-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tnt-design[data-kind='page'] .tnt-design-frame img {
+    animation: none;
+  }
+}
 .tnt-design-frame.tnt-design-picture {
   aspect-ratio: auto;
   min-height: 160px;

@@ -31,7 +31,7 @@
   const threads = () => window.TnaiThreads;
 
   // The tools whose conversation the main process can read (desktop/thread-log.js READERS).
-  const READABLE = new Set(['Claude Code', 'Codex', 'OpenCode', 'Cursor Agent']);
+  const READABLE = new Set(['Claude Code', 'Codex', 'OpenCode', 'Cursor Agent', 'Mistral Vibe']);
   const MAX_BLOCKS = 400;
   const KEEP_THREADS = 4;
   const READ_GAP_MS = 120;
@@ -164,17 +164,43 @@
     listSized.observe(state.list);
   }
 
+  // A press that sends the reader up the conversation (186, a mark of the scrollbar map) scrolls
+  // smoothly, and its first frames are still near the end: a new line then pulled the view back
+  // to the end (learned 2026-10-28). Until that scroll ends the reader is away from the end.
+  const leaving = new WeakMap();
+
+  // goal: where that scroll stops (scrollTop)
+  function leaveEnd(host, goal) {
+    leaving.set(host, goal);
+    atEnd.set(host, false);
+  }
+
+  // Following the end sets the scroll place itself, so a "scroll ended" of the last new line can
+  // still come after the press: the jump is over only once the view is away from the end or at its
+  // goal, or when the reader scrolls on their own.
+  function jumpOver(host) {
+    if (!leaving.has(host)) return;
+    const goal = leaving.get(host);
+    const atGoal = typeof goal !== 'number' || Math.abs(host.scrollTop - goal) <= 2;
+    if (gapToEnd(host) < END_GAP && !atGoal) return;
+    leaving.delete(host);
+    atEnd.set(host, gapToEnd(host) < END_GAP);
+  }
+
   function watchEnd(host) {
     if (atEnd.has(host)) return;
     atEnd.set(host, true);
     host.addEventListener(
       'scroll',
       () => {
-        atEnd.set(host, gapToEnd(host) < END_GAP);
+        atEnd.set(host, !leaving.has(host) && gapToEnd(host) < END_GAP);
         for (const state of shown) if (state.host === host) readPast(state);
       },
       { passive: true }
     );
+    host.addEventListener('scrollend', () => jumpOver(host), { passive: true });
+    for (const own of ['wheel', 'touchstart', 'keydown', 'pointerdown'])
+      host.addEventListener(own, () => leaving.delete(host), { passive: true });
     paneSized.observe(host);
   }
 
@@ -203,10 +229,14 @@
     if (state.holdReport.getBoundingClientRect().top < state.host.getBoundingClientRect().top)
       state.holdReport = null;
   }
-  const nearBottom = ({ host }) => !host || atEnd.get(host) === true || gapToEnd(host) < END_GAP;
+  const nearBottom = ({ host }) =>
+    !host || (!leaving.has(host) && (atEnd.get(host) === true || gapToEnd(host) < END_GAP));
   const toBottom = state => {
     const host = state.host;
     if (!host) return;
+
+    // the user's own way to the end ("Latest", a sent prompt) ends a jump up the conversation
+    leaving.delete(host);
     followTo(host, state);
 
     // Blocks out of view are not laid out (30: content-visibility), so the height above is partly
@@ -275,6 +305,7 @@
   // nothing can change them any more (the same rule as Details).
   const WAIT_WORDS = {
     busy: 'Waiting · it gets this when its task ends',
+    compact: 'Waiting · it gets this when compacting ends',
     queue: 'Waiting · after the prompts before it',
     question: 'Waiting · until its question is answered',
     draft: 'Waiting · until its input is empty',
@@ -400,6 +431,9 @@
   function addYou(state, entry) {
     placeDesigns(state);
     state.files = new Map();
+
+    // a new turn: the replies a long answer may fold among start again (foldTurn)
+    state.turnSays = [];
 
     // 170: a new prompt starts a new task, so nothing of one that ended without its "Worked for"
     // line goes into the next task's block
@@ -578,11 +612,84 @@
     addBlock(state, make('div', 'tnt-note', text));
   }
 
+  // ---------- folds the reader opens (feature 14) ----------
+  // The thread's information layout (user 2026-10-28 chose "Proposed" in
+  // docs/plans/design-concepts/info-layout.html): a report shows its "Did" lines and its decisions
+  // on top of the answer, and a long answer shows its first lines. What the reader opened stays
+  // open, kept by the tool's own id of the reply, which no other conversation has.
+  const OPENED_STORE = 'tnai.thread.opened.v1';
+  const OPENED_MAX = 400;
+  let opened = [];
+  try {
+    const saved = JSON.parse(localStorage.getItem(OPENED_STORE) || '[]');
+    if (Array.isArray(saved))
+      opened = saved.filter(key => typeof key === 'string').slice(-OPENED_MAX);
+  } catch {}
+
+  const isOpened = key => !!key && opened.includes(key);
+
+  function setOpened(key, open) {
+    if (!key) return;
+    opened = opened.filter(other => other !== key);
+    if (open) opened.push(key);
+    opened = opened.slice(-OPENED_MAX);
+    try {
+      localStorage.setItem(OPENED_STORE, JSON.stringify(opened));
+    } catch {}
+  }
+
+  // The quiet button under a fold: "Show all · 31 more lines", "Full report · Found, Changed".
+  function unfoldButton(label, more) {
+    const press = make('button', 'tnt-unfold');
+    press.type = 'button';
+    press.innerHTML = icon('chevron-down', 14);
+    press.append(make('span', '', label), make('em', '', more));
+    return press;
+  }
+
+  function paintUnfold(press, open, label, more) {
+    press.setAttribute('aria-expanded', String(open));
+    press.querySelector('span').textContent = open ? 'Show less' : label;
+    press.querySelector('em').textContent = open ? '' : more;
+  }
+
+  // A press that opens or closes a fold keeps the view where the reader is (tnai-threads step 6):
+  // the conversation grows, and a reader at the end would otherwise be pulled to the new end.
+  function keepView(node) {
+    for (const state of shown)
+      if (state.host && state.list.contains(node)) atEnd.set(state.host, false);
+  }
+
+  // A report on top of its answer: the "Did" lines and the decisions show, "Full report" opens the
+  // other lines in place. A report with no "Did" line, or nothing else, shows whole as before.
+  function foldReport(card, id, open) {
+    const rows = [...card.querySelectorAll(':scope > .tnt-report-row')];
+    const rest = rows.filter(row => row.dataset.label !== 'did');
+    if (!rest.length || rest.length === rows.length) return;
+    const more = '· ' + rest.map(row => row.firstElementChild.textContent).join(', ');
+    const press = unfoldButton('Full report', more);
+    const key = id ? 'report ' + id : '';
+    const paint = show => {
+      card.dataset.folded = String(!show);
+      paintUnfold(press, show, 'Full report', more);
+    };
+    press.addEventListener('click', () => {
+      const show = card.dataset.folded === 'true';
+      keepView(card);
+      paint(show);
+      setOpened(key, show);
+    });
+    card.tntUnfold = paint;
+    paint(open || isOpened(key));
+    card.append(press);
+  }
+
   // The report agents end a task with: its lines as a card. A "- Decide:" line is a question with
   // its options; the buttons are wired by paintDecisions.
   // `at`: when the report was written, in the tool's record (49 `findDecision` tells this report's
-  // saved result from an older one that asked the same question).
-  function reportCard(text, at) {
+  // saved result from an older one that asked the same question). `id`: the reply's id, which
+  // keeps "Full report" open once opened; `open`: the card it replaces was open.
+  function reportCard(text, at, id, open) {
     const card = make('section', 'tnt-report');
     if (at) card.dataset.at = String(at);
     card.append(make('h3', '', 'Technically Not report'));
@@ -642,7 +749,98 @@
       line.append(make('span', '', label), items);
       card.append(line);
     }
+
+    // the "Did" lines first: a decision is written after the other lines, so the rows it hides
+    // stand above it and open in place
+    foldReport(card, id, open);
     return card;
+  }
+
+  // ---------- a long answer, folded (feature 14) ----------
+  // Only once its turn has ended (a "Worked for" line, or a report), so words still being written
+  // never fold. The height is reckoned from the words, not measured: a reply out of view is not
+  // laid out (content-visibility), so its measured height would be a guess, and a fold must not
+  // jump.
+  const FOLD_PX = 300;
+  const FOLD_OVER_PX = 380;
+  const LINE_PX = 21.7;
+  const CODE_LINE_PX = 19.4;
+  const CHAR_PX = 7.2;
+  const READ_PX = 760;
+
+  // About how tall a reply's Markdown is drawn at this width (30: 14 px text at 1.55, code at
+  // 12.5 px, a heading's room, the space between paragraphs).
+  function answerHeight(words, width) {
+    const perLine = Math.max(24, Math.floor((width - 24) / CHAR_PX));
+    let height = 0;
+    let inCode = false;
+    for (const line of String(words || '').split(/\r?\n/)) {
+      if (/^\s*```/.test(line)) {
+        inCode = !inCode;
+        height += 12;
+        continue;
+      }
+      if (inCode) height += CODE_LINE_PX;
+      else if (!line.trim()) height += 10;
+      else if (/^\s*#{1,6}\s/.test(line)) height += 30;
+      else if (/^\s*\|/.test(line)) height += 30;
+      else height += Math.ceil(line.length / perLine) * LINE_PX;
+    }
+    return height;
+  }
+
+  // the reply each folded block belongs to, for a match that Find (173) must show
+  const foldOf = new WeakMap();
+
+  function paintAnswer(said, open) {
+    said.open = open;
+    said.block.classList.toggle('tnt-say-folded', !open);
+    paintUnfold(said.unfold, open, 'Show all', '· ' + said.more);
+  }
+
+  function foldAnswer(state, said) {
+    said.settled = true;
+    const block = said.block;
+    if (!block.isConnected) return;
+    const width = Math.min(state.list.clientWidth || READ_PX, READ_PX);
+    const height = block.hidden ? 0 : answerHeight(said.words, width);
+    if (height <= FOLD_OVER_PX) {
+      said.unfold?.remove();
+      said.unfold = null;
+      block.classList.remove('tnt-say-folded');
+      return;
+    }
+    said.more = Math.max(1, Math.round((height - FOLD_PX) / LINE_PX)) + ' more lines';
+    if (!said.unfold) {
+      said.unfold = unfoldButton('Show all', '');
+      said.unfold.addEventListener('click', () => {
+        const show = block.classList.contains('tnt-say-folded');
+        keepView(block);
+        paintAnswer(said, show);
+        setOpened(said.id ? 'answer ' + said.id : '', show);
+      });
+
+      // right under the words, before the reply's time line (172)
+      block.after(said.unfold);
+      foldOf.set(block, said);
+    }
+    paintAnswer(said, said.open ?? isOpened(said.id ? 'answer ' + said.id : ''));
+  }
+
+  // The turn's replies, once it ended.
+  function foldTurn(state) {
+    for (const said of state.turnSays || []) foldAnswer(state, said);
+    state.turnSays = [];
+  }
+
+  // 173: a match inside a folded answer or a folded report opens it first, so it can be seen.
+  function reveal(node) {
+    const element = node?.nodeType === 1 ? node : node?.parentElement;
+    const block = element?.closest?.('.tnt-say-folded');
+    const said = block && foldOf.get(block);
+    if (said) paintAnswer(said, true);
+    const card = element?.closest?.('.tnt-report[data-folded="true"]');
+    if (card?.tntUnfold) card.tntUnfold(true);
   }
 
   // A reply's words: with a chart block or a table of numbers, 178 draws them with their chart
@@ -670,18 +868,23 @@
         drawWords(known.block, words);
         colorReply(known.block);
         addCopyButtons(known.block);
+
+        // an answer already folded is reckoned again with its new words
+        if (known.settled) foldAnswer(state, known);
       }
       if (report && known.report !== report) {
-        const card = reportCard(report, entry.at);
+        const wasOpen = known.card?.dataset.folded === 'false';
+        const card = reportCard(report, entry.at, entry.id, wasOpen);
 
-        // a new card goes after the reply's time (172), when it has one
-        const next = known.block.nextElementSibling;
-        const anchor = next?.classList.contains('tnt-at') ? next : known.block;
+        // feature 14: the report stands on top of the answer it ends
         if (known.card?.isConnected) known.card.replaceWith(card);
-        else anchor.after(card);
+        else known.block.before(card);
         known.card = card;
         known.report = report;
         paintDecisions(state);
+
+        // a report ends the turn (Copilot's record has no "Worked for" line)
+        foldTurn(state);
       }
       return;
     }
@@ -703,10 +906,17 @@
     if (words) safe(() => window.TnaiTimes?.stamp?.(state, entry.at, false, block, wordsNow), null);
     let card = null;
     if (report) {
-      card = addBlock(state, reportCard(report, entry.at));
+      // feature 14: the report stands on top of the answer it ends (a "Did" line and the
+      // decisions; "Full report" opens the rest)
+      card = reportCard(report, entry.at, entry.id, false);
+      if (!state.first && !state.redrawing) card.classList.add('tnt-fresh');
+      state.list.insertBefore(card, block);
       paintDecisions(state);
     }
-    if (entry.id) state.says.set(entry.id, { block, card, words, report });
+    const said = { block, card, words, report, id: entry.id || '' };
+    if (entry.id) state.says.set(entry.id, said);
+    state.turnSays = [...(state.turnSays || []), said];
+    if (report) foldTurn(state);
   }
 
   // ---------- actions ----------
@@ -1146,6 +1356,9 @@
       );
       files.prepend(head);
       block.append(files);
+
+      // 192: each file's diff, and Keep or Undo
+      safe(() => window.TnaiChangeReview?.block?.(state, entry, files), null);
     }
 
     // 170: what the task made, under the same line (the block stays as it was when it made
@@ -1156,6 +1369,9 @@
     safe(() => window.TnaiTaskTime?.block?.(state, entry, block), null);
     addBlock(state, block);
     state.files = new Map();
+
+    // the task ended: its long answers fold now (feature 14)
+    foldTurn(state);
   }
 
   function addEntries(state, entries) {
@@ -1783,6 +1999,16 @@
     // the copy icon on every code block of a drawn reply (152: another computer's conversation)
     copyButtons: block => addCopyButtons(block),
     unmount,
+
+    // 186: the scrollbar map sends the reader up the conversation; following the newest line
+    // waits until the reader scrolls back to the end
+    leaveEnd,
+
+    // 173: a Find match inside a folded answer or report opens that fold first (feature 14)
+    reveal,
+
+    // a reply's height as the fold reckons it (for tools/info-layout-check.js)
+    answerHeight,
 
     // A thread back from its own window (162): every place that asked for it shows it again.
     retry(paneId) {

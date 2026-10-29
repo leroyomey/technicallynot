@@ -145,6 +145,9 @@
     }
     if (go) {
       const holder = hits[now].startContainer.parentElement;
+
+      // a match inside a folded answer or report (122, feature 14) is shown by opening the fold
+      window.TnaiThreadReadable?.reveal?.(holder);
       const smooth = !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
       holder?.scrollIntoView({ block: 'center', behavior: smooth ? 'smooth' : 'auto' });
     }

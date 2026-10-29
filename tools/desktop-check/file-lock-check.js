@@ -354,6 +354,42 @@ const changesFor = project =>
     tick(8e3);
     await lateApply;
     check(to('A').length === 0, 'own edit: a batch applied 8 s after it came in tells nobody');
+
+    // Two edit calls of one file overlap (two sub-agents of one panel): the first one ending does
+    // not end the second, whose write lands 30 s later after a permission prompt. Once both ended,
+    // a change nobody made is told again.
+    tick(10e3);
+    notifyCalls.length = 0;
+    locks.acquire(P, 'src/own-overlap.js', { ...A, edit: true, call: 'e1' });
+    locks.acquire(P, 'src/own-overlap.js', { ...A, edit: true, call: 'e2' });
+    locks.editDone(P, 'src/own-overlap.js', 'A', 'e1');
+    tick(30e3);
+    await locks.diskChanges(P, [{ path: 'src/own-overlap.js', type: 'change', at: t }]);
+    locks.editDone(P, 'src/own-overlap.js', 'A', 'e2');
+    check(
+      to('A').length === 0,
+      'own edit: an overlapping edit call of the same file ending does not end the other'
+    );
+    tick(10e3);
+    await locks.diskChanges(P, [{ path: 'src/own-overlap.js', type: 'change', at: t }]);
+    check(
+      to('A').length === 1 && /not through your own edits/.test(to('A')[0]),
+      'own edit: after both calls ended, a change nobody made is told'
+    );
+
+    // An edit call the user denied (no PostToolUse) stops counting as running at once.
+    tick(10e3);
+    notifyCalls.length = 0;
+    locks.acquire(P, 'src/own-denied.js', { ...A, edit: true, call: 'e3' });
+    locks.editDone(P, 'src/own-denied.js', 'A', 'e3');
+    locks.acquire(P, 'src/own-denied.js', { ...A, edit: true, call: 'e4' });
+    locks.editGone('A', 'e4');
+    tick(10e3);
+    await locks.diskChanges(P, [{ path: 'src/own-denied.js', type: 'change', at: t }]);
+    check(
+      to('A').length === 1 && !locks.list(P).find(l => l.file === 'src/own-denied.js')?.editing,
+      'own edit: a denied edit call no longer counts as running'
+    );
     locks.editDone(P, 'src/held.js', 'B');
     check(
       locks.list(P).find(l => l.file === 'src/held.js')?.last < t,

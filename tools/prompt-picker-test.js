@@ -175,7 +175,7 @@ function fakeElement(doc) {
   };
 }
 
-function sandbox(cli, answer, library = []) {
+function sandbox(cli, answer, library = [], saved = null) {
   const windowListeners = [];
   const doc = { body: { children: [], append: el => doc.body.children.push(el) } };
   doc.createElement = () => fakeElement(doc);
@@ -199,19 +199,43 @@ function sandbox(cli, answer, library = []) {
     TnaiFloat: { attach() {} },
   };
   doc.defaultView = window;
+  const context = {
+    window,
+    document: doc,
+    Event: class {
+      constructor(type) {
+        this.type = type;
+      }
+    },
+    setTimeout,
+    console,
+  };
+
+  // Saved prompts and recipes (194, the real file) beside the list: a made-up list on disk, a
+  // running thread that keeps what it was sent.
+  const sent = [];
+  if (saved) {
+    window.tnaiNative.promptLibrary = {
+      view: async () => ({ ok: true, items: saved }),
+      onState() {},
+    };
+    window.TnaiAgents.sessions = () => [
+      { paneId: 'pane-1', agent: cli, name: 'Nova', running: true },
+    ];
+    window.TnaiAgents.send = (paneId, text) => sent.push({ paneId, text }) > 0;
+    window.TnaiTurns = { get: () => null };
+    window.toast = () => {};
+    vm.runInNewContext(
+      fs.readFileSync(
+        path.join(__dirname, '..', 'src', 'scripts', '194-prompt-library.js'),
+        'utf8'
+      ),
+      context
+    );
+  }
   vm.runInNewContext(
     fs.readFileSync(path.join(__dirname, '..', 'src', 'scripts', '160-prompt-picker.js'), 'utf8'),
-    {
-      window,
-      document: doc,
-      Event: class {
-        constructor(type) {
-          this.type = type;
-        }
-      },
-      setTimeout,
-      console,
-    }
+    context
   );
 
   // Types text as the user would: the caret at its end, one input event.
@@ -236,7 +260,72 @@ function sandbox(cli, answer, library = []) {
     windowListeners.forEach(fn => fn(event));
     return taken;
   };
-  return { window, prompt, type, key, picker: () => window.TnaiPromptPicker };
+  return {
+    window,
+    prompt,
+    type,
+    key,
+    sent,
+    picker: () => window.TnaiPromptPicker,
+    listHtml: () => doc.body.children[0]?.innerHTML || '',
+  };
+}
+
+// The Saved group (194): saved prompts and recipes after the CLI's own rows.
+async function testSaved() {
+  const claude = await commands.list('Claude Code', project);
+  const saved = [
+    { id: 'p1', kind: 'prompt', name: 'Zqx review the branch', text: 'Review the branch, please.' },
+    { id: 'r1', kind: 'recipe', name: 'Zqx review fix test', steps: ['Review.', 'Fix.', 'Test.'] },
+  ];
+  const box = sandbox('Claude Code', claude, [], saved);
+  await settle();
+  box.type('/zqx');
+  await settle();
+  const rows = box.picker().rows();
+  check('"/" lists saved items', rows.length === 2, JSON.stringify(rows.map(row => row.name)));
+  check('a saved prompt says so', rows[0]?.label === 'saved prompt', rows[0]?.label);
+  check('a recipe says its steps', rows[1]?.label === 'recipe · 3 steps', rows[1]?.label);
+  check('the Saved heading shows', box.listHtml().includes('<h4>Saved</h4>'));
+  check(
+    'no empty CLI heading above it',
+    !box.listHtml().includes('Commands of'),
+    box.listHtml().slice(0, 80)
+  );
+
+  box.type('/mo');
+  check('the CLI rows stay first', box.picker().rows()[0]?.name === '/model');
+
+  box.type('/zqx');
+  check('Enter picks the saved prompt', box.key('Enter'));
+  check('its text replaces the word', box.prompt.value === 'Review the branch, please.');
+  check('a saved prompt is not sent by itself', box.sent.length === 0);
+
+  box.type('/zqx');
+  box.key('ArrowDown');
+  check('Enter picks the recipe', box.key('Enter'));
+  check('the typed word goes', box.prompt.value === '', JSON.stringify(box.prompt.value));
+  check(
+    'step 1 is sent to the thread',
+    box.sent.length === 1 && box.sent[0].text.includes('Review.'),
+    JSON.stringify(box.sent)
+  );
+  check('only step 1 so far', !box.sent.some(one => one.text.includes('Fix.')));
+
+  const copilot = sandbox(
+    'GitHub Copilot',
+    await commands.list('GitHub Copilot', project),
+    [],
+    saved
+  );
+  await settle();
+  copilot.type('/zqx');
+  await settle();
+  check(
+    'a CLI without task ends says so on the recipe',
+    copilot.picker().rows()[1]?.label === 'recipe · not for GitHub Copilot',
+    copilot.picker().rows()[1]?.label
+  );
 }
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 5));
@@ -319,6 +408,7 @@ async function testList() {
   try {
     await testLists();
     await testList();
+    await testSaved();
   } catch (error) {
     failed++;
     console.log('FAIL threw · ' + error.stack);

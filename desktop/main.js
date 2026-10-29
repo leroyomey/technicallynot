@@ -132,6 +132,7 @@ const gitService = require('./git-service');
 const userAuth = require('./user-auth');
 const panelWindows = require('./panel-windows');
 const previewEmulation = require('./preview-emulation');
+const previewControl = require('./preview-control');
 
 // `tnai show FILE.html`: one local HTML file in Live preview, cut off from the app and the network
 const showFile = require('./show-file');
@@ -657,6 +658,8 @@ hooks.init(
     // agent started; the mode a CLI's hooks report)
     sayTurn: paneId => sayRules.inSay(paneId),
     modeSeen: (paneId, mode) => sayRules.modeSeen(paneId, mode),
+    // change-review.js: a copy of each file before an agent's edit of it
+    beforeEdit: (paneId, tool, input) => changeReview.beforeEdit(paneId, tool, input),
   }
 );
 
@@ -755,6 +758,24 @@ fileLocks.init(toWindow, {
 // agent to unlock.
 turns.onEnd(paneId => fileLocks.taskEnded(paneId));
 
+// Keep or undo each file a task changed (change-review.js, the thread's "Worked for" block): what
+// each file was before the agent's first edit and what the task left, kept per task in
+// Technically Not's own folder. Undo refuses while another agent holds the file's lock.
+const changeReview = require('./change-review').createChangeReview({
+  dir: path.join(app.getPath('userData'), 'change-review'),
+  git: (args, options) => gitService.internal.git(args, options),
+  folderOf: paneId => threadFolder(paneId) || turns.cwd(paneId),
+  holderOf: file => {
+    const root = files.root();
+    if (!root) return '';
+    const same = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
+    const held = fileLocks.list(root).find(lock => same(path.resolve(root, lock.file), file));
+    return held ? held.name || 'Another agent' : '';
+  },
+});
+turns.onStart(paneId => changeReview.taskStarted(paneId).catch(() => {}));
+turns.onEnd(paneId => changeReview.taskEnded(paneId).catch(() => {}));
+
 // A team change: the window repaints its Team badges (88), and each member hears once who its
 // teammates are now (agent-peers.js teamNotice: Claude Code mid-task through its hooks; other CLIs
 // get it typed in like a file-lock notice, since they have no hooks).
@@ -826,6 +847,26 @@ graph.init(toWindow, {
 // Agent instances and task provenance for every CLI (agent-lifecycle.js): reuse, revive or a fresh
 // agent when a prompt quotes an earlier result.
 const lifecycle = require('./agent-lifecycle');
+
+// Learning from what threads deliver (task-learning.js): every finished task's measures kept per
+// project, and the patterns they show given back to agents.
+const taskLearning = require('./task-learning');
+taskLearning.init({
+  dir: app.getPath('userData'),
+  turns,
+  project: paneId => lifecycle.info(paneId)?.project || turns.cwd(paneId),
+  changed: root => toWindow('learning:changed', { project: root }),
+});
+
+// Connections (connections.js): the user's MCP servers for every agent, passed per session.
+const connections = require('./connections');
+connections.init({
+  dir: () => app.getPath('userData'),
+  instanceOf: paneId => lifecycle.info(paneId)?.id || '',
+  safeStorage: require('electron').safeStorage,
+  project: () => files.root?.() || '',
+  changed: () => toWindow('connections:changed', {}),
+});
 const resumable = new Set(
   agents
     .capabilities()
@@ -954,6 +995,16 @@ handle('schedules:dismissMissed', id => promptSchedules.dismissMissed(String(id 
 // on a day becomes a one-time schedule, and the ideas themselves (board-ideas.js), per project.
 handle('schedules:startPrompt', job => promptSchedules.startPrompt(job));
 handle('schedules:createOnce', job => promptSchedules.createOnce(job));
+
+// The prompt and workflow library (prompt-library.js; the window side, the recipe runner and its
+// screens are 194): saved prompts and recipes, kept in the settings folder.
+const promptLibrary = require('./prompt-library').createLibrary({
+  dir: app.getPath('userData'),
+  send: toWindow,
+});
+handle('library:view', () => promptLibrary.view());
+handle('library:save', item => promptLibrary.save(item && typeof item === 'object' ? item : {}));
+handle('library:remove', id => promptLibrary.remove(String(id || '')));
 const boardIdeas = require('./board-ideas').createIdeas(app.getPath('userData'));
 
 // Only a folder that is one of the user's projects has ideas: the window never names another.
@@ -1341,6 +1392,7 @@ handle('snapshots:copy', (kind, id) =>
 );
 handle('snapshots:remove', (kind, id) => shelf.remove(shelfKind(kind), String(id || '')));
 handle('snapshots:clear', () => shelf.clear());
+handle('snapshots:picture', id => shelf.picture(String(id || '')));
 handle('cli-updates:check', () => cliUpdates.check());
 handle('fs:write', (rel, bytes, lane) => {
   if (!lane) watch.ignore(rel);
@@ -1350,6 +1402,15 @@ handle('fs:write', (rel, bytes, lane) => {
 // Git for the connected folder (git-service.js): status (also starts the .git watcher behind
 // git:changed).
 handle('git:status', () => gitService.status());
+
+// Keep or undo one file a task changed (change-review.js, 192 in the window). The window names a
+// record by its id; the file written is always the record's own path.
+handle('review:state', query =>
+  changeReview.state(query && typeof query === 'object' ? query : {})
+);
+handle('review:diff', id => changeReview.diff(String(id || '')));
+handle('review:keep', key => changeReview.keep(String(key || '')));
+handle('review:undo', id => changeReview.undo(String(id || '')));
 
 // What an agent changed in its own folder, for the Changes section of a thread's Details
 // (branch-changes.js): branch, lines, commits, uncommitted files, the pull request and its checks.
@@ -1526,6 +1587,7 @@ const ptyCleanup = paneId => {
   agentContext.forget(paneId);
   hooks.forget(paneId);
   turns.forget(paneId);
+  taskLearning.forget(paneId);
   mesh.forget(paneId);
   promptSubmit.forget(paneId);
   sayRules.forget(paneId);
@@ -1917,6 +1979,13 @@ mesh.init(
   }
 );
 onQuit(() => mesh.stop());
+
+// The `tnai_preview` tool (agent-hooks.js): asks the window, acts on the preview frame's session.
+previewControl.init({
+  send: toWindow,
+  emulation: previewEmulation,
+  nameOf: paneId => mesh.nameOf(paneId),
+});
 
 // Several computers (remote-service.js). Off until the user
 // turns it on on the Devices page: until then no key is made and no connection, timer or file
@@ -2832,7 +2901,13 @@ function tellRenames() {
       .catch(e => console.warn('[tnai] rename notice failed:', e?.message || e));
   }
 }
-handle('preview:shown', (id, result) => mesh.previewShown(id, result));
+
+// The window's answer to a `preview:show` request: the `tnai_preview` tool's (preview-control.js,
+// ids "pc-…") or `tnai preview`'s (agent-mesh.js).
+handle(
+  'preview:shown',
+  (id, result) => previewControl.answered(id, result) || mesh.previewShown(id, result)
+);
 handle('agentEvents:history', () => hooks.history());
 
 // The thread layout's Readable view (122): one session's conversation as plain entries, read from
@@ -2927,6 +3002,9 @@ handle('attention:sendHeldNow', heldId => attention.sendHeldNow(heldId));
 
 // 71 read the CLI's input box as empty: a draft counted from keys goes
 handle('attention:inputEmpty', paneId => attention.inputEmpty(String(paneId)));
+
+// 158 knows when a thread's compact begins and ends: prompts from the prompt box wait meanwhile
+handle('attention:compacting', (paneId, on) => attention.setCompacting(String(paneId ?? ''), !!on));
 handle('attention:notify', opts => attention.notify(opts || {}));
 
 // the count on the app's taskbar icon (174)
@@ -2938,7 +3016,44 @@ handle('discordAlerts:get', () => discordAlerts.get());
 handle('discordAlerts:set', patch => discordAlerts.set(patch));
 handle('discordAlerts:test', () => discordAlerts.test());
 handle('agentTurns:state', () => turns.state());
+handle('learning:split', (paneId, at, parts) => taskLearning.split(paneId, at, parts));
+
+// Connections (connections.js; the contract: docs/plans/plugin-mcp-manager.md 7.1). A key's value
+// goes one way, window → main.
+handle('connections:state', () => connections.state());
+handle('connections:add', request => connections.add(request));
+handle('connections:adopt', (tool, name) => connections.adopt(tool, name));
+handle('connections:remove', id => connections.remove(id));
+handle('connections:every', (id, on) => connections.setEvery(id, on));
+handle('connections:thread', (id, instanceId, on) => connections.setThread(id, instanceId, on));
+handle('connections:key', (id, name, value) => connections.setKey(id, name, value));
+handle('connections:forThread', paneId => connections.forThread(paneId));
+handle('learning:view', (paneId, at) => taskLearning.view(paneId, at));
+handle('learning:mute', (paneId, key, muted) => taskLearning.setMuted(paneId, key, muted));
+
+// A CLI without a prompt hook gets what Claude Code's hook adds (agent-hooks.js) at the end of the
+// prompt instead: the measured lessons and the repeated problems this prompt is about, each once
+// per session, in the app's "[Technically Not: …]" form that the thread view keeps out of the
+// user's words (thread-log-text.js ADDED_AFTER).
+handle('learning:note', (paneId, prompt) => {
+  const parts = [
+    taskLearning.noteFor(paneId),
+    agentContext.repeatsFor(paneId, String(prompt || '')),
+  ].filter(Boolean);
+  return parts.length
+    ? "\n\n[Technically Not: learned from this project's past tasks (measured; follow it unless your task needs otherwise): " +
+        parts.join(' ') +
+        ']'
+    : '';
+});
 handle('usage:stats', () => usage.stats());
+
+// Settings › Insights (usage-insights.js): the days, the tips, and titles of conversations on a
+// press
+handle('usage:insights', () =>
+  require('./usage-insights').insights(usage, app.getPath('userData'))
+);
+handle('usage:titles', (_event, ids) => require('./usage-insights').titles(ids));
 handle('usage:limits', async force =>
   require('./plan-limits').forAccounts(
     await accounts.list(),

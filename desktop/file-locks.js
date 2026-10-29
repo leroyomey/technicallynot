@@ -223,6 +223,14 @@ function acquire(project, file, owner) {
   if (!m) locks.set(k, map);
   const fresh = !h || h.paneId !== owner.paneId;
 
+  // runs: call id → start of each edit-hook call of this file still running (Claude Code's
+  // tool_use_id, '' when the caller names none). Two calls can overlap (two sub-agents of one
+  // panel editing one file), and the end of one must not end the other's (editDone).
+  const runs = fresh ? {} : { ...(h.runs || {}) };
+  if (owner.edit) {
+    runs[String(owner.call || '')] = now();
+  }
+
   // edit: taken by Claude Code's edit hook, whose own edits and shell commands are all seen, so a
   // change it didn't make is someone else's
   map.set(key, {
@@ -234,9 +242,9 @@ function acquire(project, file, owner) {
     last: now(),
     edit: !!owner.edit || (!fresh && !!h.edit),
 
-    // editing: the edit hook's call is still running (until editDone). The write can land well
-    // after this moment (a permission prompt), and its change is the holder's own.
-    ...(owner.edit ? { editing: now() } : !fresh && h.editing ? { editing: h.editing } : {}),
+    // editing: the latest start of an edit-hook call still running (until its editDone). The write
+    // can land well after this moment (a permission prompt), and its change is the holder's own.
+    ...editMarks(runs),
     wholeAt: owner.whole ? now() : h?.wholeAt || 0,
 
     // the holder edited its file again: whoever was refused it still waits
@@ -359,15 +367,68 @@ function releasePane(paneId) {
   shells.delete(paneId);
 }
 
+// The lock fields for the edit calls still running: { editing: latest start, runs } or nothing.
+// A call older than SHELL_MAX_MS no longer counts (its end was never reported).
+function editMarks(runs) {
+  const live = {};
+  for (const [call, start] of Object.entries(runs || {})) {
+    if (now() - start < SHELL_MAX_MS) {
+      live[call] = start;
+    }
+  }
+  const starts = Object.values(live);
+  return starts.length ? { editing: Math.max(...starts), runs: live } : {};
+}
+
+// Sets h's edit marks to runs: kept while a call still runs, removed when none does.
+function setEditMarks(h, runs) {
+  const marks = editMarks(runs);
+  delete h.editing;
+  delete h.runs;
+  Object.assign(h, marks);
+}
+
 // Claude Code's Edit/Write of this file finished (agent-hooks.js PostToolUse, also when it failed).
 // Its write is on disk now: the holder's own edit counts from here, not from the hook before it,
-// so a change the watcher reports a little later is not taken for someone else's.
-function editDone(project, file, paneId) {
+// so a change the watcher reports a little later is not taken for someone else's. call: the
+// finished call's id; only that call ends, so an overlapping edit of the same file still counts as
+// running (learned 2026-10-28: the first call's end cleared the mark of a second call still waiting
+// on a permission prompt). No call: every running edit of the file ends.
+function editDone(project, file, paneId, call) {
   const r = rel(project, file),
     h = r ? table(project)?.get(fold(r)) : null;
   if (!h || !kin(h.paneId, paneId)) return;
   h.last = now();
-  delete h.editing;
+  setEditMarks(h, endRun(h.runs, call));
+}
+
+// runs without the run of call (or without any run, when call is not given or empty). A call the
+// lock never heard of ends the run of a caller that named none ('').
+function endRun(runs, call) {
+  if (call === undefined || call === null || call === '' || !runs) {
+    return {};
+  }
+  const left = { ...runs };
+  const id = String(call);
+  if (id in left) {
+    delete left[id];
+  } else {
+    delete left[''];
+  }
+  return left;
+}
+
+// An edit call ended without writing (a permission the user denied, agent-hooks.js): its run ends
+// on every file of this panel's tree, and nothing counts as the holder's edit.
+function editGone(paneId, call) {
+  if (call === undefined || call === null || call === '') return;
+  for (const map of locks.values()) {
+    for (const h of map.values()) {
+      if (h.runs && String(call) in h.runs && kin(h.paneId, paneId)) {
+        setEditMarks(h, endRun(h.runs, call));
+      }
+    }
+  }
 }
 
 // A Claude Code shell command (Bash/PowerShell, not run in the background) started / ended;
@@ -664,6 +725,7 @@ module.exports = {
   releasePane,
   taskEnded,
   editDone,
+  editGone,
   list,
   setNames,
   exempt,

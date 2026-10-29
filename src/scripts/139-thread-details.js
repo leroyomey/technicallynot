@@ -130,6 +130,7 @@
     }
   };
   const filesOf = paneId => window.TnaiFileActivity?.forPane?.(paneId) || [];
+  const editedOf = paneId => window.TnaiFileActivity?.editedBy?.(paneId) || [];
   const workspaceOf = paneId => {
     const workspaceId =
       window.TnaiTerminalWorkspaceByPane?.[paneId] ||
@@ -897,12 +898,16 @@
     );
   }
 
-  // Working with: its running sub-agents, and other agents that touched the same files (inferred
-  // from file activity, and said so).
-  function paintWorkingWith(view, session, team, sessions, mine) {
+  // Working with: its running sub-agents, and other agents that edited the same files (inferred
+  // from each agent's own edits and file locks, and said so). Files an agent only read, or that
+  // were credited to it because its output named them, never pair two agents (learned
+  // 2026-10-28, bug sweep L2: a check page only the Lead wrote paired Sol and Sable).
+  function paintWorkingWith(view, session, team, sessions) {
+    const fold = file => String(file).replace(/\\/g, '/').toLowerCase();
+    const own = new Set(editedOf(session.paneId).map(fold));
     const shared = sessions
       .filter(other => other.paneId !== session.paneId)
-      .map(other => [other, filesOf(other.paneId).filter(file => mine.includes(file))])
+      .map(other => [other, editedOf(other.paneId).filter(file => own.has(fold(file)))])
       .filter(([, files]) => files.length);
     const subs = (team?.subs || []).filter(
       sub => session.running && (sub.status === 'running' || sub.status === 'starting')
@@ -953,7 +958,7 @@
           });
           out.push(
             note(
-              'Inferred: these agents touched the same files recently (from their output and folder changes).'
+              'Inferred: these agents edited the same files recently (from their own edits and file locks).'
             ),
             box
           );
@@ -1176,7 +1181,7 @@
     paintChanges(view, session, opened);
     paintSubAgents(view, session, team);
     paintActivity(view, session, team);
-    paintWorkingWith(view, session, team, sessions, mine);
+    paintWorkingWith(view, session, team, sessions);
     paintFiles(view, session, mine);
     paintSkills(view, session, customAgent);
     paintSetup(view, session, customAgent);

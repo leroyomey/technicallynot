@@ -185,6 +185,9 @@ const AGENTS = [
                 'mcp_servers.tnai.default_tools_approval_mode=approve',
               ]
             : []),
+
+          // the user's connections for this thread (connections.js `codexFor`)
+          ...(Array.isArray(o.connectionArgs) ? o.connectionArgs : []),
         ],
         ...(name && step ? { env: { TNAI_STEP_URL: url.replace('/mcp/', '/step/') } } : {}),
       };
@@ -306,8 +309,16 @@ const AGENTS = [
             ...(o.pluginDirs?.length
               ? { skills: { paths: o.pluginDirs.map(dir => require('path').join(dir, 'skills')) } }
               : {}),
-            ...(url
-              ? { mcp: { tnai: { type: 'remote', url, enabled: true, timeout: 660000 } } }
+            // the user's connections for this thread (connections.js `openCodeFor`) beside `tnai`
+            ...(url || o.connectionMcp
+              ? {
+                  mcp: {
+                    ...(o.connectionMcp || {}),
+                    ...(url
+                      ? { tnai: { type: 'remote', url, enabled: true, timeout: 660000 } }
+                      : {}),
+                  },
+                }
               : {}),
             ...(steps ? { plugin: [steps] } : {}),
           }),
@@ -469,6 +480,10 @@ const AGENTS = [
     // and `--allow-tool=tnai` (`copilot help permissions`: an MCP server name allows all its tools)
     // runs its tools without asking. An account whose Copilot policy turns third-party MCP off
     // starts without it ("1 MCP server was blocked by policy: 'tnai'", checked in 1.0.88).
+    // The same file holds the user's connections for this thread (connections.js
+    // `copilotServers`); their tools ask before running, as in Copilot's own setup. Their keys
+    // come from the session's environment (`${KEY}`); never add --secret-env-vars for them: in
+    // 1.0.105 it stops that `${KEY}` from being filled (tools/copilot-connections-check.js).
     // A custom agent's identity: one more instructions folder (identityFolder).
     rules: o => {
       const dir = copilotRules(o.rulesFile, o.workRules),
@@ -511,14 +526,34 @@ const AGENTS = [
     accessArgs: accessFlags({ ask: [], full: ['--allow-all-tools'], plan: ['--mode', 'plan'] }),
     models: copilotModels,
   },
+  // Mistral Vibe 2.25.7 (pip `mistral-vibe`, checked 2026-10-28 on this PC): the first tool run
+  // through the ACP connector (acp-connector.js, acp-bridge.js), not its own screen. `vibe
+  // --version` finds it; `vibe-acp` is its ACP program (initialize answered with loadSession,
+  // images, and one sign-in method, "browser-auth", Mistral AI Studio in the browser). Without a
+  // key `session/new` answers -32000 "Missing API key for mistral provider", and the bridge then
+  // offers that sign-in in the thread. Every ACP tool asks through `session/request_permission`
+  // under its own settings, so there is no access level to pick: the levels are greyed with the
+  // reason. A task's start and end and its words come from the bridge's own record, so status is
+  // exact, not read off the screen.
+  {
+    id: 'Mistral Vibe',
+    command: 'vibe',
+    acp: { command: 'vibe-acp', args: [] },
+    status: null,
+    login: null,
+    parse: null,
+    accessWhy: {
+      all: 'Mistral Vibe runs through ACP and asks before tools under its own settings; no level is set from here',
+    },
+  },
 ];
 
 // Where each CLI publishes its releases — the one list the update bell (cli-updates.js: `npm` +
-// `update`), the release watcher (tools/cli-watch: `feed`, stable versions only) and the
-// tested-version check (tools/agent-cli-check.js) read. A new CLI in AGENTS needs a row here too;
-// both tools warn about a CLI without a feed. feed: RSS/Atom of its release notes ('' = none public
-// yet); npm: its package (stable version + the bell); update: its own update command; match: keep
-// only feed entries matching this (shared changelogs).
+// `update`) and the tested-version check (tools/agent-cli-check.js: `feed`, where to read the
+// release notes) read; the scheduled release watcher was removed 2026-10-28. A new CLI in AGENTS
+// needs a row here too; the check warns about a CLI without a feed. feed: RSS/Atom of its release
+// notes ('' = none public yet); npm: its package (stable version + the bell); update: its own
+// update command; match: keep only feed entries matching this (shared changelogs).
 const RELEASES = {
   'Claude Code': {
     feed: 'https://github.com/anthropics/claude-code/releases.atom',
@@ -570,6 +605,11 @@ const RELEASES = {
     notes: 'https://github.com/github/copilot-cli/releases',
     npm: '@github/copilot',
     update: 'npm install -g @github/copilot@latest',
+  },
+  // A Python tool (PyPI `mistral-vibe`; README 2026-10-28): its versions are PyPI's release list.
+  'Mistral Vibe': {
+    feed: 'https://pypi.org/rss/project/mistral-vibe/releases.xml',
+    notes: 'https://github.com/mistralai/mistral-vibe/blob/main/CHANGELOG.md',
   },
 };
 
@@ -777,6 +817,11 @@ const INSTALL = {
   'GitHub Copilot': {
     npm: '@github/copilot',
     page: 'https://github.com/github/copilot-cli#readme',
+  },
+  // Page only: the README's Windows way (read 2026-10-28) is two steps, uv first and then `uv tool
+  // install mistral-vibe`, not one installer line, so the tile offers the page and no Install.
+  'Mistral Vibe': {
+    page: 'https://github.com/mistralai/mistral-vibe#readme',
   },
 };
 
@@ -2272,6 +2317,23 @@ module.exports = {
         return { ...chainSpec(path, agent.logout, args), env: accountEnv(agent, opts.accountDir) };
       return { ...launchSpec(path, args), env: accountEnv(agent, opts.accountDir) };
     }
+
+    // A tool that speaks ACP (an `acp` command): the bridge runs in the terminal and starts it
+    // (acp-connector.js). Work rules go with its first prompt; the step, permission and MCP
+    // addresses come from the panel's MCP file (agent-hooks.js mcpFile).
+    if (agent.acp) {
+      const acpPath = await resolveCommand(agent.acp.command);
+      if (!acpPath) throw new Error(agent.acp.command + ' is not installed or not on PATH.');
+      return require('./acp-connector').launch({
+        agent: agent.id,
+        command: acpPath,
+        args: agent.acp.args || [],
+        sessionId: opts.sessionId,
+        resumeId: opts.resumeId,
+        rules: opts.workRules || '',
+        mcpUrl: opts.mcpConfig ? mcpUrl(opts.mcpConfig) : '',
+      });
+    }
     const rules = agent.rules && opts.workRules ? agent.rules(opts) : {};
 
     // A picked model/effort: the CLI's pick for a fresh session; for a resumed one only the model
@@ -2319,6 +2381,9 @@ module.exports = {
   },
   // The environment variable a CLI's API key goes in ('' = none).
   apiKeyEnv: id => AGENTS.find(a => a.id === id)?.apiKey?.env || '',
+  // Whether a CLI runs through the ACP connector (an `acp` command in its entry), and which do.
+  isAcp: id => !!AGENTS.find(a => a.id === id)?.acp,
+  acpIds: () => AGENTS.filter(a => a.acp).map(a => a.id),
   // { models: [{ id, label, efforts? }], efforts } for the composer dropdowns; empty when the CLI
   // has no pick support. `cwd` (the project folder) is used by OpenCode only, whose list depends on
   // the folder's own config.

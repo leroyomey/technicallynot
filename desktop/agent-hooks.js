@@ -13,6 +13,7 @@ const { app } = require('electron');
 const attachments = require('./attachment-service');
 const turns = require('./agent-turns');
 const graph = require('./agent-graph');
+const previewControl = require('./preview-control');
 
 // is a request's short text the whole request (pure: requiring it touches no key and opens nothing)
 const { wholeShell } = require('./remote-api.js');
@@ -39,6 +40,9 @@ const stalls = require('./stall-log');
 
 // OpenCode's permission requests and questions, from its panel's own server
 const openCodeLink = require('./opencode-link');
+
+// the user's connections (MCP servers) passed per session beside `tnai` (connections.js)
+const connections = require('./connections');
 const everywhereSkills = () => require('./skill-service').everywhereSkillFiles();
 
 // tools whose file can call up the skill that owns it
@@ -72,6 +76,19 @@ let locks = null,
   lockOwner = null;
 const LOCK_TOOLS = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit']);
 
+// change-review.js (main.js): a copy of each file an edit is about to change, taken while the edit
+// waits for the app (Claude Code's PreToolUse, OpenCode's gate, Codex's and Cursor Agent's
+// preToolUse step), so the thread can undo that one file later. Never fails the edit.
+let beforeEdit = () => Promise.resolve();
+
+async function copyBeforeEdit(paneId, tool, input) {
+  try {
+    await beforeEdit(paneId, tool, input);
+  } catch (e) {
+    console.warn('[tnai] change review copy failed:', e?.message || e);
+  }
+}
+
 // '' = go ahead, else why the edit is denied: another agent holds the file. In-panel sub-agents
 // share their panel's lock.
 async function lockDenied(paneId, h) {
@@ -82,10 +99,12 @@ async function lockDenied(paneId, h) {
 
   // whole: Write and NotebookEdit rewrite the whole file on disk, exclusive for a moment even
   // inside a user's team (file-locks.js WHOLE_MS)
+  // call: the edit's id, so its end (editDone) ends only this edit, not an overlapping one
   const r = locks.acquire(owner.project, f, {
     ...owner,
     edit: true,
     whole: h.tool_name === 'Write' || h.tool_name === 'NotebookEdit',
+    call: h.tool_use_id || '',
   });
   if (r.ok) editStarted(paneId, h.tool_use_id, owner.project, f, !!r.taken);
   return r.ok
@@ -534,9 +553,16 @@ const STEP_TOOLS = {
 
 function onStep(paneId, m) {
   // Codex's own hook payload (codexStep below; main agent only) and Cursor Agent's (cursorStep;
-  // "preToolUse", it names no sub-agent).
-  if (/^preToolUse$/i.test(m?.hook_event_name || '') && !m.agent_id)
+  // "preToolUse"). Since cursor-agent 2026.10.17 the hook also fires inside its sub-agents, and
+  // such a call carries parent_tool_call_id: the lead's Task call that started that sub-agent
+  // (read in cursor-agent 2026.10.22's own code). That id tags the step as the helper's, as
+  // Claude Code's agent_id does, so the window never shows it as the lead's own Now line.
+  let cursorHelper = '';
+  if (/^preToolUse$/i.test(m?.hook_event_name || '') && !m.agent_id) {
+    if (typeof m.parent_tool_call_id === 'string')
+      cursorHelper = m.parent_tool_call_id.slice(0, 80);
     m = { event: 'tool', tool: m.tool_name, input: m.tool_input };
+  }
 
   // OpenCode's task and tool-end events (below)
   if (m && typeof m.event === 'string' && m.event !== 'tool') return openCodeEvent(paneId, m);
@@ -551,8 +577,10 @@ function onStep(paneId, m) {
   const oc = turns.isOpenCode(paneId) ? openCodeState(paneId) : null,
     low = m.tool.toLowerCase(),
     call = typeof m.call === 'string' ? m.call.slice(0, 80) : '';
-  const kidId = oc && m.child && typeof m.session === 'string' ? m.session.slice(0, 80) : '',
-    sub = kidId ? { agentId: kidId, agentType: oc.children.get(kidId)?.agent || '' } : {};
+  const kidId = oc && m.child && typeof m.session === 'string' ? m.session.slice(0, 80) : '';
+  let sub = {};
+  if (kidId) sub = { agentId: kidId, agentType: oc.children.get(kidId)?.agent || '' };
+  else if (cursorHelper) sub = { agentId: cursorHelper, agentType: '' };
   if (oc && low === 'task')
     emit(paneId, {
       kind: 'spawn',
@@ -837,6 +865,9 @@ async function gateDenied(paneId, m) {
         : '';
     if (deny) return deny;
   }
+
+  // the edit goes ahead: its files are copied first (change-review.js)
+  await copyBeforeEdit(paneId, tool, input);
   return '';
 }
 
@@ -1076,8 +1107,11 @@ function askPermission(paneId, h, res) {
 
     // A denied edit gives back the file lock its call took (when the request names the call; else
     // its PostToolUseFailure does).
-    if (decision === 'deny' && LOCK_TOOLS.has(tool) && h.tool_use_id)
+    // The edit never runs, so it no longer counts as the holder's edit in progress either.
+    if (decision === 'deny' && LOCK_TOOLS.has(tool) && h.tool_use_id) {
       editEnded(paneId, h.tool_use_id, false);
+      if (locks) locks.editGone(paneId, h.tool_use_id);
+    }
     if (decision !== 'gone' && !res.writableEnded)
       reply(
         decision === 'once' || decision === 'session'
@@ -1195,6 +1229,51 @@ function askOpenCode(e) {
   send('agent:permission', publicPermission(entry));
 }
 
+// A permission question of a tool run through the ACP connector (acp-bridge.js POSTs it to the
+// panel's /acp/ address and waits): the same entry, card and "Needs you" as a Claude Code request.
+// Allow once and Deny are the agent's own allow_once and reject choices; Allow for session is its
+// allow_always, offered only when the agent has one (the agent keeps it, not this app). Answer in
+// terminal, a timeout or no window: {} goes back, and the bridge's own numbered question in the
+// terminal stays. The bridge giving up (answered in its terminal, task stopped) closes the request.
+function askAcp(paneId, msg, res) {
+  const id = crypto.randomBytes(8).toString('hex');
+  const tool = clip(String(msg.tool || msg.title || 'a tool'), 80);
+  const input = msg.input && typeof msg.input === 'object' ? msg.input : {};
+  const shell = tool === 'Bash' && typeof input.command === 'string';
+  const timer = setTimeout(() => entry.finish('terminal'), ASK_MS);
+  const entry = {
+    id,
+    paneId,
+    tool,
+    detail: shell
+      ? clip(input.command, 1200)
+      : clip(toolDetail(input) || String(msg.title || ''), 1200),
+    whole: shell && wholeShell('Bash', input.command),
+    ...(shell && answerWay('Bash', input.command) === 'full' ? { full: input.command } : {}),
+    description: clip(String(msg.title || ''), 200),
+    sessionScope: msg.always === true ? '' : null,
+    at: Date.now(),
+    agent: 'acp-bridge',
+    ask: '',
+  };
+  entry.finish = decision => {
+    if (permissions.get(id) !== entry) return false;
+    permissions.delete(id);
+    clearTimeout(timer);
+    if (!res.writableEnded)
+      res
+        .writeHead(200, { 'content-type': 'application/json' })
+        .end(JSON.stringify(['once', 'session', 'deny'].includes(decision) ? { decision } : {}));
+    send('agent:permission', { id, paneId, done: true, decision });
+    return true;
+  };
+  res.on('close', () => {
+    if (!res.writableEnded) entry.finish('gone');
+  });
+  permissions.set(id, entry);
+  send('agent:permission', publicPermission(entry));
+}
+
 // question id -> paneId: OpenCode questions shown as Claude Code's picker is (live event 'ask';
 // answered in its terminal)
 const openCodeAsks = new Map();
@@ -1246,10 +1325,20 @@ function onMcp(paneId, msg, signal) {
   // Claude Code lists tools once it has started (after any folder-trust question), so this is also
   // the session's ready signal. Custom agents (and their sub-agents, within the depth limit) get
   // Technically Not's delegation tools (agent-graph.js); every other session gets none.
+  // Every session also gets `tnai_preview` (preview-control.js): it works only while the user has
+  // switched it on for that thread, which each call asks the window.
   if (msg.method === 'tools/list') {
     emit(paneId, { kind: 'ready', source: 'mcp' });
-    return reply({ tools: graph.tools(paneId) });
+    return reply({ tools: [...graph.tools(paneId), ...previewControl.tools()] });
   }
+  if (msg.method === 'tools/call' && previewControl.owns(msg.params?.name))
+    return previewControl
+      .call(paneId, msg.params.name, msg.params?.arguments || {})
+      .then(reply, error =>
+        reply(
+          errors.toolFail('Technically Not error: ' + error.message, 'internal', 'call it again')
+        )
+      );
   if (msg.method === 'tools/call')
     return graph
       .call(paneId, msg.params?.name, msg.params?.arguments || {}, signal)
@@ -1267,7 +1356,7 @@ function onMcp(paneId, msg, signal) {
 }
 
 function handle(req, res) {
-  const [, kind, token] = /^\/(hook|mcp|step|gate)\/([0-9a-f]{32})$/.exec(req.url || '') || [];
+  const [, kind, token] = /^\/(hook|mcp|step|gate|acp)\/([0-9a-f]{32})$/.exec(req.url || '') || [];
   const paneId = token && tokens.get(token);
   if (!paneId) {
     res.writeHead(404).end();
@@ -1305,12 +1394,24 @@ function handle(req, res) {
             ? 'mcp ' + String(msg.method || 'batch').slice(0, 40)
             : 'hook server step';
       if (kind === 'step') {
+        // Codex's and Cursor Agent's preToolUse wait for this answer (curl, 2 s at most): an edit's
+        // files are copied before it, so the thread can undo them (change-review.js). Any other
+        // step is answered at once.
+        if (/^preToolUse$/i.test(msg?.hook_event_name || '') && !msg.agent_id)
+          await span.rest(copyBeforeEdit(paneId, msg.tool_name, msg.tool_input));
         res.writeHead(204).end();
         try {
           onStep(paneId, msg);
         } catch {}
         return;
       } // answered first: the CLI never waits on us
+
+      // A permission question from the ACP connector's bridge (acp-bridge.js), held open until the
+      // user answers in the thread: { decision } or {} (then it is answered in the terminal).
+      if (kind === 'acp') {
+        askAcp(paneId, msg, res);
+        return;
+      }
 
       // The one step call a CLI waits on (OpenCode's plugin, 2 s at most, before a tool that
       // changes files): { deny: reason } or {}. A failure here lets the tool run.
@@ -1386,6 +1487,9 @@ function handle(req, res) {
           );
           return;
         }
+
+        // the edit goes ahead: its file is copied first (change-review.js)
+        await span.rest(copyBeforeEdit(paneId, msg.tool_name, msg.tool_input));
       }
 
       // Shell commands skip the edit hook: their run time lets file-locks.js match a held file
@@ -1409,7 +1513,7 @@ function handle(req, res) {
             const gaveBack = editEnded(paneId, msg.tool_use_id, ev === 'PostToolUse');
             const o =
               !gaveBack && typeof f === 'string' && f ? await span.rest(lockOwner(paneId)) : null;
-            if (o) locks.editDone(o.project, f, paneId);
+            if (o) locks.editDone(o.project, f, paneId, msg.tool_use_id || '');
           } else if (ev === 'Stop' || ev === 'StopFailure') {
             locks.shellStop(paneId);
             editsForgotten(paneId);
@@ -1423,15 +1527,12 @@ function handle(req, res) {
       // once, with the reason; Claude Code then goes on instead of stopping. `stop_hook_active`
       // marks a stop that already follows such a hold, so an agent is never held twice in a row.
       // The turn is not over, so nothing else is told about this Stop.
-      if (
-        kind === 'hook' &&
-        msg.hook_event_name === 'Stop' &&
-        !msg.stop_hook_active &&
-        !msg.agent_id
-      ) {
+      // The learning check below holds once per task by itself, so it also runs on the stop that
+      // follows the skill hold (`stop_hook_active`) and can never loop.
+      if (kind === 'hook' && msg.hook_event_name === 'Stop' && !msg.agent_id) {
         let skipped = [];
         try {
-          skipped = skillStats.hold(paneId);
+          if (!msg.stop_hook_active) skipped = skillStats.hold(paneId);
         } catch {}
         if (skipped.length) {
           const many = skipped.length > 1;
@@ -1450,6 +1551,31 @@ function handle(req, res) {
                 ' steps and "done when" list, fix anything that does not match, then finish. If ' +
                 (many ? 'one' : 'it') +
                 ' truly does not apply to this task, say so in one line and finish.',
+            })
+          );
+          return;
+        }
+
+        // The learning check (skill-stats.js `learnCheck`): a task that was corrected, fixed a bug
+        // or added new code and changed no skill is held once to decide which skill learns from
+        // it, so the user never has to ask (user 2026-10-28). Off with Settings › Agents › Write
+        // skills.
+        let why = '';
+        try {
+          why = skillStats.learnCheck(
+            paneId,
+            msg.last_assistant_message,
+            ruleFlags()['write-skills'] !== false
+          );
+        } catch {}
+        if (why) {
+          res.writeHead(200, { 'content-type': 'application/json' }).end(
+            JSON.stringify({
+              decision: 'block',
+              reason:
+                'Before you finish: ' +
+                why +
+                ', and no skill changed. Ask which skill or rule should have prevented it or will be needed again: the skill that owns the files you changed (its `paths:` and the file map), the skill you followed, or a new one for a new repeatable procedure. Weigh it briefly (the case for, the case against: a one-off, already covered, makes the skill longer). If the case for wins, add the lesson as one short rule with "learned <date>: <cause>" and update its "Last checked"; then say "Skill improved: <skill>, <what>, because <why>" in your reply. If not, say in one line why no skill needs it. Then finish.',
             })
           );
           return;
@@ -1494,6 +1620,9 @@ function handle(req, res) {
             extra.push(require('./comparison-hint').forPrompt(msg.prompt || ''));
           } catch {}
 
+          // what this project's past tasks taught, when it applies now (task-learning.js)
+          extra.push(require('./task-learning').forPrompt(paneId));
+
           // who else works here now, and whose task crosses this one (agent-peers.js)
           extra.push(await span.rest(peers.forPrompt(paneId, msg.prompt || '')));
           try {
@@ -1533,11 +1662,15 @@ function handle(req, res) {
 
             // The main agent edited a file a skill owns: that skill is required for this task (a
             // sub-agent's edits are its own; reading a file requires nothing).
-            if (f && LOCK_TOOLS.has(msg.tool_name) && !msg.agent_id)
+            if (f && LOCK_TOOLS.has(msg.tool_name) && !msg.agent_id) {
               skillStats.require(
                 paneId,
                 skillTriggers.forFile(f, projectRoot(), every, skillStats.readIn(paneId)).names
               );
+
+              // what kind of file it changed, for the learning check at the task's end
+              skillStats.edited(paneId, f, msg.tool_name);
+            }
           } catch {}
         extra = extra.filter(Boolean).join('\n\n');
         res.writeHead(200, { 'content-type': 'application/json' }).end(
@@ -1720,7 +1853,14 @@ function cursorPlugin(paneId, rules, mcpConfig) {
   const root = path.join(dir(), String(paneId).replace(/[^\w-]/g, '_') + '.cursor-plugin'),
     mcp = path.join(root, 'mcp.json');
   rulesPluginFiles(root, rules, token ? `http://127.0.0.1:${port}/step/${token}` : '');
-  if (url) writeShared(mcp, JSON.stringify({ mcpServers: { tnai: { url } } }, null, 2));
+
+  // the user's connections for this thread (connections.js) beside `tnai`
+  const servers = {
+    ...connections.jsonFor(paneId, 'Cursor Agent'),
+    ...(url ? { tnai: { url } } : {}),
+  };
+  if (Object.keys(servers).length)
+    writeShared(mcp, JSON.stringify({ mcpServers: servers }, null, 2));
   else {
     written.delete(mcp);
     try {
@@ -1731,8 +1871,10 @@ function cursorPlugin(paneId, rules, mcpConfig) {
 }
 
 // A new per-pane token (the pane's hook and MCP URLs) and its MCP config file: { mcpServers: {
-// tnai: { type: 'http', url } } }.
-async function mcpFile(paneId) {
+// tnai: { type: 'http', url } } }. `extra`: the user's connections for this thread
+// (connections.js `jsonFor`), for Claude Code and GitHub Copilot (each in its own form), beside
+// `tnai`; Codex and OpenCode read only the url here and get theirs in agent-registry.js.
+async function mcpFile(paneId, extra = {}) {
   await listen();
   const old = panes.get(paneId);
   if (old) tokens.delete(old.token);
@@ -1750,6 +1892,7 @@ async function mcpFile(paneId) {
     JSON.stringify(
       {
         mcpServers: {
+          ...extra,
           tnai: { type: 'http', url: `http://127.0.0.1:${port}/mcp/${token}`, timeout: 660000 },
         },
       },
@@ -1796,12 +1939,19 @@ async function launchOptions(paneId, agentId, accountDir = '', { lead = false } 
     // Copilot policy blocks third-party MCP starts without it. Cursor Agent gets it through its
     // per-pane plugin (cursorPlugin), only as a lead: its --approve-mcps also approves the user's
     // own ~/.cursor MCP servers for that session, and a Cursor sub-agent needs none (ready from its
-    // screen, task end from its transcript).
+    // screen, task end from its transcript). Copilot's file also holds the user's connections for
+    // this thread (connections.js), the same policy applies to them.
+    // A tool run through the ACP connector gets the file too: its token is the bridge's step and
+    // permission address (acp-connector.js), and `tnai` is offered when the tool takes HTTP MCP.
     const mcpConfig =
       (['Codex', 'OpenCode', 'GitHub Copilot'].includes(agentId) ||
+        require('./agent-registry').isAcp(agentId) ||
         (agentId === 'Cursor Agent' && lead)) &&
       paneId
-        ? await mcpFile(paneId)
+        ? await mcpFile(
+            paneId,
+            agentId === 'GitHub Copilot' ? connections.jsonFor(paneId, 'GitHub Copilot') : {}
+          )
         : '';
 
     // Any Cursor panel gets a token for its step address (cursorStep); only a lead is handed the
@@ -1827,10 +1977,16 @@ async function launchOptions(paneId, agentId, accountDir = '', { lead = false } 
       rulesFile: ownRules || rulesPath,
       rulesPlugin: plugin,
       ...(mcpConfig ? { mcpConfig } : {}),
+
+      // the user's connections for this thread (connections.js), read by agent-registry.js
+      ...(agentId === 'Codex' && paneId ? { connectionArgs: connections.codexFor(paneId) } : {}),
+      ...(agentId === 'OpenCode' && paneId
+        ? { connectionMcp: connections.openCodeFor(paneId) }
+        : {}),
     };
   }
   if (!paneId) return {};
-  const mcpConfig = await mcpFile(paneId),
+  const mcpConfig = await mcpFile(paneId, connections.jsonFor(paneId, 'Claude Code')),
     token = panes.get(paneId).token;
   const hook = { type: 'http', url: `http://127.0.0.1:${port}/hook/${token}`, timeout: 5 };
   const on = matcher => [{ ...(matcher ? { matcher } : {}), hooks: [hook] }];
@@ -1963,6 +2119,7 @@ module.exports = {
     if (typeof opts.sayTurn === 'function') sayTurn = opts.sayTurn;
     if (typeof opts.modeSeen === 'function') modeSeen = opts.modeSeen;
     if (typeof opts.root === 'function') projectRoot = opts.root;
+    if (typeof opts.beforeEdit === 'function') beforeEdit = opts.beforeEdit;
     if (opts.locks && typeof opts.owner === 'function') {
       locks = opts.locks;
       lockOwner = opts.owner;

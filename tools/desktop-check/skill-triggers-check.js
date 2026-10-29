@@ -299,7 +299,8 @@ try {
   assert.deepStrictEqual(st.hold('p3'), [], 'a new task starts with nothing required');
   const hooks = fs.readFileSync(path.join(__dirname, '../../desktop/agent-hooks.js'), 'utf8');
   assert.ok(
-    /hook_event_name === 'Stop'\s*&&\s*!msg\.stop_hook_active\s*&&\s*!msg\.agent_id/.test(hooks) &&
+    /hook_event_name === 'Stop'\s*&&\s*!msg\.agent_id/.test(hooks) &&
+      /if \(!msg\.stop_hook_active\) skipped = skillStats\.hold\(paneId\)/.test(hooks) &&
       /decision: 'block'/.test(hooks),
     'agent-hooks holds a Stop once, never a stop that already follows a hold or a sub-agent'
   );

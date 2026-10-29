@@ -159,6 +159,29 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+/* a Markdown table in an agent's words (44): the table view's look, text left as written; words
+   wrap whole, long code breaks anywhere, and a table still too wide for a narrow thread scrolls
+   sideways in its own box instead of running past the edge */
+.tnt-md-table-wrap {
+  margin: 8px 0;
+  overflow-x: auto;
+}
+.tnt-md-table.tnt-chart-table th,
+.tnt-md-table.tnt-chart-table td {
+  text-align: left;
+  vertical-align: top;
+  font-variant-numeric: normal;
+}
+.tnt-md-table.tnt-chart-table code {
+  overflow-wrap: anywhere;
+}
+.tnt-md-table.tnt-chart-table .tnt-md-right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.tnt-md-table.tnt-chart-table .tnt-md-center {
+  text-align: center;
+}
 .tnt-chart-note {
   margin-top: 8px;
   color: var(--pg-text-2);

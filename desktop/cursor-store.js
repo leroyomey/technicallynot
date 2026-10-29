@@ -6,6 +6,11 @@
  * {"type":"turn_ended","status"} ends it. The slug is the working folder with every run of other
  * characters than letters/digits as "-" (drive letter case varies, so it is matched ignoring case).
  * pty-service.js finds a pane's chat here; agent-turns.js follows its transcript.
+ *
+ * Sub-agents (cursor-agent 2026.10.17+, and Cursor's editor before it; seen on this PC
+ * 2026-10-28): a sub-agent's record is <chatId>/subagents/<subagentId>.jsonl inside its parent's
+ * folder, never a folder of its own. A chat folder can also hold only a subagents folder and no
+ * <chatId>.jsonl of its own (seen once on this PC), so only a folder with its own record is a chat.
  */
 'use strict';
 const fs = require('fs');
@@ -32,6 +37,8 @@ function projectDir(cwd) {
 // The chat Cursor Agent started in this folder since the pane started (not one another pane already
 // has). Cursor sets no id Technically Not can choose at launch, so the folder + time is the match;
 // two Cursor panes started in the same folder in the same second could swap (inferred).
+// A folder without its own <chatId>.jsonl (only sub-agent records so far) is skipped: it is not a
+// chat this pane can read or resume, and the lookup runs again until the real one appears.
 function findChat(startedAt, cwd, taken = new Set()) {
   const dir = projectDir(cwd);
   if (!dir) return '';
@@ -42,9 +49,16 @@ function findChat(startedAt, cwd, taken = new Set()) {
   } catch {
     return '';
   }
+  const ownRecord = n => {
+    try {
+      return fs.statSync(path.join(base, n, n + '.jsonl')).isFile();
+    } catch {
+      return false;
+    }
+  };
   return (
     names
-      .filter(n => !taken.has(n))
+      .filter(n => !taken.has(n) && ownRecord(n))
       .map(n => {
         try {
           return [n, fs.statSync(path.join(base, n)).birthtimeMs];

@@ -1,6 +1,7 @@
 /* Technically Not · 51-what-it-made.css — "What it made" in the "Worked for" block that ends a task
-   (170-what-it-made.js): the head line, New and Changed, the small pictures and chips, the preview
-   at a fixed height, the fold of older tasks, and Live preview's tab beside the thread (131).
+   (170-what-it-made.js): the head line, the groups by kind (rows, small cards, the changed files;
+   feature 14, 2026-10-28), the preview in place at a fixed height, the fold of older tasks, and
+   Live preview's tab beside the thread (131).
    From the approved mock docs/plans/design-concepts/what-it-made.body.html (round 2), with the
    thread design's tokens only; the buttons are the design cards' (46). */
 
@@ -41,7 +42,6 @@
 }
 .tnt-made-head:focus-visible,
 .tnt-made-thumb:focus-visible,
-.tnt-made-chip:focus-visible,
 .tnt-made-act:focus-visible {
   outline: 2px solid var(--pg-accent);
   outline-offset: 2px;
@@ -54,10 +54,6 @@
   gap: 8px;
   min-width: 0;
 }
-.tnt-made-top .tnt-made-chip {
-  height: 28px;
-  border-radius: 999px;
-}
 .tnt-made-body {
   display: flex;
   flex-direction: column;
@@ -69,10 +65,146 @@
 .tnt-made-body[hidden] {
   display: none;
 }
-.tnt-made-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+
+/* ---------- the groups (feature 14, user 2026-10-28 chose "Proposed" in info-layout.html) ---------- */
+/* One neutral surface, a group per kind with its count; the kind's color only in the group's small
+   icon. One rhythm: a group's head 28 px, rows 32 px, 12 px between groups, every name on one
+   32 px inset. */
+.tnt-made-groups {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
+  min-width: 0;
+}
+.tnt-made-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.tnt-made-group[data-kind='document'] {
+  --made-kind: var(--pg-hue-document);
+}
+.tnt-made-group[data-kind='picture'] {
+  --made-kind: var(--pg-hue-picture);
+}
+.tnt-made-group[data-kind='page'] {
+  --made-kind: var(--pg-hue-page);
+}
+.tnt-made-group[data-kind='site'] {
+  --made-kind: var(--pg-hue-site);
+}
+.tnt-made-group[data-kind='data'] {
+  --made-kind: var(--pg-hue-data);
+}
+.tnt-made-ghead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 10px;
+  color: var(--pg-text-2);
+  font: 500 12.5px/1 var(--pg-sans);
+}
+.tnt-made-ghead .tn-ico {
+  flex: none;
+  color: color-mix(in srgb, var(--made-kind, var(--pg-text-3)) 60%, var(--pg-text));
+}
+.tnt-made-ghead em {
+  color: var(--pg-text-3);
+  font-style: normal;
+  font-weight: 400;
+}
+.tnt-made-ghead :is(u, s) {
+  flex: none;
+  font: 500 12px/1 var(--pg-mono);
+  text-decoration: none;
+}
+.tnt-made-ghead u {
+  color: color-mix(in srgb, var(--pg-ready) 75%, var(--pg-text));
+}
+.tnt-made-ghead s {
+  color: color-mix(in srgb, var(--pg-err) 75%, var(--pg-text));
+}
+
+/* a document or data file: its name, then its title or row count */
+.tnt-made-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  margin: 0;
+  padding: 0 10px 0 32px;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: transparent;
+  color: var(--pg-text);
+  font: 13px/1 var(--pg-sans);
+  text-align: left;
+  cursor: pointer;
+}
+.tnt-made-row:hover,
+.tnt-made-row[aria-pressed='true'] {
+  background: var(--pg-panel-hover-soft);
+}
+.tnt-made-row:focus-visible {
+  outline: 2px solid var(--pg-accent);
+  outline-offset: -2px;
+}
+.tnt-made-row b {
+  flex: none;
+  max-width: 52%;
+  overflow: hidden;
+  font: 500 12.5px/1.2 var(--pg-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tnt-made-row small {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pg-text-3);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tnt-made-row[data-gone='true'] {
+  opacity: 0.6;
+}
+
+/* a picture, a page or a site keeps a small card; the group already says its kind */
+.tnt-made-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+  padding: 4px 0 2px 32px;
+}
+.tnt-made-cards > :is(.tnt-made-thumb, .tnt-split-cell) {
+  width: 176px;
+  max-width: 100%;
+}
+.tnt-made-cards :is(.tnt-made-tile, .tnt-made-kind) {
+  display: none;
+}
+
+/* the changed files: 122's list with 192's Keep and Undo, its head said by the group's head */
+.tnt-made-group > .tnt-files {
+  padding: 0 10px 0 32px;
+  background: transparent;
+}
+.tnt-made-group > .tnt-files > .tnt-files-head {
+  display: none;
+}
+.tnt-made-ghead .tnt-made-act {
+  height: 26px;
+}
+
+/* a preview opens in place, under its row or its group's cards */
+.tnt-made-group > .tnt-made-preview {
+  margin: 4px 0 6px 32px;
 }
 .tnt-made-thumb {
   display: flex;
@@ -122,35 +254,6 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-/* plain top-to-bottom flow, not the well's grid: the title and the first lines can never land in
-   the same place (user 2026-10-28: the title was drawn over the first line in the app) */
-.tnt-made-thumb > .tnt-made-ttext {
-  display: block;
-}
-.tnt-made-ttext {
-  align-content: start;
-  place-items: start !important;
-  padding: 12px 14px;
-  font: 11px/1.5 var(--pg-mono);
-  text-align: left;
-  -webkit-mask-image: linear-gradient(to bottom, #000 60%, transparent);
-  mask-image: linear-gradient(to bottom, #000 60%, transparent);
-}
-.tnt-made-ttext b {
-  display: block;
-  margin-bottom: 4px;
-  overflow: hidden;
-  color: var(--pg-text);
-  font: 600 12.5px/1.3 var(--pg-sans);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.tnt-made-ttext span {
-  display: block;
-  color: var(--pg-text-2);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 .tnt-made-tsite {
   grid-template-rows: auto 1fr;
@@ -258,58 +361,6 @@
 }
 .tnt-made-thumb[data-kind]:hover {
   border-color: color-mix(in srgb, var(--made-kind) 60%, var(--pg-text));
-}
-
-/* the changed-files pill: added and removed lines in the app's diff colors (Files: 12), mixed a
-   little toward the text so they stay above 4.5 to 1 in Dim */
-.tnt-made-chip u,
-.tnt-made-chip s {
-  flex: none;
-  font: 500 12px/1 var(--pg-mono);
-  text-decoration: none;
-}
-.tnt-made-chip u {
-  color: color-mix(in srgb, var(--pg-ready) 75%, var(--pg-text));
-}
-.tnt-made-chip s {
-  color: color-mix(in srgb, var(--pg-err) 75%, var(--pg-text));
-}
-.tnt-made-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.tnt-made-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 30px;
-  max-width: 100%;
-  margin: 0;
-  padding: 0 11px;
-  border: 1px solid var(--pg-line-2);
-  border-radius: var(--pg-r-sm);
-  background: var(--pg-panel-2);
-  color: var(--pg-text);
-  font: 500 12.5px/1 var(--pg-sans);
-  cursor: pointer;
-}
-.tnt-made-chip:hover {
-  border-color: var(--pg-accent);
-}
-.tnt-made-chip[aria-pressed='true'] {
-  border-color: var(--pg-accent);
-  background: var(--pg-accent-soft);
-}
-.tnt-made-chip > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.tnt-made-chip small {
-  color: var(--pg-text-2);
-  font-weight: 400;
 }
 
 /* the site's state: green = it answers now, grey = nothing answers */
@@ -500,12 +551,5 @@
   }
   .tnt-made-thumb:hover {
     transform: none;
-  }
-}
-
-/* under touch every card and pill is at least 44 tall */
-@media (pointer: coarse) {
-  .tnt-made-top .tnt-made-chip {
-    height: 44px;
   }
 }

@@ -170,6 +170,21 @@
   text-align: right;
 }
 
+/* what the project's past tasks taught, under a tip's own numbers (187 `costLearned`,
+   `partLearned`; mock docs/plans/design-concepts/thread-learning.html) */
+.ttt-learned {
+  margin-top: 8px;
+  padding-top: 7px;
+  box-shadow: inset 0 1px 0 var(--pg-line);
+}
+.ttt-learned > b {
+  color: var(--pg-accent);
+}
+.ttt-learned code {
+  color: var(--pg-text-2);
+  font: 11.5px var(--pg-mono);
+}
+
 /* in a block with no "What it made" top line, the cost word ends the time line */
 .ttt-time .ttt-cost {
   margin-left: auto;

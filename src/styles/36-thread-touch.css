@@ -220,4 +220,117 @@
   html.tnt-on:not(#tnt):not(#pg) #terminalView {
     --tat-arrow-room: 54px;
   }
+
+  /* All threads' top row (135): New thread, Same prompt and Add a tool, 44 high in their places
+     (the row is 54 high, so it does not grow). */
+  html.tnt-on:not(#tnt):not(#pg) #terminalView.tat-on .tat-new:not(#lp) {
+    min-width: 44px;
+    height: 44px;
+    justify-content: center;
+  }
+
+  /* A card's head buttons, its pick box and "open on its own" (135): 44 by 44, side by side with
+     no pixel shared (38 pulls them 8 px together for a pointer; the head's gap is 10). */
+  html.tnt-on:not(#tnt):not(#pg) .tat-head :is(.tat-act, .tat-open):not(#lp) {
+    width: 44px;
+    height: 44px;
+  }
+  html.tnt-on:not(#tnt):not(#pg) .tat-head .tat-act + :is(.tat-act, .tat-open):not(#lp) {
+    margin-left: -10px;
+  }
+
+  /* The pencil beside a card's name keeps the name's 19 px line: at 44 it takes back its extra
+     height, so the head does not move between rest and renaming. */
+  html.tnt-on:not(#tnt):not(#pg) .tat-name-line .tat-rename:not(#lp) {
+    width: 44px;
+    height: 44px;
+    margin: -12.5px -12px;
+  }
+
+  /* A narrow card cannot hold the name and every button at 44 on one line: as on the open thread
+     (the 680 px rule above), the name keeps the first line and the buttons go to the next one,
+     at its right end. */
+  html.tnt-on:not(#tnt):not(#pg) .tat-card:not(#lp) {
+    container: tat-card / inline-size;
+  }
+  @container tat-card (max-width: 600px) {
+    html.tnt-on:not(#tnt):not(#pg) .tat-head:not(#lp) {
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      row-gap: 6px;
+    }
+    html.tnt-on:not(#tnt):not(#pg) .tat-head-text:not(#lp) {
+      flex-basis: calc(100% - 18px);
+    }
+  }
+
+  /* "Tell agents" in Details › Learned here (189): the whole label is the finger's target, 44
+     high, taking its extra height back so the lesson row does not grow. */
+  .ttl-switch {
+    min-height: 44px;
+    margin: -12px 0;
+  }
+
+  /* Details › Connections (191): each switch 44 high, taking its extra height back so the rows do
+     not grow; "Manage connections ›" is a line of words, pressed through a clear layer 44 high. */
+  .cn-line .sk-switch {
+    min-width: 44px;
+    height: 44px;
+    margin: -7px 0;
+    justify-content: center;
+  }
+  .ttd button.cn-manage {
+    position: relative;
+  }
+  .ttd button.cn-manage::after {
+    content: '';
+    position: absolute;
+    inset: -14px -6px;
+  }
+
+  /* Details › Changes (153): the row that leads to keep or undo grows to 44 high in its place
+     (the weight of 41's row rule, which sets its height to 30). */
+  html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-link[data-review]:not(#lp) {
+    min-height: 44px;
+    align-items: center;
+  }
+
+  /* ------------------------------------------------------------ Mark up and send (151) */
+  /* Its buttons, choices and text fields are 44 high; the color dots keep their size and are
+     pressed through a clear layer, spaced so two layers never meet. */
+  .snap-mark {
+    --snap-mark-rows: 420px;
+  }
+  .snap-mark .dv-btn:not(.snap-mark-ink):not(#lp) {
+    height: 44px;
+    min-width: 44px;
+  }
+  .snap-mark .dv-name:not(#lp) {
+    height: 44px;
+  }
+  .snap-mark .dv-pick:has(> .snap-mark-ink) {
+    gap: 20px;
+    padding: 0 10px;
+  }
+  .snap-mark .dv-btn.snap-mark-ink {
+    position: relative;
+  }
+  .snap-mark .dv-btn.snap-mark-ink::after {
+    content: '';
+    position: absolute;
+    inset: -10px;
+  }
+
+  /* ------------------------------------------------------------ the information layout (feature 14) */
+  /* "Show all" and "Full report" (30), a document or data row and "Open Changes" in "What it made"
+     (51) grow to 44 in their own places. */
+  html.tnt-on:not(#tnt):not(#pg) :is(.tnt-unfold, .tnt-made-row):not(#lp) {
+    min-height: 44px;
+  }
+  html.tnt-on:not(#tnt):not(#pg) .tnt-made-ghead:not(#lp) {
+    height: 44px;
+  }
+  html.tnt-on:not(#tnt):not(#pg) .tnt-made-ghead .tnt-made-act:not(#lp) {
+    height: 44px;
+  }
 }

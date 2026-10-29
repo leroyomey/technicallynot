@@ -2624,6 +2624,11 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
       text = input.value.trim();
     if (!text && !files?.count()) return;
 
+    // "Same prompt" on All threads (135): the main box's prompt goes to every picked thread there,
+    // and only there. Ctrl+Enter and a second prompt box send as before.
+    if (!forceNew && !noFiles && input === promptInput && window.TnaiAllThreads?.sameRoute?.())
+      return window.TnaiAllThreads.sendSame(input);
+
     // Where the prompt came from (47), checked again now in case Enter came before the typing check
     // finished.
     const full = window.TnaiPastedText?.expand(text) ?? text;
@@ -3231,6 +3236,17 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
       paintRoute();
       return true;
     }
+
+    // A CLI without a prompt hook (Codex, OpenCode, Cursor Agent) gets what the project's past
+    // tasks taught at the end of the prompt (desktop/task-learning.js, report-repeats.js); Claude
+    // Code gets it from its hook. Never waits more than 400 ms.
+    let learnedNote = '';
+    if (!slashOnly && chosen.agent !== 'Claude Code' && window.tnaiNative?.learning?.note) {
+      learnedNote = await Promise.race([
+        Promise.resolve(window.tnaiNative.learning.note(chosen.paneId, text)).catch(() => ''),
+        new Promise(done => setTimeout(() => done(''), 400)),
+      ]);
+    }
     sending = true;
     try {
       await window.TnaiLifecycle?.sent(chosen.paneId, r.origin);
@@ -3249,6 +3265,7 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
           : (lead
               ? '[TN.ai] ' + busyNote + message + leftoverNote(chosen.paneId)
               : (r.full ? busyNote : '') + message) +
+              (learnedNote || '') +
               (window.TnaiSessionSkills?.note(chosen.paneId) || ''),
         { userText: text, holdIfBusy: true }
       )
@@ -3437,6 +3454,16 @@ html.tnai-files-hidden .layout.overview-mode:not(.workspace-mode) .repository-ra
       setText(routeHint, going);
       routeHint.hidden = false;
       routeHint.classList.remove('tnai-new', 'tnai-far');
+      fitRouteIfChanged();
+      return;
+    }
+
+    // "Same prompt" on All threads (135): the hint names every thread the prompt goes to.
+    const same = window.TnaiAllThreads?.sameRoute?.() || '';
+    if (same) {
+      setText(routeHint, same);
+      routeHint.hidden = false;
+      routeHint.classList.remove('tnai-new', 'tnai-far', 'tnai-elsewhere');
       fitRouteIfChanged();
       return;
     }

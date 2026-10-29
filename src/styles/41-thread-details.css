@@ -719,17 +719,27 @@ html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-link:not(#lp):hover,
   display: none;
 }
 
-/* ---------------------------------------------------------------- color by section
-   (user 2026-10-23: "no color, lots of white text, hard to tell what's going on ... color tab
-   things", mock docs/plans/design-concepts/helper-split.html part 2). Each section is a soft card
-   tinted by its own tone, its head a colored tab with a mark; the status on top is a card in its
-   state's color. Tones are the app's tokens; Working with and Skills take hues by kind (07, 31). */
+/* ---------------------------------------------------------------- one card, color in the icons
+   (user 2026-10-28, "One card" of docs/plans/design-concepts/details-quiet.html, chosen over the
+   tinted cards of helper-split.html part 2: "without making is super overcolored"). The sections
+   share one neutral surface with a faint line between them; each section's tone lives only in its
+   small icon, so the eye can still tell them apart. The status card is neutral too: only its dot
+   and its state word carry the state's color. Tones are the app's tokens; Working with and Skills
+   take hues by kind (07, 31). */
+.ttd-list {
+  overflow: hidden;
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel-2);
+}
 .ttd-sec {
   --tone: var(--pg-text-3);
   overflow: hidden;
-  margin: 0 0 8px;
-  border-radius: var(--pg-r-sm);
-  background: color-mix(in srgb, var(--tone) 5%, var(--pg-panel-2));
+  margin: 0;
+}
+
+/* a faint line above every section that follows a shown one; never above the first shown one */
+.ttd-sec:not([hidden], [data-empty]:is([data-sec='queue'], [data-sec='team'])) ~ .ttd-sec {
+  box-shadow: inset 0 1px 0 var(--pg-line);
 }
 .ttd-sec[data-sec='queue'] {
   --tone: var(--pg-accent);
@@ -755,17 +765,17 @@ html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-head:not(#lp),
   height: 36px;
   padding: 0 10px;
   border-radius: 0;
-  background: color-mix(in srgb, var(--tone) 13%, transparent);
-  box-shadow: inset 3px 0 0 var(--tone);
+  background: transparent;
+  box-shadow: none;
+  color: var(--pg-text);
+  font-weight: 600;
 }
 .ttd-mark {
   flex: none;
   display: inline-grid;
-  width: 22px;
+  width: 18px;
   height: 22px;
   place-items: center;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--tone) 26%, transparent);
   color: var(--tone);
 }
 .ttd-head > em:not(:empty) {
@@ -777,25 +787,25 @@ html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-head:not(#lp),
   display: inline-grid;
   place-items: center;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--tone) 30%, transparent);
-  color: var(--pg-text);
+  background: var(--pg-panel-hover);
+  color: var(--pg-text-2);
   font-size: 11px;
 }
 .ttd-head::after {
   margin-left: auto;
 }
 .ttd-sec > .ttd-body {
-  padding: 8px 10px 10px 13px;
+  padding: 2px 10px 10px 13px;
 }
 
-/* names (branch, model, tool) as small chips in their section's tone */
+/* names (branch, model, tool) as small neutral chips */
 .ttd-kv dd:is([data-fact='Branch'], [data-fact='Model'], [data-fact='Connection']) > .ttd-clamp {
   width: fit-content;
   max-width: 100%;
   box-sizing: border-box;
   padding: 1px 8px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--tone) 18%, transparent);
+  background: var(--pg-panel-hover);
 }
 .ttd-plus {
   color: var(--pg-work-text);
@@ -806,11 +816,16 @@ html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-head:not(#lp),
   font-weight: 600;
 }
 
-/* the status on top: a card in its state's color */
+/* the status on top: a neutral card; its dot carries the state's color, and the word "Working"
+   is green (green words take --pg-work-text, tnai-modern-ui) */
 .ttd-now {
   --tone: var(--pg-idle);
-  background: color-mix(in srgb, var(--tone) 14%, var(--pg-panel-2));
-  box-shadow: inset 3px 0 0 var(--tone);
+  background: var(--pg-panel-2);
+  box-shadow: none;
+}
+.ttd-now:is([data-status='working'], [data-status='background'], [data-status='starting'])
+  .ttd-state {
+  color: var(--pg-work-text);
 }
 .ttd-now[data-status='working'],
 .ttd-now[data-status='background'],
@@ -832,8 +847,29 @@ html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-head:not(#lp),
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--tone) 25%, transparent);
 }
 
-/* quiet lines and labels stay readable on the tinted sections */
+/* quiet lines and labels stay readable on the shared card */
 .ttd-sec .ttd-note,
 .ttd-sec .ttd-kv dt {
   color: var(--pg-text-2);
+}
+
+/* ---------------------------------------------------------------- the git view (153, feature 9) */
+/* Under Changes: the last commits and the other local branches, each list under its one-line
+   remark and set apart from the facts above by the room the facts keep between their rows. */
+.ttd-git {
+  margin-top: 12px;
+}
+.ttd-git > .ttd-note {
+  margin-bottom: 4px;
+}
+
+/* A commit's time is a clock today and a date before ("May 12, 2025"): one time column for the
+   whole list, so every message starts on the same line. */
+.ttd-timeline.ttd-commits {
+  grid-template-columns: max-content 20px minmax(0, 1fr);
+  column-gap: 8px;
+}
+.ttd-timeline.ttd-commits li {
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
 }

@@ -1,15 +1,15 @@
 {
   "Claude Code": {
-    "version": "2.1.283",
-    "checked": "2026-09-27"
+    "version": "2.1.312",
+    "checked": "2026-10-28"
   },
   "Codex": {
     "version": "0.157.1",
     "checked": "2026-09-27"
   },
   "Cursor Agent": {
-    "version": "2026.9.26",
-    "checked": "2026-09-27"
+    "version": "2026.10.22",
+    "checked": "2026-10-28"
   },
   "OpenCode": {
     "version": "1.18.35",

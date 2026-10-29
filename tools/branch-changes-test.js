@@ -261,6 +261,127 @@ async function main() {
     assert.strictEqual(facts.uncommitted, 1);
     assert.strictEqual(facts.files, 0);
     assert.strictEqual(facts.pr, null);
+    assert.deepStrictEqual(facts.commits, []);
+    assert.deepStrictEqual(facts.otherBranches, []);
+    assert.strictEqual(facts.otherBranchCount, 0);
+  });
+
+  // ---------------------------------------------------------------- the git view (feature 9)
+  await check('git view: the last commits, newest first, with author, time and files', async () => {
+    const facts = await reader(ghStub({ error: null, stdout: PR_JSON, stderr: '' }).runGh).read(
+      branchRepo
+    );
+    assert.deepStrictEqual(
+      facts.commits.map(commit => commit.subject),
+      ['third', 'second', 'first']
+    );
+    const [third, second] = facts.commits;
+    assert.strictEqual(third.author, 'Test');
+    assert.ok(third.at > Date.now() - 10 * 60 * 1000 && third.at <= Date.now() + 1000);
+    assert.ok(/^[0-9a-f]{7,}$/.test(third.hash), 'short id: ' + third.hash);
+    assert.deepStrictEqual(
+      [third.files, third.added, third.removed, third.merge],
+      [1, 2, 1, false]
+    );
+    assert.deepStrictEqual([second.files, second.added, second.removed], [1, 2, 0]);
+  });
+
+  await check('git view: other local branches without the current one', async () => {
+    const facts = await reader(ghStub({ error: null, stdout: PR_JSON, stderr: '' }).runGh).read(
+      branchRepo
+    );
+
+    // the worktree check above left the branch tnai/other in this repository
+    assert.deepStrictEqual(facts.otherBranches.map(branch => branch.name).sort(), [
+      'master',
+      'tnai/other',
+    ]);
+    assert.strictEqual(facts.otherBranchCount, 2);
+    assert.ok(facts.otherBranches.every(branch => branch.at > 0));
+    assert.ok(facts.otherBranches[0].at >= facts.otherBranches[1].at, 'newest first');
+  });
+
+  await check(
+    'git view: many branches are cut to 12 and counted; a merge; any language',
+    async () => {
+      const folder = makeRepo('many');
+      for (let index = 0; index < 15; index++) gitIn(folder, 'branch', 'side-' + index);
+      gitIn(folder, 'checkout', '-q', '-b', 'feature');
+      write(folder, 'f.txt', 'f\n');
+      gitIn(folder, 'add', '.');
+      gitIn(folder, 'commit', '-q', '-m', 'Ünïcode ✓ message');
+      gitIn(folder, 'checkout', '-q', 'master');
+      gitIn(folder, 'merge', '-q', '--no-ff', '-m', 'Merge feature', 'feature');
+      const facts = await reader(ghStub({ error: null, stdout: PR_JSON, stderr: '' }).runGh).read(
+        folder
+      );
+      assert.strictEqual(facts.otherBranchCount, 16);
+      assert.strictEqual(facts.otherBranches.length, 12);
+      assert.ok(!facts.otherBranches.some(branch => branch.name === 'master'));
+      const [merge, feature] = facts.commits;
+      assert.deepStrictEqual([merge.subject, merge.merge, merge.files], ['Merge feature', true, 0]);
+      assert.strictEqual(feature.subject, 'Ünïcode ✓ message');
+    }
+  );
+
+  await check(
+    'git view is read only: only reading git commands, nothing on disk moves',
+    async () => {
+      const asked = [];
+      const recording = (args, options) => {
+        asked.push(args[0]);
+        return gitService.internal.git(args, options);
+      };
+      const read = changesModule.createBranchChanges({
+        git: recording,
+        parseStatus: gitService.internal.parseStatus,
+        numstat: async (args, cwd) => {
+          asked.push('diff');
+          return gitService.internal.numstat(args, cwd);
+        },
+        runGh: ghStub({ error: null, stdout: PR_JSON, stderr: '' }).runGh,
+      }).read;
+      const before = [
+        gitIn(branchRepo, 'rev-parse', 'HEAD'),
+        gitIn(branchRepo, 'branch', '--show-current'),
+        gitIn(branchRepo, 'status', '--porcelain'),
+        gitIn(branchRepo, 'stash', 'list'),
+      ];
+      await read(branchRepo);
+      const after = [
+        gitIn(branchRepo, 'rev-parse', 'HEAD'),
+        gitIn(branchRepo, 'branch', '--show-current'),
+        gitIn(branchRepo, 'status', '--porcelain'),
+        gitIn(branchRepo, 'stash', 'list'),
+      ];
+      assert.deepStrictEqual(after, before);
+      const reading = new Set([
+        'rev-parse',
+        'status',
+        'for-each-ref',
+        'rev-list',
+        'merge-base',
+        'log',
+        'diff',
+      ]);
+      const writing = asked.filter(verb => !reading.has(verb));
+      assert.deepStrictEqual(writing, [], 'git commands that are not reads: ' + writing.join(', '));
+      assert.ok(asked.includes('log') && asked.includes('for-each-ref'));
+    }
+  );
+
+  await check('parseLog and parseBranches take odd input without throwing', async () => {
+    assert.deepStrictEqual(changesModule.parseLog(''), []);
+    assert.deepStrictEqual(changesModule.parseLog(null), []);
+    const [only] = changesModule.parseLog('\x1eabc1234\x1f\x1fAnn\x1f100\x1fNo stat line');
+    assert.deepStrictEqual(
+      [only.hash, only.subject, only.author, only.at, only.files, only.merge],
+      ['abc1234', 'No stat line', 'Ann', 100000, 0, false]
+    );
+    assert.deepStrictEqual(changesModule.parseBranches('', 'main'), {
+      otherBranches: [],
+      otherBranchCount: 0,
+    });
   });
 
   await check('asks together share one run; a later ask within 5 s is kept', async () => {

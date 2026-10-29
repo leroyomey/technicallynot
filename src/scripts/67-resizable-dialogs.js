@@ -148,7 +148,17 @@ html[data-tnai-rz-drag],html[data-tnai-rz-drag] *{cursor:var(--tnai-rz-cursor)!i
       n.removeAttribute('data-tnai-grow');
       n.removeAttribute('data-tnai-grow-col');
     });
+
+    // A list laid out in several columns (the shortcuts list, `column-count: 2`) keeps its own
+    // height and its columns: made a flex column, its sections spilled over each other after a
+    // drag, and given the dialog's height it adds columns sideways instead of scrolling down
+    // (learned 2026-10-28, bug sweep: the browser tests). The box around it scrolls instead.
+    const multiColumn = node => {
+      const cs = getComputedStyle(node);
+      return cs.columnCount !== 'auto' || cs.columnWidth !== 'auto';
+    };
     let g = pick(box);
+    if (g && multiColumn(g)) return;
     for (let depth = 0; g && depth < 4; depth++) {
       g.setAttribute('data-tnai-grow', '');
       const cs = getComputedStyle(g),
@@ -162,7 +172,7 @@ html[data-tnai-rz-drag],html[data-tnai-rz-drag] *{cursor:var(--tnai-rz-cursor)!i
       )
         break;
       const c = pick(g);
-      if (!c || c.offsetHeight < g.clientHeight * 0.7) break;
+      if (!c || c.offsetHeight < g.clientHeight * 0.7 || multiColumn(c)) break;
       g.setAttribute('data-tnai-grow-col', '');
       g = c;
     }

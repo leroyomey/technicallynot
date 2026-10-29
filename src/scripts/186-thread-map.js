@@ -115,6 +115,9 @@
 
   let current = null;
 
+  // the block node each mark button stands for
+  const markNode = new WeakMap();
+
   function draw() {
     const talk = talkEl();
     const list = talk?.querySelector('.tnt-talk-list');
@@ -145,24 +148,66 @@
     map.style.height = talkBox.height + 'px';
     map.style.left = talkBox.right - hostBox.left - bar - 13 + 'px';
 
+    // The conversation keeps clear of the strip: in a narrow thread its blocks reach the box's
+    // right edge and the marks lay over the bubbles (user screenshot 2026-10-28). Only the part
+    // that would be under the strip is given back, so a wide thread looks as before.
+    makeRoom(list, talkBox.right - bar - 13);
+
+    // Each block keeps its own button from one drawing to the next, so a press under way
+    // (mousedown, then mouseup) stays on one button while an agent writes and the map is drawn
+    // again. A new button, or another block's, under the pointer between the two lost the click
+    // (learned 2026-10-28: 122 also drops the oldest blocks of a long conversation, so places in
+    // the list shift).
+    const byNode = new Map([...map.children].map(button => [markNode.get(button), button]));
     const buttons = marks.map((mark, index) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'tmap-mark';
+      let button = byNode.get(mark.node);
+      byNode.delete(mark.node);
+      if (!button) {
+        button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'tmap-mark';
+        markNode.set(button, mark.node);
+      }
       button.dataset.kind = mark.kind;
       button.dataset.index = String(index);
       button.style.top = (placeOf(talk, shownNode(mark)) * 100).toFixed(2) + '%';
       button.setAttribute('aria-label', mark.label + (mark.text ? ': ' + mark.text : ''));
       return button;
     });
-    map.replaceChildren(...buttons);
+    byNode.forEach(button => button.remove());
+
+    // in the marks' order, moving only a button that is out of place
+    let place = map.firstChild;
+    for (const button of buttons) {
+      if (button === place) place = place.nextSibling;
+      else map.insertBefore(button, place);
+    }
     map.hidden = false;
   }
 
   function hide() {
     map.hidden = true;
+    if (roomOn) {
+      roomOn.style.paddingRight = '';
+      roomOn = null;
+    }
     current = null;
     hideTip();
+  }
+
+  // The list that was given room for the strip (undone when the strip hides or moves on).
+  let roomOn = null;
+
+  // Room on the right of the conversation's list so nothing in it reaches under the strip, whose
+  // left edge is at `stripLeft` (screen x): measured without room first, then as much as needed
+  // plus a 6 px gap, or none.
+  function makeRoom(list, stripLeft) {
+    if (roomOn && roomOn !== list) roomOn.style.paddingRight = '';
+    list.style.paddingRight = '';
+    const over = list.getBoundingClientRect().right - (stripLeft - 6);
+    const own = parseFloat(getComputedStyle(list).paddingRight) || 0;
+    if (over > own) list.style.paddingRight = Math.ceil(over) + 'px';
+    roomOn = list;
   }
 
   // ---------- hover and press ----------
@@ -200,6 +245,12 @@
     const top =
       target.getBoundingClientRect().top - box.top + talk.scrollTop - talk.clientHeight / 3;
     const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // 122 must not follow the newest line back down while this scroll is on its way (an agent at
+    // work adds lines all the time); a press that does not move the view changes nothing there
+    const goal = Math.min(Math.max(0, top), talk.scrollHeight - talk.clientHeight);
+    if (Math.abs(goal - talk.scrollTop) > 1)
+      safe(() => window.TnaiThreadReadable?.leaveEnd?.(talk, goal), null);
     talk.scrollTo({ top, behavior: still ? 'auto' : 'smooth' });
 
     // the block says "here" for a moment
@@ -231,9 +282,25 @@
     if (timer) return;
     timer = setTimeout(() => {
       timer = 0;
-      draw();
+      if (!pressing) draw();
     }, REDRAW_AFTER_MS);
   };
+
+  // While a mark is pressed the map is not drawn again: an agent at work moves every mark a little
+  // at each drawing (and 122 drops the oldest blocks), so another mark slid under the pointer
+  // between mousedown and mouseup and the click was lost (learned 2026-10-28). It is drawn once
+  // the press ends.
+  let pressing = false;
+  map.addEventListener('pointerdown', () => {
+    pressing = true;
+  });
+  const pressEnded = () => {
+    if (!pressing) return;
+    pressing = false;
+    schedule();
+  };
+  window.addEventListener('pointerup', pressEnded, true);
+  window.addEventListener('pointercancel', pressEnded, true);
 
   // The list's blocks change (122 adds, folds, answers), the box's size changes, or scrolling
   // stops (blocks seen for the first time get their real height). One observer per box, made

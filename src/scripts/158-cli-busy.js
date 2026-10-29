@@ -68,6 +68,18 @@
     safe(() => window.TnaiThreadList?.refresh?.(), null);
   }
 
+  // Main holds a prompt from the prompt box while its thread compacts and sends it when the
+  // compact ends (desktop/attention-service.js `setCompacting`), so it waits in the conversation
+  // as queued instead of vanishing into the CLI's input. This script is where a compact's start
+  // and end are known for every CLI, so it tells main both.
+  function tellMain(paneId, on) {
+    safe(() => window.tnaiNative?.attention?.compacting?.(paneId, on)?.catch?.(() => {}), null);
+  }
+
+  // Held prompts no longer wait for this compact, however it ended (main sends them, and its
+  // change repaints the queued bubbles through 71).
+  const compactEnded = paneId => tellMain(paneId, false);
+
   function start(paneId, command, trigger) {
     if (!paneId || !command) return;
     const name = String(command).toLowerCase();
@@ -88,12 +100,18 @@
       sawWork: false,
       quietSince: 0,
     });
+    if (COMPACT.has(name)) tellMain(paneId, true);
+
+    // another command took the place of a compact: that compact is over
+    else if (had?.compact) compactEnded(paneId);
     if (!ticker) ticker = setInterval(tick, 1000);
     repaint();
   }
 
   function end(paneId) {
+    const entry = running.get(paneId);
     if (!running.delete(paneId)) return;
+    if (entry.compact) compactEnded(paneId);
     if (!running.size) {
       clearInterval(ticker);
       ticker = 0;
@@ -182,6 +200,10 @@
   }
 
   safe(() => window.tnaiNative?.agentEvents?.on?.(onEvent), null);
+
+  // A window that starts anew knows of no compact: main keeps none from before (a reload in the
+  // middle of one would otherwise hold prompts until main's own limit).
+  tellMain('', false);
 
   window.TnaiCliBusy = { get, noted, start, end };
 })();

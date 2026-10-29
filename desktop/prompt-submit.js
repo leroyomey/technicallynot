@@ -8,7 +8,12 @@
 // Codex (and other TUIs on Windows) get no real bracketed paste through ConPTY: they spot a paste
 // by how fast the keys come, and an Enter inside that burst becomes a newline in the input instead
 // of submitting. So Enter waits a moment after the text, longer for longer text, per CLI.
-const ENTER_MS = { Codex: 450, Terminal: 120 };
+// Terminal: the shells themselves need no wait. Measured 2026-10-28 with node-pty (Windows
+// PowerShell 5.1, PowerShell 7, cmd, Git Bash): text and Enter even in one write ran whole in 33 of
+// 33 tries, at a fresh first prompt and at an idle one, lines up to 428 characters. The 30 ms only
+// keep Enter a key press of its own, apart from the typed text, for a program the user runs inside
+// the thread (tools/terminal-enter-check.js; was 120 ms).
+const ENTER_MS = { Codex: 450, Terminal: 30 };
 const ENTER_DEFAULT = 300;
 
 // extra Enters, 1.5 s apart, for a CLI that gives no sign yet (stops once its task shows as
