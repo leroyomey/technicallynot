@@ -6,6 +6,10 @@
  * (Atomics.wait), not a busy loop. Run: node tools/desktop-check/stall-log-check.js
  */
 'use strict';
+
+// The stall lines alone: the profile that turns on after a stall would add its own line to each
+// message after the first (stall-profile-check.js checks that part).
+if (!process.env.TNAI_STALL_PROFILE) process.env.TNAI_STALL_PROFILE = '0';
 const stalls = require('../../desktop/stall-log');
 const lines = [],
   realWarn = console.warn;

@@ -306,21 +306,8 @@ const turnKey = t =>
 // attention-service.js: a task ended, so prompts held for a working agent can go
 const endListeners = new Set();
 
-// change-review.js: a task started, so its files' state at the start is noted
-const startListeners = new Set();
-
 function publish(t) {
   if (turns.get(t.paneId) !== t || !t.startedAt) return;
-
-  // a turn first seen already ended (a resumed session's last task) never started here
-  if (!t.startSaid && !t.endedAt) {
-    t.startSaid = true;
-    for (const fn of startListeners) {
-      try {
-        fn(t.paneId);
-      } catch {}
-    }
-  }
   if (t.endedAt && !t.endSaid) {
     t.endSaid = true;
     for (const fn of endListeners) {
@@ -1983,11 +1970,6 @@ module.exports = {
   onEnd(fn) {
     endListeners.add(fn);
     return () => endListeners.delete(fn);
-  },
-  // Called with the paneId once per task, when it starts (change-review.js).
-  onStart(fn) {
-    startListeners.add(fn);
-    return () => startListeners.delete(fn);
   },
   // pty:start: a new process for the pane starts with no turn; a resumed Codex session is attached
   // at once.

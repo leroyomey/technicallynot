@@ -297,4 +297,125 @@
     });
     sync();
   }
+
+  // A custom agent an agent proposed from the user's words (`tnai agent save`;
+  // desktop/agent-proposals.js pushes `agentProposals:changed`): one notice per proposal, with
+  // what changes (the role before and after in full) and Accept / Decline. Accept saves it through
+  // 17's custom agent API, the same path as Settings › Agents › Custom agents; nothing changes
+  // before that. ✕ only hides it until the next start; it still waits there.
+  const proposals = native.agentProposals,
+    custom = window.TnaiCustomAgents;
+  if (proposals?.list && custom?.create) {
+    let shownProposals = new Set();
+    const toast = message =>
+      typeof window.toast === 'function' ? window.toast(message) : console.info(message);
+    const skillWord = ids =>
+      ids.length ? ids.map(id => String(id).split('/').pop()).join(', ') : 'none';
+
+    const describe = p => {
+      const a = p.after,
+        b = p.before,
+        lines = [];
+      if (!b) {
+        lines.push(
+          'On ' + a.base + (p.scope === 'project' ? ', kept in this project.' : ', personal.')
+        );
+        lines.push('Role: ' + (a.role || '(none)'));
+        lines.push('Skills: ' + skillWord(a.skillIds));
+      } else {
+        if (b.name !== a.name) lines.push('Name: ' + b.name + ' → ' + a.name);
+        if (b.role !== a.role) {
+          lines.push('Role now: ' + (b.role || '(none)'));
+          lines.push('Role after: ' + (a.role || '(none)'));
+        }
+        const added = a.skillIds.filter(id => !b.skillIds.includes(id)),
+          removed = b.skillIds.filter(id => !a.skillIds.includes(id));
+        if (added.length) lines.push('Skills added: ' + skillWord(added));
+        if (removed.length) lines.push('Skills removed: ' + skillWord(removed));
+      }
+      return lines.concat(p.notes || []).join('\n');
+    };
+
+    // The agent as it is now must still be what the proposal was made from: a change the user
+    // made since then is never overwritten.
+    async function accept(p) {
+      await custom.refresh();
+      const a = p.after;
+      if (p.kind === 'new') {
+        await custom.create({
+          name: a.name,
+          base: a.base,
+          role: a.role,
+          skillIds: a.skillIds,
+          scope: p.scope,
+        });
+      } else {
+        const now = custom.get(p.targetId);
+        if (!now) throw new Error(p.before.name + ' no longer exists.');
+        const b = p.before;
+        const same = (x, y) => JSON.stringify([...x].sort()) === JSON.stringify([...y].sort());
+        if (now.name !== b.name || (now.role || '') !== b.role || !same(now.skillIds, b.skillIds))
+          throw new Error(
+            now.name + ' was changed since this was proposed. Ask the agent to propose it again.'
+          );
+        if (a.name !== b.name) await custom.rename(p.targetId, a.name);
+        if (a.role !== b.role) await custom.update(p.targetId, { role: a.role });
+        const added = a.skillIds.filter(id => !b.skillIds.includes(id)),
+          removed = b.skillIds.filter(id => !a.skillIds.includes(id));
+        if (added.length) await custom.attach(p.targetId, added);
+        if (removed.length) await custom.detach(p.targetId, removed);
+      }
+      await proposals.settle(p.id, 'accepted');
+      toast(
+        (p.kind === 'new' ? 'Saved the custom agent ' : 'Saved the change to ') +
+          a.name +
+          (p.kind === 'new' ? '' : '; a running copy picks it up on its next start')
+      );
+    }
+
+    const decline = async p => {
+      await proposals.settle(p.id, 'declined');
+      toast('Declined the proposal for ' + (p.before?.name || p.after.name));
+    };
+    const run = (fn, p) => () =>
+      fn(p).catch(error => toast('Not saved: ' + (error?.message || 'unknown error')));
+
+    const syncProposals = async () => {
+      let list;
+      try {
+        const result = await proposals.list();
+        if (!result?.ok) return;
+        list = result.value || [];
+      } catch {
+        return;
+      }
+      const now = new Set();
+      for (const p of list) {
+        now.add(p.id);
+        bell.notify({
+          key: 'agent-proposal:' + p.id,
+          source: 'Custom agents',
+          tag: 'Proposal',
+          k: 'next',
+          full: true,
+          title:
+            p.kind === 'new'
+              ? p.by + ' proposes a new custom agent “' + p.after.name + '”'
+              : p.by + ' proposes a change to “' + p.before.name + '”',
+          text: describe(p),
+          actions: [
+            { id: 'accept', label: 'Accept', primary: true, run: run(accept, p) },
+            { id: 'decline', label: 'Decline', run: run(decline, p) },
+          ],
+        });
+      }
+      for (const id of shownProposals) if (!now.has(id)) bell.unnotify('agent-proposal:' + id);
+      shownProposals = now;
+    };
+    proposals.onChanged?.(syncProposals);
+
+    // another project opened: its own proposals show, the other project's leave
+    window.addEventListener('tnai:custom-agents-changed', syncProposals);
+    syncProposals();
+  }
 })();

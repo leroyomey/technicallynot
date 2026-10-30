@@ -302,27 +302,87 @@
     voiceGpu = localStorage.getItem(GPU_STORE) === 'on';
   } catch {}
 
+  // The cues play through one audio output, opened as a press begins (warmCue) so it is already
+  // running when the mic opens. Many sound drivers and Bluetooth headsets play nothing for the
+  // first moments of a freshly opened output, and the old cue opened a new one for every tone and
+  // played its whole 0.17 s inside that gap, at 3% volume (learned 2026-10-29). The output closes
+  // a few seconds after the last press, so none stays open between presses.
+  const CUE_PEAK = 0.12; // loudest point of a note (about -18 dB): clearly heard, still soft
+  const CUE_NOTE_S = 0.14; // length of one note
+  const CUE_STEP_S = 0.09; // the second note starts this long after the first
+  const CUE_LEAD_S = 0.03; // a note is set this far ahead, never at the output's current instant
+  const CUE_FRESH_S = 0.2; // the first moments of a just-opened output, which may not be heard
+  const CUE_LATE_S = 0.5; // a start tone this late would land in speech: skipped instead
+  const CUE_IDLE_MS = 4000;
+  let cueOutput = null;
+  let cueIdleTimer = 0;
+
+  function cueContext() {
+    if (cueOutput && cueOutput.state !== 'closed') return cueOutput;
+    const Context = window.AudioContext || window.webkitAudioContext;
+    cueOutput = new Context({ latencyHint: 'interactive' });
+    return cueOutput;
+  }
+
+  // Closes the cue output once no press is running and no cue has played for a few seconds.
+  function restCue() {
+    clearTimeout(cueIdleTimer);
+    cueIdleTimer = setTimeout(() => {
+      if (busy) return restCue();
+      const output = cueOutput;
+      cueOutput = null;
+      if (output) output.close().catch(() => {});
+    }, CUE_IDLE_MS);
+  }
+
+  // Opens the cue output as a press begins. Never waits and never throws: the press goes on at
+  // once.
+  function warmCue() {
+    if (!voiceSounds) return;
+    try {
+      const output = cueContext();
+      if (output.state !== 'running') output.resume().catch(() => {});
+      restCue();
+    } catch {}
+  }
+
   function cue(on) {
     if (!voiceSounds) return;
     try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)(),
-        t = ctx.currentTime;
-      const notes = on ? [587, 880] : [880, 587];
-      notes.forEach((f, i) => {
-        const osc = ctx.createOscillator(),
-          gain = ctx.createGain(),
-          at = t + i * 0.07;
-        osc.type = 'sine';
-        osc.frequency.value = f;
-        gain.gain.setValueAtTime(0.0001, at);
-        gain.gain.exponentialRampToValueAtTime(0.03, at + 0.01);
-        gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.09);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(at);
-        osc.stop(at + 0.1);
-        if (i === notes.length - 1) osc.onended = () => ctx.close();
-      });
+      const output = cueContext(),
+        askedAt = performance.now();
+      const play = () => {
+        if (output.state === 'closed') return;
+
+        // Past the output's first moments, and a little ahead of now.
+        const startAt = Math.max(output.currentTime + CUE_LEAD_S, CUE_FRESH_S);
+        const startIn = (performance.now() - askedAt) / 1000 + (startAt - output.currentTime);
+        const recording = !!recorder?.recording;
+        if (on && recording && startIn > CUE_LATE_S) return;
+
+        // The start tone can reach the mic: its whole time stays out of what counts as said.
+        const toneEndIn = startIn + CUE_STEP_S + CUE_NOTE_S;
+        if (on && recording && toneEndIn + 0.1 > START_QUIET_S)
+          recorder.quietStart?.(toneEndIn + 0.1);
+        const notes = on ? [587, 880] : [880, 587];
+        notes.forEach((frequency, index) => {
+          const osc = output.createOscillator(),
+            gain = output.createGain(),
+            at = startAt + index * CUE_STEP_S;
+          osc.type = 'sine';
+          osc.frequency.value = frequency;
+          gain.gain.setValueAtTime(0.0001, at);
+          gain.gain.exponentialRampToValueAtTime(CUE_PEAK, at + 0.015);
+          gain.gain.exponentialRampToValueAtTime(0.0001, at + CUE_NOTE_S);
+          osc.connect(gain);
+          gain.connect(output.destination);
+          osc.start(at);
+          osc.stop(at + CUE_NOTE_S + 0.01);
+        });
+      };
+      if (output.state === 'running') play();
+      else output.resume().then(play, () => {});
+      restCue();
     } catch {}
   }
   let hotkey = DEFAULT_KEY;
@@ -968,6 +1028,10 @@
       return;
     }
     busy = true;
+
+    // The cue output opens now, alongside the mic, so the start tone is heard (it waits for
+    // nothing).
+    warmCue();
     holding = source;
     target = to;
     pressedAt = Date.now();

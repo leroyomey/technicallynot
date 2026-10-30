@@ -1188,6 +1188,133 @@ const DELIVERED = {
   unconfirmed: 'Enter was pressed; this CLI gives no sign it started it, check with `tnai read`',
 };
 
+// ---------- `tnai agent`: custom agents, read and proposed (agent-proposals.js) ----------
+
+const DRAFT_HELP =
+  'Write a draft file (.md: frontmatter `name`, `cli`, `skills` (comma list), `scope` (project | personal), or `edit: NAME` with `addSkills` / `removeSkills`; the role as its body, at most 300 characters) and run `tnai agent save FILE`.';
+
+const skillNames = ids => (ids.length ? ids.map(id => path.basename(id)).join(', ') : 'none');
+
+function agentRow(a) {
+  return (
+    '  ' +
+    a.name +
+    '  ·  ' +
+    a.base +
+    '  ·  ' +
+    a.scope +
+    '  ·  skills: ' +
+    skillNames(a.skillIds) +
+    '  ·  ' +
+    (clean(a.role || '-', 400)
+      .replace(/\s+/g, ' ')
+      .slice(0, 100) || '-')
+  );
+}
+
+function proposalRow(p) {
+  return (
+    '  ' +
+    p.id +
+    '  ·  ' +
+    p.state +
+    '  ·  ' +
+    (p.kind === 'new' ? 'new agent “' + p.after.name + '”' : 'change to “' + p.before.name + '”') +
+    '  ·  by ' +
+    p.by
+  );
+}
+
+function customAgentCommand(msg, paneId, project) {
+  const proposals = deps.proposals;
+  if (!deps.skills?.agents || !proposals)
+    return errors.fail('unreachable', 'Custom agents are not available.', TRY.again);
+  const agents = deps.skills.agents.list();
+  const mine = names.get(paneId) || {};
+
+  if (msg.action === 'list') {
+    const waiting = proposals.list(project, { settled: true });
+    return {
+      ok: true,
+      text:
+        'Custom agents (' +
+        agents.length +
+        '; project = this project’s .tnai/agents.json, personal = this computer):\n' +
+        (agents.length ? agents.map(agentRow).join('\n') : '  (none)') +
+        (waiting.length
+          ? '\nProposals (pending ones wait for the user in the bell; settled ones are kept a week):\n' +
+            waiting.map(proposalRow).join('\n')
+          : '') +
+        '\nTo propose a new agent or a change: ' +
+        DRAFT_HELP,
+    };
+  }
+
+  if (msg.action === 'show') {
+    const asked = clean(String(msg.name || ''), 200).trim();
+    const agent = proposals.findAgent(asked || mine.name || '', agents);
+    if (!agent)
+      return asked
+        ? errors.fail('not_found', 'No custom agent named “' + asked + '”.', 'tnai agent list')
+        : {
+            ok: true,
+            text: 'This panel does not run as a custom agent. `tnai agent list` shows them.',
+          };
+    const open = proposals.list(project).filter(p => p.targetId === agent.id);
+    return {
+      ok: true,
+      text: [
+        agent.name + (asked ? '' : ' (this panel)'),
+        'CLI: ' + agent.base + '  ·  kept: ' + agent.scope,
+        'Role: ' + (agent.role || '(none)'),
+        'Skills: ' +
+          skillNames(agent.skillIds) +
+          (agent.supportsSkills ? '' : ' (' + agent.base + ' does not load attached skills)'),
+        ...open.map(p => 'Waiting for the user: proposal ' + p.id + ' by ' + p.by),
+        'To propose a change: ' + DRAFT_HELP.replace('Write', 'write'),
+      ].join('\n'),
+    };
+  }
+
+  if (msg.action !== 'save')
+    return errors.fail(
+      'invalid',
+      'Use `tnai agent list`, `tnai agent show [NAME]` or `tnai agent save FILE`.',
+      'tnai agent list'
+    );
+  try {
+    const draft = proposals.readDraft(
+      clean(String(msg.path || ''), 1000),
+      typeof msg.cwd === 'string' ? msg.cwd : ''
+    );
+    const { proposal, replaced } = proposals.propose(draft, {
+      project,
+      by: mine.name || '',
+      byCli: mine.agent || '',
+    });
+    return {
+      ok: true,
+      text:
+        'Proposal ' +
+        proposal.id +
+        (replaced ? ' (replaces your earlier one)' : '') +
+        ' waits for the user in the bell with Accept and Decline; nothing changed yet.\n' +
+        proposals
+          .describe(proposal)
+          .map(line => '  ' + line)
+          .join('\n') +
+        (proposal.notes.length ? '\nNote: ' + proposal.notes.join(' ') : '') +
+        '\nTell the user it waits in the bell. A running copy of the agent picks up an accepted change on its next start.',
+    };
+  } catch (error) {
+    return errors.fail(
+      'invalid',
+      'Proposal not saved: ' + error.message,
+      'fix what it names, then tnai agent save FILE again'
+    );
+  }
+}
+
 async function request(paneId, pane, msg, socket) {
   // The chain of turns a message from another computer's agent started (remote-say.js) comes before
   // everything, a launch included: a CLI started from that agent's own shell runs
@@ -1455,6 +1582,11 @@ async function request(paneId, pane, msg, socket) {
       );
     }
   }
+
+  // `tnai agent list | show [NAME] | save FILE` (agent-proposals.js): an agent reads the user's
+  // custom agents and drafts a new one or a change from the user's words. A save is only a
+  // proposal: the user accepts or declines it in the bell (60), and nothing changes before that.
+  if (msg.op === 'agent') return customAgentCommand(msg, paneId, project);
   const list = await members();
   const me = list.find(m => m.paneId === paneId);
 

@@ -239,7 +239,9 @@
         ? 'age' + (r.n ? ' ' + r.n + ' h' : '')
         : r?.kind === 'requests'
           ? 'many requests' + (r.n ? ' (' + r.n + ')' : '')
-          : 'manual Retire';
+          : r?.kind === 'limit'
+            ? 'usage limit, continued with another agent'
+            : 'manual Retire';
   const tokens = n => (n > 0 ? k(n) : 'unknown');
 
   function entryHtml(e) {

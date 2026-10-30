@@ -263,6 +263,18 @@ function gcSince() {
   return out;
 }
 
+// Chromium keeps a copy of every page for screen readers and other programs that read the screen
+// (UI Automation) once one of them asks, and keeping it up to date is Electron's own work on this
+// thread: a stall line says when it is on. Read only when a stall is written; outside Electron
+// (the plain Node checks) it is never on.
+function accessibilityOn() {
+  try {
+    return !!require('electron').app?.isAccessibilitySupportEnabled?.();
+  } catch {
+    return false;
+  }
+}
+
 function start(dir) {
   const file = dir ? path.join(dir, 'stalls.log') : '';
   const every = setInterval; // the stall timer itself is not one of the named timers
@@ -282,7 +294,9 @@ function start(dir) {
   const threadCpu = typeof process.threadCpuUsage === 'function' ? process.threadCpuUsage : null;
   let mainCpu = threadCpu ? threadCpu() : null;
 
-  // TNAI_STALL_PROFILE=1: a CPU profile names the functions of each stall (stall-profile.js).
+  // A CPU profile names the functions of a stall (stall-profile.js): in every build it turns on
+  // after a stall, so the next ones of a cluster are named; TNAI_STALL_PROFILE=1 keeps it on the
+  // whole time, "0" off.
   const profile = require('./stall-profile').start(dir, every, ran);
   const flush = () => {
     if (writing || !pending) return;
@@ -323,7 +337,8 @@ function start(dir) {
         (mainUsed
           ? ` · main thread CPU ${Math.round((mainUsed.user + mainUsed.system) / 1000)} ms`
           : '') +
-        ` · in callbacks ${Math.round(inCallbacks)} ms`;
+        ` · in callbacks ${Math.round(inCallbacks)} ms` +
+        (accessibilityOn() ? ' · accessibility on' : '');
 
       // read at once, before newer samples bury the stretch
       named = profile ? profile.explain(late) : '';
@@ -356,8 +371,9 @@ function start(dir) {
       });
     } else gcSince(); // pauses of a turn that was not late are not kept for a later line
 
-    // reading the profile took time of this tick: the next tick counts from its end
-    last = named ? Date.now() : now;
+    // reading the profile (or turning it on) took time of this tick: the next tick counts from
+    // its end
+    last = late > STALL_MS ? Date.now() : now;
     busy = null;
     inCallbacks = 0;
   }, TICK_MS).unref();

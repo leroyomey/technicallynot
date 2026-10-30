@@ -856,8 +856,9 @@ body.tnai-composer-popout>.composer>.activityline,body.tnai-composer-popout>.com
               )
             : body(agent, cat.models, liveModelOf(liveS), !!held));
       } else {
+        const shown = newPickOf(menuSub?.auto && menuSub.agent === agent ? menuSub : { agent });
         const all = cat.models,
-          cur = prefs[agent]?.model || '';
+          cur = shown.model || '';
         html =
           `<h4 role="presentation">Model for a new ${esc(agent)} agent</h4>` +
           mrow(agent, { id: '', label: 'Default model' }, !cur) +
@@ -867,7 +868,7 @@ body.tnai-composer-popout>.composer>.activityline,body.tnai-composer-popout>.com
             : '<p class="tnai-pick-note">' + esc(agent) + ' lists no models right now.</p>');
         const model = all.find(m => m.id === cur),
           efforts = model?.efforts?.length ? model.efforts : cat.efforts || [],
-          eff = prefs[agent]?.effort || '';
+          eff = shown.effort || '';
         if (efforts.length)
           html +=
             '<h4 role="presentation">Effort</h4><div class="tnai-pick-effs" role="group" aria-label="Effort">' +
@@ -927,12 +928,14 @@ body.tnai-composer-popout>.composer>.activityline,body.tnai-composer-popout>.com
         ? active
         : rows.findIndex(r => agentOfRow(r) === agent && !r._opt.disabled);
     if (i < 0) return;
-    setPref(agent, 'model', model);
+    const forSub = sub?.auto && sub.agent === agent ? sub : { kind: 'new', agent };
+    setNewPick(forSub, 'model', model);
 
     // a model with its own effort levels (Codex) drops an effort it does not offer
-    const m = catalog[agent]?.models.find(x => x.id === model);
-    if (m?.efforts?.length && prefs[agent]?.effort && !m.efforts.includes(prefs[agent].effort))
-      setPref(agent, 'effort', '');
+    const m = catalog[agent]?.models.find(x => x.id === model),
+      effortNow = newPickOf(forSub).effort;
+    if (m?.efforts?.length && effortNow && !m.efforts.includes(effortNow))
+      setNewPick(forSub, 'effort', '');
     if (sub?.agent === agent) {
       close(true);
       paint();
@@ -1070,8 +1073,9 @@ body.tnai-composer-popout>.composer>.activityline,body.tnai-composer-popout>.com
       place();
     } else if (eff) {
       const a = eff.dataset.agent,
-        v = eff.dataset.effort;
-      setPref(a, 'effort', prefs[a]?.effort === v ? '' : v);
+        v = eff.dataset.effort,
+        forSub = menuSub?.auto && menuSub.agent === a ? menuSub : { kind: 'new', agent: a };
+      setNewPick(forSub, 'effort', newPickOf(forSub).effort === v ? '' : v);
       paintSide();
       menu
         .querySelector('.tnai-pick-eff[data-effort="' + CSS.escape(v) + '"]')
@@ -1179,6 +1183,37 @@ body.tnai-composer-popout>.composer>.activityline,body.tnai-composer-popout>.com
     if (s) return { kind: 'live', agent: s.agent, session: s };
     const pick = live.startChoice?.() || null;
     return { kind: 'new', agent: pick?.agent || 'Claude Code', auto: true };
+  }
+
+  // A stopped agent of this CLI that the composer is aimed at (its thread is open): the send starts
+  // it again (11 'wake') on its own pick (TnaiLaunchPrefs.start), not on the pick for new agents.
+  // So the pills show its own pick, and a pick there becomes its own pick too. Before, it woke on
+  // its old effort and the Effort pill went back after the send (ISSUES, user 2026-10-02).
+  function asleepTarget(agent) {
+    if (live.newAgent()) return null;
+    const s = agents.sessions().find(x => x.paneId === live.target());
+    const wakes = s && !s.running && s.mode !== 'login' && s.agent === agent && notOwnTerminal(s);
+    return wakes ? s : null;
+  }
+
+  // The pick for new agents of `sub.agent`; with Auto, also the stopped target's own pick.
+  function setNewPick(sub, key, value) {
+    setPref(sub.agent, key, value);
+    const s = sub.auto ? asleepTarget(sub.agent) : null;
+    if (!s) return;
+    setPanePick(s.paneId, s.agent, key, value);
+
+    // stamped like a live pick, so the effort of a reply from before it cannot undo it
+    if (key === 'effort') setPanePick(s.paneId, s.agent, 'effortAt', Date.now());
+  }
+
+  // What the pills show for `sub` when it is not a running agent: a stopped target's own pick when
+  // it has one (what the send starts it on), else the pick for new agents of that CLI.
+  function newPickOf(sub) {
+    const s = sub.auto ? asleepTarget(sub.agent) : null;
+    return s && paneFor(s.paneId, s.agent)
+      ? window.TnaiLaunchPrefs.pane(s.paneId, s.agent)
+      : window.TnaiLaunchPrefs.for(sub.agent);
   }
 
   function paintAgent() {
@@ -1392,7 +1427,8 @@ body.tnai-composer-popout>.composer>.activityline,body.tnai-composer-popout>.com
   function paintModel() {
     const sub = subject(),
       cat = modelsOf(sub.agent),
-      prefsNow = window.TnaiLaunchPrefs.for(sub.agent);
+      prefsNow = sub.kind === 'new' ? newPickOf(sub) : window.TnaiLaunchPrefs.for(sub.agent),
+      sleeper = sub.kind === 'new' && sub.auto ? asleepTarget(sub.agent) : null;
     if (sub.kind === 'remote') return paintRemote(sub, cat);
     const models = cat?.models || [];
     const current = sub.kind === 'live' ? '' : prefsNow.model;
@@ -1441,7 +1477,9 @@ body.tnai-composer-popout>.composer>.activityline,body.tnai-composer-popout>.com
           '’s model now (' +
           sub.agent +
           (picker ? '’s own model picker)' : ' /model)')
-        : 'Model new ' + sub.agent + ' agents start on');
+        : sleeper
+          ? 'Model ' + sleeper.name + ' starts on when you send (and new ' + sub.agent + ' agents)'
+          : 'Model new ' + sub.agent + ' agents start on');
 
     // Effort: the chosen model's levels when the CLI lists them per model (Codex), else the CLI's
     // levels; Cursor has none (it is in the model id).
@@ -1519,7 +1557,13 @@ body.tnai-composer-popout>.composer>.activityline,body.tnai-composer-popout>.com
           sub.session.name +
           '’s effort now' +
           (picker ? ' (its own picker)' : ' (/effort)')
-        : 'Effort new ' + sub.agent + ' agents start with') +
+        : sleeper
+          ? 'Effort ' +
+            sleeper.name +
+            ' starts with when you send (and new ' +
+            sub.agent +
+            ' agents)'
+          : 'Effort new ' + sub.agent + ' agents start with') +
         (!wait && cat.effortNote ? '. ' + cat.effortNote : '');
   }
 
@@ -1738,17 +1782,14 @@ body.tnai-composer-popout>.composer>.activityline,body.tnai-composer-popout>.com
       window.TnaiRemoteThreadMore?.pick?.(sub.far, key, v);
       return paint();
     }
-    setPref(sub.agent, key, v);
+    setNewPick(sub, key, v);
 
     // A model with its own effort levels (Codex) drops an effort it does not offer.
     if (key === 'model') {
-      const m = catalog[sub.agent]?.models.find(x => x.id === v);
-      if (
-        m?.efforts?.length &&
-        prefs[sub.agent].effort &&
-        !m.efforts.includes(prefs[sub.agent].effort)
-      )
-        setPref(sub.agent, 'effort', '');
+      const m = catalog[sub.agent]?.models.find(x => x.id === v),
+        effortNow = newPickOf(sub).effort;
+      if (m?.efforts?.length && effortNow && !m.efforts.includes(effortNow))
+        setNewPick(sub, 'effort', '');
     }
     paint();
   }

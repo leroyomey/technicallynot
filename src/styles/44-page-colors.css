@@ -46,6 +46,12 @@
   color: var(--pg-page-terminal);
 }
 
+/* the "PowerShell" button above a `PS> command` block in a thread (122): it opens a PowerShell
+   thread */
+.tnt-say button.tnt-code-shell > svg {
+  color: var(--pg-page-terminal);
+}
+
 /* Past conversations: the row of the thread's "..." menu (137) and the button at the foot of the
    thread list (138) */
 .tnt-menu-row[data-row='past']:not(:disabled, [aria-disabled='true']) > svg,

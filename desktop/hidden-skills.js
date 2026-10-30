@@ -7,7 +7,10 @@ const fs = require('fs');
 const path = require('path');
 
 const DIR = path.join(__dirname, 'hidden-skills');
-const TARGETS = new Set(['every-agent', 'claude-code', 'opencode', 'codex']);
+
+// source-fix: not sent with the rules; it is the first prompt of a "Fix a Technically Not bug from
+// its source" thread (source-fix.js), for every CLI.
+const TARGETS = new Set(['every-agent', 'claude-code', 'opencode', 'codex', 'source-fix']);
 
 // [{ id, for, lines }] in file-name order. Throws on a missing folder, an unknown `for`, or a file
 // without `tnai-hidden: true`: a broken build must not start agents without Technically Not's
@@ -30,7 +33,9 @@ function load() {
       throw new Error('hidden-skills/' + file + ': needs `tnai-hidden: true` in its frontmatter');
     if (!TARGETS.has(meta.for))
       throw new Error(
-        'hidden-skills/' + file + ': `for` must be every-agent, claude-code, opencode or codex'
+        'hidden-skills/' +
+          file +
+          ': `for` must be every-agent, claude-code, opencode, codex or source-fix'
       );
     const lines = src
       .slice(m[0].length)

@@ -1075,12 +1075,12 @@
 
       // Waits until the cursor moved and then held still for 50 ms (checked every 10 ms; 3x the 16
       // ms output batch, so a redraw split across two batches never reads as settled); false if it
-      // never moved (the program ignored the keys).
-      const settle = async from => {
+      // never moved within `limit` ms (the program ignored the keys).
+      const settle = async (from, limit = 1200) => {
         let last = from,
           still = 0,
           moved = false;
-        for (let t = 0; t < 1200; t += 10) {
+        for (let t = 0; t < limit; t += 10) {
           await pause(10);
           const c = cursor();
           if (cmp(c, last)) {
@@ -1099,7 +1099,8 @@
       // Moves the caret (arrows) or deletes back (Backspace) until the cursor reaches `target` from
       // the side `dir` says. The first batch goes in runs of 64 keys: PowerShell (ConPTY +
       // PSReadLine) drops all but one key of a single 333-key write (100 work).
-      const reach = async (target, key, dir, first) => {
+      // `ahead`: keys of an earlier run the program may still take late (see the key-by-key loop).
+      const reach = async (target, key, dir, first, ahead = 0) => {
         // Each run must move the caret about as far as it had keys (a few short: word-break spaces
         // have no cell); less means the input ended early (a prompt above it counted in `first`) or
         // something else changed it: finish key by key, so no leftover run of keys lands on what
@@ -1126,7 +1127,17 @@
           send(key, n);
           if (!(await settle(from))) return false;
           if (cmp(cursor(), from) * dir <= 0) return false;
-          if (moved(from, cursor()) < n - 8) break;
+
+          // A pause inside the run is not the end of the input: on a busy PC PowerShell takes part
+          // of the keys and the rest a moment later. Wait for the rest while it keeps coming, or
+          // the delete goes on one key at a time (20 s for a long input) and the late rest reads
+          // as "not ours" below and stops it half-way (learned 2026-10-29,
+          // tools/cli-screen-delete-test.js).
+          while (moved(from, cursor()) < n - 8 && (await settle(cursor(), 300)));
+          if (moved(from, cursor()) < n - 8) {
+            ahead = n - Math.max(0, moved(from, cursor()));
+            break;
+          }
         }
         for (let i = 0; i < 400; i++) {
           const c = cursor(),
@@ -1138,9 +1149,14 @@
           // it moved the other way: the user is typing, so stop before a key eats a letter
           if (cmp(cursor(), c) * dir < 0) return false;
 
+          // More than one key's move, but no more than the run's keys still out: the program took
+          // them after a longer pause. They are ours, so go on in runs from here.
+          const now = cursor(),
+            late = moved(c, now) - 2;
+          if (late > 0 && late <= ahead) return reach(target, key, dir, rest(), ahead - late);
+
           // one key moves one letter (a wide one is 2 cells), or to the next/previous row: more is
           // not ours (Esc, a paste …)
-          const now = cursor();
           if (Math.abs(now.y - c.y) > 1 || (now.y === c.y && moved(c, now) > 2)) return false;
         }
         return false;
@@ -1677,14 +1693,21 @@
     // turned into doubled rule lines. Before a narrowing resize, a row
     // made only of box-drawing characters is cut to the new width instead (not when the row below
     // continues it). Internals, guarded.
+    // Rows on the screen are cut only while no program runs in the panel, and never in a replay:
+    // a running CLI erases every screen row and prints back only what fits, and a cut rule row is
+    // one row where xterm's reflow makes two, so more reply rows stayed on the screen instead of
+    // moving into the scrollback and the redraw wiped them (learned 2026-10-29 from two saved
+    // logs, 11 and 1 rows lost; check `node tools/cli-screen-replay-test.js`).
     const isRuleCp = cp => cp >= 0x2500 && cp <= 0x257f;
     const resizeTerm = term.resize.bind(term);
     term.resize = (cols, rows) => {
       if (cols < term.cols)
         try {
           const b = term._core.buffer,
-            nul = b.getNullCell();
-          for (let i = 0; i < b.lines.length; i++) {
+            nul = b.getNullCell(),
+            stopped = !restoring && live.get(term.tnaiPaneId)?.running === false,
+            end = stopped ? b.lines.length : b.ybase;
+          for (let i = 0; i < end; i++) {
             const line = b.lines.get(i),
               len = line?.getTrimmedLength() || 0;
             if (len <= cols || line.isWrapped || b.lines.get(i + 1)?.isWrapped) continue;

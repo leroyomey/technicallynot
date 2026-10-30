@@ -41,6 +41,17 @@
     height: 44px;
   }
 
+  /* The search field (119, 28) and its Clear button: 44 high, Clear 44 wide at the field's end. */
+  html.tnt-on:not(#tnt):not(#pg) .tnt-lst .tnt-lst-find:not(#lp) {
+    height: 44px;
+    padding-right: 0;
+  }
+  html.tnt-on:not(#tnt):not(#pg) .tnt-lst .tnt-lst-find-x:not(#lp) {
+    width: 44px;
+    height: 44px;
+    margin: -1px -1px -1px 0;
+  }
+
   /* A thread's ✕ (119, 28): no hover under a finger, so it shows on the open thread's row, at 44,
      in its own place. The row is taller than 44, so nothing grows. */
   html.tnt-on:not(#tnt):not(#pg) .tnt-lst .tnt-th .tnt-th-x:not(#lp) {
@@ -54,14 +65,14 @@
   }
   html.tnt-on:not(#tnt):not(#pg)
     .tnt-lst
-    .tnt-th:is([aria-selected='true'], :hover, :focus-visible):not([data-remote])
+    .tnt-th:is([aria-selected='true'], :hover, :focus-visible):not([data-remote]):not([data-past])
     time:not(#lp) {
     min-width: 32px;
     visibility: hidden;
   }
   html.tnt-on:not(#tnt):not(#pg)
     .tnt-lst
-    .tnt-th:is([aria-selected='true'], :hover, :focus-visible):not([data-remote])
+    .tnt-th:is([aria-selected='true'], :hover, :focus-visible):not([data-remote]):not([data-past])
     small:not(#lp) {
     padding-right: 40px;
   }
@@ -286,13 +297,6 @@
     content: '';
     position: absolute;
     inset: -14px -6px;
-  }
-
-  /* Details › Changes (153): the row that leads to keep or undo grows to 44 high in its place
-     (the weight of 41's row rule, which sets its height to 30). */
-  html.tnt-on:not(#tnt):not(#pg) .ttd button.ttd-link[data-review]:not(#lp) {
-    min-height: 44px;
-    align-items: center;
   }
 
   /* ------------------------------------------------------------ Mark up and send (151) */

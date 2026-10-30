@@ -1789,5 +1789,7 @@ module.exports = {
   pickFolder,
   validatePlugin,
   agents: agentApi,
+  // whether a CLI loads a custom agent's attached skills (agent-proposals.js)
+  supportsSkills,
   pluginDir,
 };

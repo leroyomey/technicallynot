@@ -559,6 +559,8 @@ html.tnt-open:not(#tnt):not(#pg) .tnt-asks > .tnai-perm[hidden] {
 .tnt-ask-acts {
   flex: none;
   display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   gap: 6px;
 }
 .tnt-view .tnt-ask-acts button {

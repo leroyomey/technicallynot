@@ -198,15 +198,28 @@
   // The list that was given room for the strip (undone when the strip hides or moves on).
   let roomOn = null;
 
+  // The list's own right padding from the style sheets, read once while no room is set on it.
+  const sheetPadding = new WeakMap();
+
   // Room on the right of the conversation's list so nothing in it reaches under the strip, whose
-  // left edge is at `stripLeft` (screen x): measured without room first, then as much as needed
-  // plus a 6 px gap, or none.
+  // left edge is at `stripLeft` (screen x): as much as needed plus a 6 px gap, or none.
+  // The list's box has a set width (30: border-box), so its right edge is the same with or
+  // without the room and is measured as it stands. The room is never taken off to measure: that
+  // made the list taller for a moment, the browser pulled a reader at the end up by the
+  // difference, following the end scrolled back down, and that scroll drew the map again, so the
+  // conversation twitched with no input (user clip 2026-10-29).
   function makeRoom(list, stripLeft) {
     if (roomOn && roomOn !== list) roomOn.style.paddingRight = '';
-    list.style.paddingRight = '';
+    if (!sheetPadding.has(list)) {
+      const inline = list.style.paddingRight;
+      if (!inline) sheetPadding.set(list, parseFloat(getComputedStyle(list).paddingRight) || 0);
+    }
+    const own = sheetPadding.get(list) || 0;
     const over = list.getBoundingClientRect().right - (stripLeft - 6);
-    const own = parseFloat(getComputedStyle(list).paddingRight) || 0;
-    if (over > own) list.style.paddingRight = Math.ceil(over) + 'px';
+    const wanted = over > own ? Math.ceil(over) + 'px' : '';
+
+    // written only when it changes, so a drawing with nothing new moves nothing
+    if (list.style.paddingRight !== wanted) list.style.paddingRight = wanted;
     roomOn = list;
   }
 

@@ -271,6 +271,48 @@
   opacity: 1;
 }
 
+/* A `PS> command` block (122 addShellButton): "PowerShell" is a small button above the command,
+   never part of what is copied; it runs the command in a PowerShell thread. The copy icon, its
+   fade and "Copied" move down with the block (the button row is 24 px and a 4 px gap). */
+.tnt-say .tnt-code-shell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  margin: 0 0 4px;
+  padding: 0 8px;
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text-2);
+  font: 500 12px/1 var(--pg-sans);
+  user-select: none;
+}
+.tnt-say button.tnt-code-shell {
+  cursor: pointer;
+}
+.tnt-say button.tnt-code-shell:hover {
+  border-color: var(--pg-accent);
+  background: var(--pg-accent-soft);
+  color: var(--pg-text);
+}
+.tnt-say button.tnt-code-shell:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: 2px;
+}
+.tnt-say .tnt-code-ps > pre {
+  display: block;
+}
+.tnt-say .tnt-code-ps::after {
+  top: 29px;
+}
+.tnt-say .tnt-code-ps .tnt-code-copy {
+  top: 34px;
+}
+.tnt-say .tnt-code-ps .tnt-code-said {
+  top: 40px;
+}
+
 /* while "Copied" shows, the soft fade reaches under it too */
 .tnt-say .tnt-code.tnt-code-copied::after {
   width: 124px;
@@ -298,6 +340,21 @@
   .tnt-say .tnt-code-said {
     top: 16px;
     right: 48px;
+  }
+
+  /* the PowerShell button grows to 44 in its place; the copy icon stays on the command */
+  .tnt-say .tnt-code-shell {
+    height: 44px;
+    padding: 0 12px;
+  }
+  .tnt-say .tnt-code-ps::after {
+    top: 49px;
+  }
+  .tnt-say .tnt-code-ps .tnt-code-copy {
+    top: 48px;
+  }
+  .tnt-say .tnt-code-ps .tnt-code-said {
+    top: 64px;
   }
 }
 .tnt-say blockquote {

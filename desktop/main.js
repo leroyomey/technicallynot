@@ -658,8 +658,6 @@ hooks.init(
     // agent started; the mode a CLI's hooks report)
     sayTurn: paneId => sayRules.inSay(paneId),
     modeSeen: (paneId, mode) => sayRules.modeSeen(paneId, mode),
-    // change-review.js: a copy of each file before an agent's edit of it
-    beforeEdit: (paneId, tool, input) => changeReview.beforeEdit(paneId, tool, input),
   }
 );
 
@@ -757,24 +755,6 @@ fileLocks.init(toWindow, {
 // An agent at rest holds no file: its locks end when its task ends, so nobody has to ask an idle
 // agent to unlock.
 turns.onEnd(paneId => fileLocks.taskEnded(paneId));
-
-// Keep or undo each file a task changed (change-review.js, the thread's "Worked for" block): what
-// each file was before the agent's first edit and what the task left, kept per task in
-// Technically Not's own folder. Undo refuses while another agent holds the file's lock.
-const changeReview = require('./change-review').createChangeReview({
-  dir: path.join(app.getPath('userData'), 'change-review'),
-  git: (args, options) => gitService.internal.git(args, options),
-  folderOf: paneId => threadFolder(paneId) || turns.cwd(paneId),
-  holderOf: file => {
-    const root = files.root();
-    if (!root) return '';
-    const same = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
-    const held = fileLocks.list(root).find(lock => same(path.resolve(root, lock.file), file));
-    return held ? held.name || 'Another agent' : '';
-  },
-});
-turns.onStart(paneId => changeReview.taskStarted(paneId).catch(() => {}));
-turns.onEnd(paneId => changeReview.taskEnded(paneId).catch(() => {}));
 
 // A team change: the window repaints its Team badges (88), and each member hears once who its
 // teammates are now (agent-peers.js teamNotice: Claude Code mid-task through its hooks; other CLIs
@@ -891,6 +871,20 @@ const promptSchedules = require('./prompt-schedules').createSchedules({
   note: (paneId, info) => lifecycle.note(paneId, info),
   busy: paneId => lifecycle.busy(paneId),
 });
+
+// "Fix a Technically Not bug from its source…" (source-fix.js, the thread's "..." menu): a copy of
+// the public source at this version's tag in the settings folder, and a new thread there with the
+// bug playbook. It starts the thread the way a scheduled run does (lifecycle.spawn with a start
+// mark that pty:start turns into the folder).
+const sourceFix = require('./source-fix').createSourceFix({
+  dir: app.getPath('userData'),
+  version: app.getVersion(),
+  agents: () => agents.ids(),
+  spawn: (agent, pick, name, extra) => lifecycle.spawn(agent, pick, name, extra),
+  submit: (paneId, text, options) => promptSubmit.submit(paneId, text, options),
+  note: (paneId, info) => lifecycle.note(paneId, info),
+  playbook: vars => require('./hidden-skills').lines('source-fix', vars),
+});
 let schedulesStarted = false;
 
 function startSchedules() {
@@ -995,6 +989,9 @@ handle('schedules:dismissMissed', id => promptSchedules.dismissMissed(String(id 
 // on a day becomes a one-time schedule, and the ideas themselves (board-ideas.js), per project.
 handle('schedules:startPrompt', job => promptSchedules.startPrompt(job));
 handle('schedules:createOnce', job => promptSchedules.createOnce(job));
+
+// The thread's "..." menu (198): fix a Technically Not bug from its public source.
+handle('sourceFix:start', job => sourceFix.start(job && typeof job === 'object' ? job : {}));
 
 // The prompt and workflow library (prompt-library.js; the window side, the recipe runner and its
 // screens are 194): saved prompts and recipes, kept in the settings folder.
@@ -1180,6 +1177,27 @@ handle('agentRules:set', patch => hooks.setRuleFlags(patch || {}));
 // project agents live in the open project's .tnai/ folder; an agent's `tnai skill save` is shown to
 // the user (60, 18)
 skills.init({ root: () => files.root(), agentSaved: s => toWindow('skills:saved', s) });
+
+// A custom agent an agent proposed from the user's words (`tnai agent save`, agent-proposals.js):
+// kept until the user accepts or declines it in the bell (60); Accept saves it through
+// skills:agents:* above.
+const agentProposals = require('./agent-proposals');
+agentProposals.init({
+  file: path.join(app.getPath('userData'), 'agent-proposals.json'),
+  agents: () => skills.agents.list(),
+  skills: root => skills.listSkills(root),
+  clis: () => agents.ids(),
+  supportsSkills: base => skills.supportsSkills(base),
+  changed: () => toWindow('agentProposals:changed', { at: Date.now() }),
+});
+handle(
+  'agentProposals:list',
+  settle(() => agentProposals.list(files.root()))
+);
+handle(
+  'agentProposals:settle',
+  settle((id, state) => agentProposals.settle(String(id || ''), String(state || '')))
+);
 handle(
   'skills:list',
   settle(async () => ({
@@ -1403,15 +1421,6 @@ handle('fs:write', (rel, bytes, lane) => {
 // git:changed).
 handle('git:status', () => gitService.status());
 
-// Keep or undo one file a task changed (change-review.js, 192 in the window). The window names a
-// record by its id; the file written is always the record's own path.
-handle('review:state', query =>
-  changeReview.state(query && typeof query === 'object' ? query : {})
-);
-handle('review:diff', id => changeReview.diff(String(id || '')));
-handle('review:keep', key => changeReview.keep(String(key || '')));
-handle('review:undo', id => changeReview.undo(String(id || '')));
-
 // What an agent changed in its own folder, for the Changes section of a thread's Details
 // (branch-changes.js): branch, lines, commits, uncommitted files, the pull request and its checks.
 const branchChanges = require('./branch-changes').createBranchChanges({
@@ -1623,7 +1632,11 @@ handle(
     if (options && typeof options === 'object' && 'schedule' in options) {
       const { schedule, ...rest } = options;
       options = rest;
-      scheduledFolder = promptSchedules.takeFolder(schedule, options.agent);
+
+      // the same kind of mark comes from a "Fix a Technically Not bug from its source" start
+      scheduledFolder =
+        promptSchedules.takeFolder(schedule, options.agent) ||
+        sourceFix.takeFolder(schedule, options.agent);
 
       // A stale or unknown mark starts nothing (never in the open project by mistake), and a
       // scheduled run never takes the prompt box's "Own worktree" choice.
@@ -1967,6 +1980,8 @@ mesh.init(
     peers: require('./agent-peers'),
     registry: agents,
     skills,
+    // `tnai agent save` (agent-proposals.js, set up beside skills.init)
+    proposals: agentProposals,
     renameLimited: () => {
       try {
         return remote.controlGiven() === true;

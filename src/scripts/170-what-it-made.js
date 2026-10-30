@@ -15,7 +15,7 @@
 //   neutral surface with a group per kind and its count (user 2026-10-28 chose "Proposed" in
 //   docs/plans/design-concepts/info-layout.html): Documents and Data as rows (name, then title or
 //   row count), Pictures, Pages and Sites as small cards, and Changed files last (the file list
-//   122 drew, with 192's Keep and Undo, and "Open Changes" for Details › Changes). A task that made
+//   122 drew, and "Open Changes" for Details › Changes). A task that made
 //   nothing keeps its block as it was.
 // - A press previews in place, under the row or the group's cards, at a fixed height (49 px of
 //   fade at the foot), with one button for
@@ -970,8 +970,8 @@
   readLocks();
   safe(() => native.locks?.onChange?.(readLocks), null);
 
-  // The changed files as the block's last group: 122's own file list moved in whole, so every
-  // row keeps 192's diff, Keep and Undo; its head line is said by the group's head instead (51).
+  // The changed files as the block's last group: 122's own file list moved in whole; its head
+  // line is said by the group's head instead (51).
   function changesGroup(view) {
     const group = groupBox('changes', 'git-branch');
     group.name.textContent = 'Changed files';

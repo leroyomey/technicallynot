@@ -76,19 +76,6 @@ let locks = null,
   lockOwner = null;
 const LOCK_TOOLS = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit']);
 
-// change-review.js (main.js): a copy of each file an edit is about to change, taken while the edit
-// waits for the app (Claude Code's PreToolUse, OpenCode's gate, Codex's and Cursor Agent's
-// preToolUse step), so the thread can undo that one file later. Never fails the edit.
-let beforeEdit = () => Promise.resolve();
-
-async function copyBeforeEdit(paneId, tool, input) {
-  try {
-    await beforeEdit(paneId, tool, input);
-  } catch (e) {
-    console.warn('[tnai] change review copy failed:', e?.message || e);
-  }
-}
-
 // '' = go ahead, else why the edit is denied: another agent holds the file. In-panel sub-agents
 // share their panel's lock.
 async function lockDenied(paneId, h) {
@@ -865,9 +852,6 @@ async function gateDenied(paneId, m) {
         : '';
     if (deny) return deny;
   }
-
-  // the edit goes ahead: its files are copied first (change-review.js)
-  await copyBeforeEdit(paneId, tool, input);
   return '';
 }
 
@@ -1394,11 +1378,6 @@ function handle(req, res) {
             ? 'mcp ' + String(msg.method || 'batch').slice(0, 40)
             : 'hook server step';
       if (kind === 'step') {
-        // Codex's and Cursor Agent's preToolUse wait for this answer (curl, 2 s at most): an edit's
-        // files are copied before it, so the thread can undo them (change-review.js). Any other
-        // step is answered at once.
-        if (/^preToolUse$/i.test(msg?.hook_event_name || '') && !msg.agent_id)
-          await span.rest(copyBeforeEdit(paneId, msg.tool_name, msg.tool_input));
         res.writeHead(204).end();
         try {
           onStep(paneId, msg);
@@ -1487,9 +1466,6 @@ function handle(req, res) {
           );
           return;
         }
-
-        // the edit goes ahead: its file is copied first (change-review.js)
-        await span.rest(copyBeforeEdit(paneId, msg.tool_name, msg.tool_input));
       }
 
       // Shell commands skip the edit hook: their run time lets file-locks.js match a held file
@@ -2015,6 +1991,8 @@ async function launchOptions(paneId, agentId, accountDir = '', { lead = false } 
     'skill list',
     'skill match',
     'skill overlaps',
+    'agent list',
+    'agent show',
     'preview',
     'show',
     'shot',
@@ -2119,7 +2097,6 @@ module.exports = {
     if (typeof opts.sayTurn === 'function') sayTurn = opts.sayTurn;
     if (typeof opts.modeSeen === 'function') modeSeen = opts.modeSeen;
     if (typeof opts.root === 'function') projectRoot = opts.root;
-    if (typeof opts.beforeEdit === 'function') beforeEdit = opts.beforeEdit;
     if (opts.locks && typeof opts.owner === 'function') {
       locks = opts.locks;
       lockOwner = opts.owner;

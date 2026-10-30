@@ -20,6 +20,8 @@
  *                 it is stopped (10 `TnaiAgents.stop` / `start`)
  *   Open in VS Code / Cursor / File Explorer   the thread's own folder (its worktree when it has
  *                 one) in each editor found on this computer (desktop/open-in-editor.js)
+ *   Fix a Technically Not bug from its source…   a new thread on the public source at this
+ *                 version's tag, given this thread's details (198 `TnaiSourceFix`); agent threads
  *   Hand off to a fresh agent   54 `TnaiContextUpkeep.handOff`, shown only while the agent is
  *                 idle and can be handed off
  *   Close thread  11 `TnaiLiveTasks.close`, which always asks first
@@ -307,6 +309,15 @@
         label: 'Saved prompts and recipes…',
         icon: 'library',
         go: openLibrary,
+      });
+
+    // a bug in Technically Not itself, fixed from its public source in a new thread (198)
+    if (!card && window.TnaiSourceFix?.can?.(paneId))
+      rows.push({
+        id: 'source-fix',
+        label: 'Fix a Technically Not bug from its source…',
+        icon: 'triangle-alert',
+        go: id => window.TnaiSourceFix.start(id),
       });
 
     // the thread's own folder in an editor found on this computer, or the file manager

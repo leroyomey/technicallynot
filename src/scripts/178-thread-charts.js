@@ -355,11 +355,18 @@
     const svgName = 'http://www.w3.org/2000/svg';
     const height = big ? 320 : 200;
     const left = 44;
-    const right = 56;
     const top = 14;
     const bottom = 26;
     const two = chart.series.length > 1;
     const unit = chart.unit ? ' ' + chart.unit : '';
+
+    // The last value of each line is written after its end point, so the room on the right is
+    // as wide as the longest of those words (user 2026-10-29: "7.57 M tokens" ran past the
+    // chart's edge with a fixed 56 px). About 6.6 px a letter at the label's 11.5 px, plus the
+    // 8 px gap after the point; never more than a third of the chart.
+    const endTexts = chart.series.map((_, index) => shown(chart.rows.at(-1)[index + 1]) + unit);
+    const longest = Math.max(0, ...endTexts.map(text => text.length));
+    const right = Math.min(Math.round(width / 3), Math.max(56, Math.ceil(longest * 6.6) + 14));
     const all = chart.rows.flatMap(row => row.slice(1));
     const high = niceTop(Math.max(0, ...all));
     const low = Math.min(...all) < 0 ? -niceTop(-Math.min(...all)) : 0;
@@ -433,7 +440,7 @@
         });
       });
       const last = chart.rows[count - 1][index + 1];
-      ends.push({ y: yAt(last) + 4, text: shown(last) + unit });
+      ends.push({ y: yAt(last) + 4, text: endTexts[index] });
     });
     if (ends.length === 2 && Math.abs(ends[0].y - ends[1].y) < 14) {
       const middle = (ends[0].y + ends[1].y) / 2;
@@ -453,10 +460,13 @@
         ? chart.series.map((name, index) => name + ' ' + shown(values[index]) + unit).join(' · ')
         : shown(values[0]) + unit;
       const before = at ? chart.rows[at - 1][1] : null;
+
+      // the change from the point before, with its unit and a real minus sign (user 2026-10-29:
+      // "(-29.24)" with no unit read as an error)
+      const difference = before == null ? 0 : values[0] - before;
+      const sign = difference >= 0 ? '+' : '−';
       const change =
-        !two && before != null
-          ? ' (' + (values[0] >= before ? '+' : '') + shown(values[0] - before) + ')'
-          : '';
+        !two && before != null ? ' (' + sign + shown(Math.abs(difference)) + unit + ')' : '';
       const hit = draw('rect', {
         class: 'tnt-cl-hit',
         x: xAt(at) - step / 2,

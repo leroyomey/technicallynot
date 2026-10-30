@@ -296,6 +296,10 @@ const USAGE = [
   '  tnai skill match TEXT        which skills Technically Not would name for a sentence the user might say (test that a skill you wrote is picked up)',
   '  tnai skill overlaps [PATH]   groups of library / project skills on the same topic (to merge), or which skills one SKILL.md overlaps',
   "  tnai skill remove NAME      remove an agent-written library skill that a merge replaced (the user's own skills: ask the user)",
+  "  tnai agent list              the user's custom agents (name, CLI, project or personal, skills, role) and proposals waiting for the user",
+  '  tnai agent show [NAME]       one custom agent in full (no NAME: the one this panel runs as)',
+  '  tnai agent save FILE         propose a new custom agent or a change from a draft (.md: frontmatter name, cli, skills, scope or edit: NAME,\n' +
+    '                               addSkills, removeSkills; the role as its body). Changes nothing: the user accepts or declines it in the bell',
 ].join('\n');
 
 // `tnai test`: the project's own test command, found from the caller's folder up to the repository
@@ -826,6 +830,14 @@ async function tnai() {
     message = { op: 'skill', action: 'overlaps', path: rest.slice(1).join(' ') };
   else if (sub === 'skill' && rest[0] === 'remove' && rest.length === 2)
     message = { op: 'skill', action: 'remove', name: rest[1] };
+
+  // `tnai agent list | show [NAME] | save FILE`: the user's custom agents, and a proposal
+  else if (sub === 'agent' && rest[0] === 'list' && rest.length === 1)
+    message = { op: 'agent', action: 'list' };
+  else if (sub === 'agent' && rest[0] === 'show')
+    message = { op: 'agent', action: 'show', name: rest.slice(1).join(' ') };
+  else if (sub === 'agent' && rest[0] === 'save' && rest.length >= 2)
+    message = { op: 'agent', action: 'save', path: rest.slice(1).join(' ') };
   else {
     process.stderr.write(USAGE + '\n');
     failLine('invalid', 'the usage above');

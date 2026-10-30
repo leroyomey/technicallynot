@@ -79,6 +79,18 @@ contextBridge.exposeInMainWorld('tnaiNative', {
     // an agent saved a skill (`tnai skill save`): { id, name, replaced }
     onSaved: listen('skills:saved'),
   },
+  // Custom agents an agent proposed (`tnai agent save`, desktop/agent-proposals.js): the pending
+  // ones for this project, and Accept or Decline from the bell (60).
+  agentProposals: {
+    list: () => invoke('agentProposals:list'),
+    settle: (id, state) =>
+      invoke(
+        'agentProposals:settle',
+        String(id || ''),
+        state === 'accepted' ? 'accepted' : 'declined'
+      ),
+    onChanged: listen('agentProposals:changed'),
+  },
   // Window frame (66): the app's own minimize / maximize / close buttons ('state' → {maximized} in
   // the main window, null elsewhere).
   frame: {
@@ -279,15 +291,6 @@ contextBridge.exposeInMainWorld('tnaiNative', {
   // lead's plan. Composer attachments: save(name, bytes) → {ok, value: absolute path} in
   // Technically Not's own attachments folder. Git for the connected project folder
   // (git-service.js); onChanged fires when .git HEAD/index/refs change.
-  // Keep or undo one file a task changed (change-review.js): state({ paneId, folder, at, ms, files
-  // }) → one row per file; diff(id) → { ok, before, after } or { ok: false, why }; keep(review
-  // key); undo(id) → { ok } or { ok: false, why }.
-  changeReview: {
-    state: query => invoke('review:state', query),
-    diff: id => invoke('review:diff', String(id || '')),
-    keep: key => invoke('review:keep', String(key || '')),
-    undo: id => invoke('review:undo', String(id || '')),
-  },
   git: {
     status: () => invoke('git:status'),
 
@@ -673,6 +676,10 @@ contextBridge.exposeInMainWorld('tnaiNative', {
   // The URL is only ever sent, never read back.
   // Scheduled prompts (desktop/prompt-schedules.js; Settings › Agents, 155): main checks every
   // field again, the window only asks.
+  // "Fix a Technically Not bug from its source…" (198, desktop/source-fix.js): { agent, details }
+  sourceFix: {
+    start: job => invoke('sourceFix:start', job && typeof job === 'object' ? job : {}),
+  },
   schedules: {
     view: () => invoke('schedules:view'),
     save: schedule =>

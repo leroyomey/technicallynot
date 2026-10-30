@@ -21,8 +21,10 @@
  * A click or Enter opens the thread (`TnaiThreads.select`); the arrow keys move. While the Agents
  * and history page shows, the press chooses that agent on that page instead (25 has no list of its
  * own), and the row marked open is the agent that page shows. "New thread" is the prompt box's own
- * New agent switch (11). Look: src/styles/28-thread-list.css. `window.TnaiThreadList` (`refresh`,
- * `rows`) for the desktop test `thread-list`.
+ * New agent switch (11). Under it, once the list has 6 rows or more, a search field narrows the
+ * list by name, tool or task and lists the matching past conversations after it (opened in 138's
+ * popover); Esc clears it. Look: src/styles/28-thread-list.css. `window.TnaiThreadList` (`refresh`,
+ * `rows`, `search`) for the desktop test `thread-list` and `tools/thread-search-check.js`.
  */
 (() => {
   'use strict';
@@ -302,7 +304,13 @@
   function rowFor(key, paneId, isSub) {
     let row = rows.get(key);
     if (row) return row;
-    row = make('button', isSub ? 'tnt-th tnt-sub' : 'tnt-th');
+    row = makeRow(key, paneId, isSub, !isSub);
+    rows.set(key, row);
+    return row;
+  }
+
+  function makeRow(key, paneId, isSub, withClose) {
+    const row = make('button', isSub ? 'tnt-th tnt-sub' : 'tnt-th');
     row.type = 'button';
     row.setAttribute('role', 'option');
     row.tabIndex = -1;
@@ -319,15 +327,14 @@
     // A thread's own ✕, shown on hover. It is a mark inside the row, not a
     // second button, since a button may not hold one: the list's click handler reads it, and
     // Delete on a focused row does the same for the keyboard. A Claude Code sub-agent has no
-    // panel to close, so its small row gets none.
-    if (!isSub) {
+    // panel to close, so its small row gets none, and neither does a past conversation's.
+    if (withClose) {
       const close = make('i', 'tnt-th-x');
       close.title = 'Close thread';
       close.setAttribute('aria-hidden', 'true');
       close.innerHTML = safe(() => window.TnaiIcon?.('x', { size: 14 }), '') || '';
       row.append(close);
     }
-    rows.set(key, row);
     return row;
   }
 
@@ -461,6 +468,10 @@
     const put = (thread, kid) => {
       const row = rowFor(thread.id, thread.id, false);
       alive.add(thread.id);
+      findText.set(
+        thread.id,
+        searchable([thread.name, thread.tool, thread.task, thread.project?.name])
+      );
       fillRow(row, {
         name: thread.name,
         time: thread.time,
@@ -497,6 +508,7 @@
         const leadRuns = thread.session.running !== false;
         const doing = subNow(sub, leadRuns);
         alive.add(key);
+        findText.set(key, searchable([what, sub.type, 'sub-agent']));
         const subAt = sub.endedAt || sub.startedAt || 0;
         fillRow(row, {
           name: what,
@@ -548,6 +560,7 @@
       const time = agent.status === 'working' ? clock(agent.since) : '';
       row.dataset.remote = agent.key;
       alive.add(key);
+      findText.set(key, searchable([agent.name, agent.cli, agent.task, computer.name]));
       fillRow(row, {
         name: agent.name,
         time,
@@ -665,10 +678,231 @@
         out.push(whyLine(item));
       });
     [...rows.keys()].forEach(key => {
-      if (!alive.has(key)) rows.delete(key);
+      if (alive.has(key)) return;
+      rows.delete(key);
+      findText.delete(key);
     });
     return out;
   }
+
+  // ---------- search ----------
+  // A field under New thread narrows the list to the rows whose name, tool or task holds every
+  // typed word, under their own headings, in the same order; the open project's past
+  // conversations that match follow under their own heading. The rows are the same nodes, so
+  // clearing the field gives the list back exactly as it was: order, "Needs you" first, the open
+  // thread, the scroll. The field stands only once the list is long enough to need it, or while
+  // it holds words or the keyboard.
+  const SEARCH_FROM = 6;
+  const PAST_SHOWN = 40;
+  const findText = new Map();
+  const searchable = parts => parts.filter(Boolean).join(' ').toLowerCase();
+  const wordsOf = text =>
+    String(text || '')
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean);
+
+  const find = make('label', 'tnt-lst-find');
+  find.innerHTML =
+    icon('search', 15) +
+    '<input type="text" role="searchbox" placeholder="Search threads" autocomplete="off" ' +
+    'spellcheck="false" aria-label="Search threads by name, tool or task">' +
+    '<button type="button" class="tnt-lst-find-x" title="Clear the search (Esc)" ' +
+    'aria-label="Clear the search" hidden>' +
+    icon('x', 14) +
+    '</button>';
+  find.hidden = true;
+  const field = find.querySelector('input');
+  const clearButton = find.querySelector('.tnt-lst-find-x');
+  const none = make('p', 'tnt-lst-note tnt-lst-none');
+  none.setAttribute('role', 'status');
+  root.insertBefore(find, note);
+
+  // Where the list was scrolled before the first word was typed: given back when it is cleared.
+  let scrollBefore = null;
+
+  function showFind(rowCount) {
+    const want = rowCount >= SEARCH_FROM || !!field.value || document.activeElement === field;
+    if (find.hidden === want) find.hidden = !want;
+    if (clearButton.hidden === !!field.value) clearButton.hidden = !field.value;
+  }
+
+  // Only the rows that match, each group under its heading; a group with no match goes with its
+  // heading, and so do the lines that say why another computer's agents are not listed.
+  function narrow(kids, words) {
+    const out = [];
+    let head = null;
+    kids.forEach(kid => {
+      if (kid.classList.contains('tnt-proj')) {
+        head = kid;
+        return;
+      }
+      if (!kid.classList.contains('tnt-th')) return;
+      const text = findText.get(kid.dataset.key) || '';
+      if (!words.every(word => text.includes(word))) return;
+      if (head) out.push(head);
+      head = null;
+      out.push(kid);
+    });
+    return out;
+  }
+
+  // The open project's past conversations, read once from the main process (the list the foot's
+  // Past conversations popover reads, 117) when a search starts, and let go when it is cleared.
+  let pastState = 'idle';
+  let pastList = [];
+  let pastAsk = 0;
+  const pastRows = new Map();
+
+  function readPast() {
+    const native = window.tnaiNative?.threads;
+    if (pastState !== 'idle' || !native?.list) return;
+    const mine = ++pastAsk;
+    pastState = 'reading';
+    const done = list => {
+      if (mine !== pastAsk) return;
+      pastList = list;
+      pastState = 'ready';
+      refresh();
+    };
+    Promise.resolve(native.list())
+      .then(result => {
+        const ok = !!result && result.ok !== false && Array.isArray(result.threads);
+        const valid = thread =>
+          !!thread &&
+          typeof thread.key === 'string' &&
+          typeof thread.id === 'string' &&
+          typeof thread.cli === 'string';
+        done(ok ? result.threads.filter(valid) : []);
+      })
+      .catch(() => done([]));
+  }
+
+  function forgetPast() {
+    pastAsk++;
+    pastState = 'idle';
+    pastList = [];
+    pastRows.clear();
+  }
+
+  // The matching past conversations, under their own heading. One that runs in a thread now is
+  // that thread, already in the list above.
+  function pastMatches(words, out) {
+    const sessions = safe(() => window.TnaiAgents.sessions(), []);
+    const running = thread =>
+      sessions.some(
+        session =>
+          session.sessionId && session.sessionId === thread.id && session.agent === thread.cli
+      );
+    const found = pastList
+      .filter(thread => {
+        const text = searchable([thread.title, thread.cli, thread.name]);
+        return words.every(word => text.includes(word)) && !running(thread);
+      })
+      .slice(0, PAST_SHOWN);
+    if (!found.length) return;
+    out.push(
+      heading(
+        'Past conversations',
+        String(found.length),
+        'Conversations of this project saved on this computer: a press shows one, with Resume'
+      )
+    );
+    found.forEach(thread => {
+      const key = 'past' + SEPARATOR + thread.key;
+      let row = pastRows.get(key);
+      if (!row) {
+        row = makeRow(key, '', false, false);
+        row.dataset.past = thread.key;
+        pastRows.set(key, row);
+      }
+      const title = thread.title || 'No first words';
+      fillRow(row, {
+        name: title,
+        time: shortTime(thread.at),
+        timeTip: thread.at > 0 ? 'Last saved ' + fullTime(thread.at) : '',
+        letterName: thread.cli,
+        tool: thread.cli,
+        now: thread.name || '',
+        tone: 'idle',
+        on: false,
+        tip:
+          title +
+          '\n' +
+          thread.cli +
+          (thread.name ? ' · ' + thread.name : '') +
+          '\n\nShow this past conversation, with Resume',
+      });
+      out.push(row);
+    });
+  }
+
+  // A past conversation's row opens the foot's popover (138) at that conversation. The list in
+  // the popover is read again when it opens, so the conversation is chosen once it is there.
+  function openPast(key) {
+    const history = window.TnaiPastThreads;
+    if (!history || !window.TnaiThreadHistory?.open) return;
+    const choose = () => {
+      const known = history.state();
+      if (!known.shown || known.state === 'failed') return true;
+      if (known.state !== 'ready') return false;
+      history.select(key);
+      return true;
+    };
+    window.TnaiThreadHistory.open();
+    if (choose()) return;
+    const wait = () => {
+      if (choose()) window.removeEventListener('tnai:past-threads-changed', wait);
+    };
+    window.addEventListener('tnai:past-threads-changed', wait);
+  }
+
+  field.addEventListener('input', () => {
+    if (field.value && scrollBefore == null) scrollBefore = box.scrollTop;
+    if (field.value) box.scrollTop = 0;
+    clearButton.hidden = !field.value;
+    refresh();
+  });
+
+  function clearSearch() {
+    if (!field.value) return;
+    field.value = '';
+    clearButton.hidden = true;
+    refresh();
+  }
+
+  clearButton.addEventListener('click', event => {
+    // the press is the button's, not the label's (a label hands its clicks to the field)
+    event.preventDefault();
+    clearSearch();
+    field.focus({ preventScroll: true });
+  });
+
+  // Esc clears (and only then is the key taken); Esc on an empty field gives the keyboard back.
+  // Down goes to the first row, Enter opens it.
+  field.addEventListener('keydown', event => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    const first = box.querySelector('.tnt-th');
+    if (event.key === 'Escape') {
+      if (field.value) {
+        event.preventDefault();
+        event.stopPropagation();
+        clearSearch();
+      } else field.blur();
+    } else if (event.key === 'ArrowDown' && first) {
+      event.preventDefault();
+      box.querySelectorAll('.tnt-th').forEach(row => {
+        row.tabIndex = row === first ? 0 : -1;
+      });
+      first.focus();
+    } else if (event.key === 'Enter' && first) {
+      event.preventDefault();
+      first.click();
+    }
+  });
+  field.addEventListener('blur', () => refresh());
+
+  window.addEventListener('tnai:project-changed', forgetPast);
 
   // The same nodes in the same order are left alone: nothing moves, so focus and scrolling stay.
   // Headings are new nodes each time and are compared by their words.
@@ -717,7 +951,19 @@
     // While another computer's agent is the open one, no thread of this computer is marked open.
     const openKey = openRemoteKey();
     const marked = openKey ? '' : picked;
-    const kids = buildList(all, projects, marked, readComputers(), openKey);
+    let kids = buildList(all, projects, marked, readComputers(), openKey);
+    showFind(kids.filter(kid => kid.classList.contains('tnt-th')).length);
+    const words = wordsOf(field.value);
+    if (words.length) {
+      kids = narrow(kids, words);
+      readPast();
+      pastMatches(words, kids);
+      if (!kids.length) {
+        const reading = pastState === 'reading';
+        setText(none, reading ? 'Looking through past conversations…' : 'No threads match');
+        kids.push(none);
+      }
+    } else if (pastState !== 'idle') forgetPast();
     if (!kids.length) {
       setText(empty.lastChild, 'Every agent and terminal you start shows here as a thread.');
       kids.push(empty);
@@ -733,7 +979,15 @@
         : null;
       box.replaceChildren(...kids);
       if (focusedKey != null)
-        (rows.get(focusedKey) || box.querySelector('.tnt-th'))?.focus({ preventScroll: true });
+        (rows.get(focusedKey) || pastRows.get(focusedKey) || box.querySelector('.tnt-th'))?.focus({
+          preventScroll: true,
+        });
+    }
+
+    // the search was cleared: the list stands where it stood before the first word
+    if (!words.length && scrollBefore != null && !pressed) {
+      box.scrollTop = scrollBefore;
+      scrollBefore = null;
     }
     setTabStop();
     revealPick(picked);
@@ -780,6 +1034,12 @@
     const row = event.target.closest?.('.tnt-th');
     if (!row || !box.contains(row)) return;
 
+    // a past conversation found by the search: it opens in the foot's popover, not as a thread
+    if (row.dataset.past) {
+      openPast(row.dataset.past);
+      return;
+    }
+
     // Another computer's agent is not a thread of this computer: 138 takes that press before
     // this handler and shows the agent in the thread's main area. Nothing is chosen here.
     if (row.dataset.remote) return;
@@ -821,12 +1081,23 @@
     else if (event.key === 'ArrowUp') to = all[at - 1];
     else if (event.key === 'Home') to = all[0];
     else if (event.key === 'End') to = all[all.length - 1];
+
+    // Up from the first row goes back to the search field, when it stands.
+    if (!to && event.key === 'ArrowUp' && at === 0 && !find.hidden) {
+      event.preventDefault();
+      field.focus();
+      return;
+    }
     if (!to) return;
     event.preventDefault();
     all.forEach(other => {
       other.tabIndex = other === to ? 0 : -1;
     });
     to.focus();
+
+    // 175 opens the row the keys reached; a past conversation's row opens a popover that would
+    // take the keyboard, so it is only reached, and Enter opens it.
+    if (to.dataset.past) event.stopPropagation();
   });
 
   // ---------- live, and only while the page shows ----------
@@ -933,11 +1204,19 @@
   window.addEventListener('tnai:threads-removed', () => {
     stop();
     rows.clear();
+    findText.clear();
+    forgetPast();
     seenIds = null;
   });
 
   window.TnaiThreadList = {
     refresh,
+
+    // Types into the search field as the user would ('' clears it); for the check page.
+    search: text => {
+      field.value = String(text || '');
+      field.dispatchEvent(new Event('input'));
+    },
 
     // One live session as the list reads it (name, tool, tone, label, project), or null.
     thread: paneId => readThreads(openProjects()).find(thread => thread.id === paneId) || null,
@@ -951,6 +1230,7 @@
       [...box.querySelectorAll('.tnt-th')].map(row => ({
         paneId: row.dataset.pane,
         remote: row.dataset.remote || '',
+        past: row.dataset.past || '',
         sub: row.classList.contains('tnt-sub'),
         kid: row.classList.contains('tnt-kid'),
         tone: row.dataset.tone || '',

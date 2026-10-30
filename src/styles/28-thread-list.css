@@ -73,6 +73,102 @@
   display: none;
 }
 
+/* The search field under New thread (119), in the three-dots menu's search look (31): one soft
+   field that lights up as a whole, its icon in the rows' inset. It stands only once the list is long
+   enough to need it, and fades in when it comes. */
+.tnt-lst .tnt-lst-find {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  margin: 10px 0 0;
+  padding: 0 4px 0 calc(var(--inset) - 1px);
+  border: 1px solid var(--pg-line-2);
+  border-radius: var(--pg-r-sm);
+  background: var(--pg-panel);
+  color: var(--pg-text-3);
+  cursor: text;
+  animation: tnt-lst-find-in 0.16s var(--pg-ease);
+}
+.tnt-lst .tnt-lst-find[hidden] {
+  display: none;
+}
+.tnt-lst .tnt-lst-find:focus-within {
+  border-color: rgba(var(--pg-accent-rgb), 0.6);
+  box-shadow: 0 0 0 3px rgba(var(--pg-accent-rgb), 0.13);
+}
+.tnt-lst .tnt-lst-find > svg {
+  flex: none;
+  display: block;
+}
+
+/* The field lights up, so the bare text box inside draws nothing of its own (one highlight per
+   field; the app's ring rule in 07 would add a second one). */
+html.tnt-on:not(#tnt):not(#pg) .tnt-lst-find input,
+html.tnt-on:not(#tnt):not(#pg) .tnt-lst-find input:focus-visible {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none !important;
+  box-shadow: none !important;
+  background: none;
+  color: var(--pg-text);
+  font: 13px/1 var(--pg-sans);
+}
+.tnt-lst .tnt-lst-find input::placeholder {
+  color: var(--pg-text-3);
+}
+
+/* Clear: the thread row's ✕ look, shown only while the field holds words. */
+.tnt-lst .tnt-lst-find-x {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pg-r-sm);
+  background: none;
+  color: var(--pg-text-3);
+  cursor: pointer;
+}
+.tnt-lst .tnt-lst-find-x[hidden] {
+  display: none;
+}
+.tnt-lst .tnt-lst-find-x svg {
+  display: block;
+}
+.tnt-lst .tnt-lst-find-x:hover {
+  background: var(--pg-panel-hover);
+  color: var(--pg-text);
+}
+:root:not(#pg) .tnt-lst .tnt-lst-find-x:focus-visible {
+  outline: var(--pg-ring) solid var(--pg-accent);
+  outline-offset: -2px;
+}
+@keyframes tnt-lst-find-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tnt-lst .tnt-lst-find {
+    animation: none;
+  }
+}
+
+/* "No threads match": the list's quiet note, in the rows' inset. */
+.tnt-threads .tnt-lst-none {
+  margin: 0;
+  padding: 8px var(--inset);
+}
+
 /* The list scrolls inside the island; the button above it stays put. */
 .tnt-threads {
   flex: 1;
@@ -245,11 +341,11 @@
   background: var(--pg-panel-hover);
   color: var(--pg-text);
 }
-.tnt-th:is(:hover, :focus-visible):not([data-remote]) time {
+.tnt-th:is(:hover, :focus-visible):not([data-remote]):not([data-past]) time {
   min-width: 20px;
   visibility: hidden;
 }
-.tnt-th:is(:hover, :focus-visible):not([data-remote]) small {
+.tnt-th:is(:hover, :focus-visible):not([data-remote]):not([data-past]) small {
   padding-right: 24px;
 }
 .tnt-th[data-remote] .tnt-th-x {

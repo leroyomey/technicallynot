@@ -1,10 +1,18 @@
 // Technically Not · stall-profile.js — Names the code behind a main-process stall that
-// stall-log.js cannot name (work after an `await`, Electron's own work). Only when the app is
-// started with TNAI_STALL_PROFILE=1 (a dev run, `npm start`): the main process is CPU-profiled the
-// whole time, and when stall-log.js sees a stall the profile is read for the busy stretch just
-// before it and one line names its kinds of work and its functions. The profile is saved to
-// stall-profiles\ in the settings folder (the newest few kept) to open in DevTools. Off, nothing
-// here runs. The desktop test main-stalls-profile reads its own profile with busyStretches.
+// stall-log.js cannot name (work after an `await`, Electron's own work). While the main process
+// is CPU-profiled, a stall seen by stall-log.js reads the profile for the busy stretch just before
+// it, and one line names its kinds of work and its functions. The profile is saved to
+// stall-profiles\ in the settings folder (the newest few kept) to open in DevTools. The desktop
+// test main-stalls-profile reads its own profile with busyStretches.
+//
+// When the profile runs (TNAI_STALL_PROFILE):
+// - "1" (a dev run, `npm start`): the whole time, sampled every 1 ms.
+// - "0": never; nothing here runs.
+// - not set (every installed build): off until a stall, then on for AFTER_STALL_MS, at most
+//   WINDOWS_MAX times per app run. The stall that turns it on gets no profile line; the ones after
+//   it do. Stalls come in clusters (2026-10-29: in the installed log, 131 of the 183 stalls that
+//   used the CPU came within 20 minutes of another one), so most name themselves; the dev mode
+//   needed someone to run it and was never run with real agents.
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -12,8 +20,17 @@ const path = require('path');
 // Shortest busy stretch that counts (stall-log.js writes a line from 100 ms late).
 const BUSY_MS = 80;
 
-// Sampling interval in microseconds: fine enough to name a 100 ms stretch.
+// Sampling interval in microseconds: fine enough to name a 100 ms stretch. After a stall it is
+// 2 ms: measured 2026-10-29 in Electron's main process under a light load, the profile cost about
+// 0.5% of the main thread and 1.8 to 2.7% of one core at 2 ms (1.0 to 1.8% and 3.2 to 4.7% at 1
+// ms).
 const SAMPLE_US = 1000;
+const AFTER_STALL_SAMPLE_US = 2000;
+
+// How long the profile stays on after a stall, and how many times a run turns it on (two hours
+// in all at most).
+const AFTER_STALL_MS = 20 * 60 * 1000;
+const WINDOWS_MAX = 6;
 
 // A profile is started anew this often, so it never grows without end. Stopping one is a block of
 // its own (the inspector hands the whole profile over): 81 ms for 2 minutes of samples in the app
@@ -112,13 +129,17 @@ function busyStretches(cpu, startedAt, minimum = BUSY_MS) {
   return { sampledMs: Math.round(sampled), busyMs: Math.round(busy), stretches };
 }
 
-// Starts the profiler when TNAI_STALL_PROFILE=1; returns null otherwise. `dir` is the settings
-// folder. The result's `explain(lateMs)` stops the profile, returns one line about the busy
-// stretch that ended last (or '' when none was found), saves the profile and starts a new one.
+// Starts by TNAI_STALL_PROFILE (see the top of this file); returns null when it is "0", or "1"
+// and the profiler cannot start. `dir` is the settings folder. The result's `explain(lateMs)` is
+// called at every stall: while the profile runs, it stops it, returns one line about the busy
+// stretch that ended last, saves the profile and starts a new one; while it is off (after a stall
+// mode), it turns it on and returns ''.
 function start(dir, timer = setInterval, ran = () => {}) {
-  if (process.env.TNAI_STALL_PROFILE !== '1') return null;
-  const inspector = require('inspector');
-  const session = new inspector.Session();
+  const mode = process.env.TNAI_STALL_PROFILE;
+  if (mode === '0') return null;
+  const always = mode === '1';
+  const interval = always ? SAMPLE_US : AFTER_STALL_SAMPLE_US;
+  let session = null;
   const call = (method, params) => {
     let answer = null;
     let failure = null;
@@ -132,20 +153,67 @@ function start(dir, timer = setInterval, ran = () => {}) {
     return answer;
   };
   let startedAt = 0;
+  let running = false;
+  let rotation = null;
+  let windowEndsAt = 0;
+  let windows = 0;
+
+  // the profile before the last rotation ({ profile, startedAt }): a block that ran just before a
+  // rotation is in it, not in the new one
+  let previous = null;
   const begin = () => {
-    call('Profiler.setSamplingInterval', { interval: SAMPLE_US });
+    call('Profiler.setSamplingInterval', { interval });
     call('Profiler.start');
     startedAt = Date.now();
   };
   const end = () => call('Profiler.stop').profile;
+
+  // A new profile every ROTATE_MS, so it never grows without end; after a stall mode, the profile
+  // goes off here once its time is up. Named, so the rotation's own short block is never taken for
+  // an unnamed stall.
+  function rotate() {
+    const before = performance.now();
+    try {
+      if (!always && Date.now() >= windowEndsAt) turnOff();
+      else {
+        previous = { profile: end(), startedAt };
+        begin();
+      }
+    } catch {}
+    ran('stall profile rotation', performance.now() - before);
+  }
+
+  function turnOn() {
+    if (!session) {
+      const inspector = require('inspector');
+      session = new inspector.Session();
+      session.connect();
+      call('Profiler.enable');
+    }
+    begin();
+    running = true;
+    previous = null;
+    rotation = timer(rotate, ROTATE_MS);
+    rotation?.unref?.();
+  }
+
+  function turnOff() {
+    clearInterval(rotation);
+    rotation = null;
+    running = false;
+    previous = null;
+    try {
+      end();
+    } catch {}
+  }
   const folder = dir ? path.join(dir, 'stall-profiles') : '';
-  const save = profile => {
+  const save = (profile, profiledFrom) => {
     if (!folder) return;
     const text = JSON.stringify(profile);
     fs.promises
       .mkdir(folder, { recursive: true })
       .then(() =>
-        fs.promises.writeFile(path.join(folder, 'main-' + startedAt + '.cpuprofile'), text)
+        fs.promises.writeFile(path.join(folder, 'main-' + profiledFrom + '.cpuprofile'), text)
       )
       .then(() => fs.promises.readdir(folder))
       .then(names => {
@@ -159,34 +227,46 @@ function start(dir, timer = setInterval, ran = () => {}) {
       })
       .catch(() => {});
   };
-  try {
-    session.connect();
-    call('Profiler.enable');
-    begin();
-  } catch (error) {
-    console.warn('[tnai] stall profile could not start:', error?.message || error);
-    return null;
-  }
-
-  // a new profile every ROTATE_MS, without saving the old one (nothing stalled in it)
-  // (named, so the rotation's own short block is never taken for an unnamed stall)
-  timer(() => {
-    const before = performance.now();
+  if (always) {
     try {
-      end();
-      begin();
-    } catch {}
-    ran('stall profile rotation', performance.now() - before);
-  }, ROTATE_MS).unref();
+      turnOn();
+    } catch (error) {
+      console.warn('[tnai] stall profile could not start:', error?.message || error);
+      return null;
+    }
+  }
 
   return {
     explain(lateMs) {
+      if (!running) {
+        // after a stall mode: this stall turns the profile on for the ones after it
+        if (always || windows >= WINDOWS_MAX) return '';
+        windows++;
+        windowEndsAt = Date.now() + AFTER_STALL_MS;
+        try {
+          turnOn();
+        } catch (error) {
+          windows = WINDOWS_MAX;
+          console.warn('[tnai] stall profile could not start:', error?.message || error);
+        }
+        return '';
+      }
       try {
         const profile = end();
         const profiledFrom = startedAt;
+        const before = previous;
+        previous = null;
         begin();
-        save(profile);
-        const found = busyStretches(profile, profiledFrom, Math.min(BUSY_MS, lateMs)).stretches;
+        save(profile, profiledFrom);
+        const minimum = Math.min(BUSY_MS, lateMs);
+        let found = busyStretches(profile, profiledFrom, minimum).stretches;
+
+        // a rotation ran between the block and this stall: the block is in the profile before it,
+        // and only a stretch that ended a moment ago is this stall's
+        if (!found.length && before)
+          found = busyStretches(before.profile, before.startedAt, minimum).stretches.filter(
+            stretch => stretch.endsAt >= Date.now() - lateMs - 1000
+          );
 
         // the stretch that ended last: the stall timer fires right after the block
         const stretch = found.sort((a, b) => b.endsAt - a.endsAt)[0];

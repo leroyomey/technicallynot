@@ -175,6 +175,7 @@
 .tnai-nitem .n-x{flex:none;width:22px;height:22px;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:#81867a;font:12px/1 var(--pg-sans);cursor:pointer}
 .tnai-nitem .n-x:hover{border-color:#e5e8e0;background:#f6f7f3}
 .tnai-nitem .n-ask{margin:6px 0;padding:0 9px;border-left:2px solid #dfe3d9;color:#6e7467;font:10.5px/1.5 var(--pg-sans);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tnai-nitem .n-ask.full{display:block;-webkit-line-clamp:unset;overflow:visible;white-space:pre-line}
 .tnai-nitem .n-sec{display:grid;gap:3px;min-width:0}
 .tnai-nitem .n-sec>span{color:#8a9084;font:600 9px/1.6 var(--pg-sans);letter-spacing:.06em;text-transform:uppercase}
 .tnai-nitem .n-sec ul{display:grid;gap:3px;margin:0;padding:0 0 0 16px;overflow-wrap:anywhere}
@@ -717,7 +718,7 @@ ${next.length ? `<div class="n-sec" data-k="next"><span>Next steps</span><ul cla
     if (!open)
       return `<div class="tnai-nitem row" data-item="${esc(it.id)}" data-where="bell" data-act="expand" role="button" tabindex="0" title="Open"><div class="n-head">${head}${dot}${tag}</div></div>`;
     return `<div class="tnai-nitem" data-item="${esc(it.id)}" data-where="bell"><div class="n-head"${fixed ? '' : ' data-act="collapse" role="button" tabindex="0" title="Collapse" aria-expanded="true"'}>${head}${tag}<button type="button" class="n-x" data-act="remove" title="Remove from this list" aria-label="Remove">✕</button></div>
-${n.text ? `<p class="n-ask">${rich(n.text)}</p>` : ''}${
+${n.text ? `<p class="n-ask${n.full ? ' full' : ''}">${rich(n.text)}</p>` : ''}${
       noticeActs(n).length
         ? `<div class="n-foot"><span></span>${noticeActs(n)
             .map(
@@ -1479,10 +1480,11 @@ ${row('Also pause on words', 'Comma-separated.', '<input type="text" class="set-
     },
     // Bell-only notices from real checks (60) and offers (54): { key, source, title, text?, tag?,
     // k?: 'next'|'blocked'|'done'|'update' (purple count), action?: { label, run }, actions?: [{
-    // id?, label, run, primary?, title? }] (several buttons), open? (always in full), onRemove?
-    // (called on ✕ / Clear instead of remembering it dismissed), resolved?, group? (the bell keeps
-    // only the newest notice of a group; unnotifyGroup(group) removes them all) }. Same key + same
-    // title/text = no change; changed = replaced, on top, unread. resolved = read and gone at once.
+    // id?, label, run, primary?, title? }] (several buttons), open? (always in full), full? (its
+    // text unclamped, line breaks kept), onRemove? (called on ✕ / Clear instead of remembering it
+    // dismissed), resolved?, group? (the bell keeps only the newest notice of a group;
+    // unnotifyGroup(group) removes them all) }. Same key + same title/text = no change; changed =
+    // replaced, on top, unread. resolved = read and gone at once.
     notify(n) {
       if (!n?.key || !n.title) return;
       if (dismissedNotices.has(n.key)) {

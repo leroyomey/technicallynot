@@ -552,6 +552,30 @@
     }, COPIED_MS);
   }
 
+  // A block holding one `PS> command` line (hidden skill 50: a command the user runs). The
+  // "PS> " mark is not part of the command, so it is taken out of the block: copying gives the
+  // command alone (user 2026-10-28: "When copying these commands it doesnt work cuz PS> is
+  // there"). A "PowerShell" button above the block says what it is and runs it in a PowerShell
+  // thread, the same as a clicked `PS>` line in a terminal (90).
+  const PS_LINE = /^[ \t]*PS>[ \t]+(\S[^\n]*?)[ \t]*\n?$/;
+
+  function addShellButton(box, code) {
+    const found = PS_LINE.exec(code.textContent);
+    if (!found) return;
+    const command = found[1];
+    code.textContent = command;
+    const run = window.TnaiPowerShellLink?.run;
+    const shell = make(run ? 'button' : 'span', 'tnt-code-shell');
+    shell.innerHTML = icon('terminal', 13) + '<span>PowerShell</span>';
+    if (run) {
+      shell.type = 'button';
+      shell.title = 'Run this command in a PowerShell thread';
+      shell.addEventListener('click', () => run(command));
+    }
+    box.prepend(shell);
+    box.classList.add('tnt-code-ps');
+  }
+
   function addCopyButtons(block) {
     block.querySelectorAll(':scope pre').forEach(pre => {
       if (pre.parentElement?.classList.contains('tnt-code')) return;
@@ -567,6 +591,7 @@
       const said = make('span', 'tnt-code-said', 'Copied');
       said.setAttribute('aria-live', 'polite');
       box.append(pre, button, said);
+      addShellButton(box, code);
       button.addEventListener('click', () => copyBlock(button, code));
       pre.addEventListener('keydown', event => {
         if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'a') {
@@ -1356,9 +1381,6 @@
       );
       files.prepend(head);
       block.append(files);
-
-      // 192: each file's diff, and Keep or Undo
-      safe(() => window.TnaiChangeReview?.block?.(state, entry, files), null);
     }
 
     // 170: what the task made, under the same line (the block stays as it was when it made

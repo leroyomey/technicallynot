@@ -114,9 +114,8 @@ control.init({
   shots: { dir: () => shotFolder, prune: () => {} },
 });
 
-// ---------- The real MCP server of desktop/agent-hooks.js, with a stand-in Electron (as
-// tools/change-review-test.js): every CLI that gets the `tnai` server is offered the tool, and a
-// call reaches it.
+// ---------- The real MCP server of desktop/agent-hooks.js, with a stand-in Electron: every CLI
+// that gets the `tnai` server is offered the tool, and a call reaches it.
 async function throughTheMcpServer() {
   const Module = require('module');
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'tnai-preview-mcp-'));
