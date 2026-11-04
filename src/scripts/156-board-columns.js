@@ -35,6 +35,10 @@
   function columnOf(thread, now = Date.now()) {
     if (!thread) return '';
     if (thread.needs || thread.decision) return 'needs';
+
+    // An agent that exited with an error (10's "error": not a stop by the user) is not finished
+    // work: the user has to look at it, whatever day it ended.
+    if (thread.status === 'error') return 'needs';
     if (WORKING.has(thread.status)) return 'work';
     const changes = thread.changes;
     const merged = changes?.pr?.state === 'MERGED';

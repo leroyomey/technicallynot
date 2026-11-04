@@ -55,11 +55,6 @@ body:has(.layout.connections-mode) .composer {
   font: 400 12.5px var(--pg-sans);
 }
 
-/* The Skills page's group count says "skills"; this page's says what it counts. */
-#connectionsPage .skills-group > header span:not(:empty)::after {
-  content: ' connections';
-}
-
 /* With the detail panel open in a narrow window the list can be narrower than one card: a card
    then takes the whole width instead of being cut, and a group's name, count and words stack. */
 #connectionsPage .skills-library {

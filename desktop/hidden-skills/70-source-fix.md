@@ -1,6 +1,6 @@
 ---
 name: source-fix
-description: The bug playbook for a thread opened by "Fix a Technically Not bug from its source…" (the thread's "..." menu). Sent as that thread's first prompt only (desktop/source-fix.js), never to other agents.
+description: The bug playbook for a thread opened by "Fix a Technically Not bug…" (the thread's "..." menu). Sent as that thread's first prompt only (desktop/source-fix.js), never to other agents.
 for: source-fix
 tnai-hidden: true
 ---

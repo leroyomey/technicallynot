@@ -332,7 +332,11 @@
       const head = make('header');
       head.append(
         make('b', '', GROUPS[group][0]),
-        make('span', '', rows.length ? String(rows.length) : ''),
+        make(
+          'span',
+          '',
+          rows.length ? rows.length + (rows.length === 1 ? ' connection' : ' connections') : ''
+        ),
         make('small', '', GROUPS[group][1])
       );
       section.append(head);

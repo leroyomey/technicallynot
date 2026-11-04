@@ -9,7 +9,7 @@
 //   error or because the agent closed stops the recipe, and the bell says which step and why.
 // - Where they are picked: the "/" list of the prompt box (160 asks `pickerRows`; a saved prompt
 //   is written into the box, a recipe starts on the open thread), and the thread's "..." menu
-//   (137's row "Saved prompts and recipes…" opens this file's list in the same menu, 137
+//   (137's row "Saved prompts…" opens this file's list in the same menu, 137
 //   `openList`), which also saves the prompt box's text under a name and stops a running recipe.
 // - Where they are managed: Settings › Agents › Saved prompts (the "library" topic 22 makes,
 //   #agentsLibrary), with New prompt, New recipe, Run, Edit and Delete, in the Settings styles

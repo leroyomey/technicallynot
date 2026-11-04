@@ -81,6 +81,8 @@
   const termEl = root.querySelector('.tnt-term');
   const box = root.querySelector('.tnt-term-box');
   const savedNote = root.querySelector('.tnt-term-note');
+
+  // In the desktop app the New thread screen (140) stands in place of this line while it shows.
   const noneEl = root.querySelector('.tnt-none');
   const talkEl = root.querySelector('.tnt-talk');
   const plainEl = root.querySelector('.tnt-plain');
@@ -142,6 +144,12 @@
     const stateEl = headEl.querySelector('.tnt-head-state');
     if (stateEl.dataset.tone !== thread.tone) stateEl.dataset.tone = thread.tone;
     setText(stateEl.querySelector('span'), thread.label || '');
+
+    // A narrow island shows the state's first words only ("Exited" of "Exited · ended with an
+    // error"), the whole label on hover (29 draws it), so the state never leaves the row.
+    const shortLabel = (thread.label || '').split(' · ')[0];
+    if (stateEl.dataset.short !== shortLabel) stateEl.dataset.short = shortLabel;
+    if (stateEl.title !== (thread.label || '')) stateEl.title = thread.label || '';
     stateEl.hidden = !thread.label;
     paintAge(headEl.querySelector('.tnt-head-age'), pane);
     paintBlur();

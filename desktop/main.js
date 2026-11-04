@@ -681,14 +681,9 @@ const sameTree = (a, b) => {
     return false;
   }
 };
-const teamOf = paneId => {
-  if (teams.teamOf(paneId)) return teams.teamOf(paneId);
-  try {
-    return teams.teamOf(leadPane(graph.state().nodes, paneId));
-  } catch {
-    return '';
-  }
-};
+
+// A sub-agent's team is its lead's (agent-teams.js deps.tree, set in teams.init below).
+const teamOf = paneId => teams.teamOf(paneId);
 const sameTeam = (a, b) => {
   const t = teamOf(a);
   return !!t && t === teamOf(b) && !sameTree(a, b);
@@ -759,39 +754,54 @@ turns.onEnd(paneId => fileLocks.taskEnded(paneId));
 // A team change: the window repaints its Team badges (88), and each member hears once who its
 // teammates are now (agent-peers.js teamNotice: Claude Code mid-task through its hooks; other CLIs
 // get it typed in like a file-lock notice, since they have no hooks).
+// A sub-agent on its lead's team (inherited) hears once when it joins or leaves that team; the
+// user's own members are not told each time a sub-agent panel comes or goes (it would cost them a
+// turn each time), they see it in the live team and `tnai team`.
 let teamPrev = new Map(); // paneId -> teammates fingerprint
-teams.init(async state => {
-  toWindow('teams:changed', state);
-  const now = new Map();
-  for (const t of state.teams)
-    for (const p of t.panes)
-      now.set(
-        p,
-        t.panes.filter(x => x !== p)
-      );
-  const touched = new Set(
-    [...teamPrev.keys(), ...now.keys()].filter(
-      p => JSON.stringify(teamPrev.get(p) || []) !== JSON.stringify(now.get(p) || [])
-    )
-  );
-  teamPrev = new Map([...now].map(([p, m]) => [p, m]));
-  for (const paneId of touched)
-    try {
-      const o = await mesh.owner(paneId);
-      if (!o) continue;
-      const mates = await Promise.all(
-        (now.get(paneId) || []).map(async p => (await mesh.owner(p))?.name || p)
-      );
-      const text = require('./agent-peers').teamNotice(paneId, mates);
-      if (o.provider !== 'Claude Code')
-        promptSubmit.submit(paneId, '[from Technically Not] ' + text, {
-          agent: o.provider,
-          holdIfDraft: APP_NOTICE,
-        });
-    } catch (e) {
-      console.warn('[tnai] team notice failed:', e?.message || e);
+const teamTree = () =>
+  graph
+    .state()
+    .nodes.filter(node => node.paneId && node.parentPaneId)
+    .map(node => ({ paneId: node.paneId, parentPaneId: node.parentPaneId }));
+teams.init(
+  async state => {
+    toWindow('teams:changed', state);
+    const now = new Map();
+    for (const t of state.teams) {
+      const inherited = t.inherited || [];
+      const userSet = t.panes.filter(x => !inherited.includes(x));
+      for (const p of userSet)
+        now.set(p, { mates: userSet.filter(x => x !== p), all: t.panes.filter(x => x !== p) });
+      for (const p of inherited)
+        now.set(p, { mates: t.id, all: t.panes.filter(x => x !== p), inherited: true });
     }
-});
+    const touched = new Set(
+      [...teamPrev.keys(), ...now.keys()].filter(
+        p =>
+          JSON.stringify(teamPrev.get(p)?.mates || []) !== JSON.stringify(now.get(p)?.mates || [])
+      )
+    );
+    teamPrev = now;
+    for (const paneId of touched)
+      try {
+        const o = await mesh.owner(paneId);
+        if (!o) continue;
+        const entry = now.get(paneId);
+        const mates = await Promise.all(
+          (entry?.all || []).map(async p => (await mesh.owner(p))?.name || p)
+        );
+        const text = require('./agent-peers').teamNotice(paneId, mates, !!entry?.inherited);
+        if (o.provider !== 'Claude Code')
+          promptSubmit.submit(paneId, '[from Technically Not] ' + text, {
+            agent: o.provider,
+            holdIfDraft: APP_NOTICE,
+          });
+      } catch (e) {
+        console.warn('[tnai] team notice failed:', e?.message || e);
+      }
+  },
+  { tree: teamTree }
+);
 
 // A held composer prompt is typed in later by main itself.
 attention.init(
@@ -818,11 +828,19 @@ attention.init(
 // Custom agents' task graph (agent-graph.js): delegation tools, sub-agent panes opened by the
 // window, reports back to the parent.
 const graph = require('./agent-graph');
-graph.init(toWindow, {
-  ptys,
-  submit: promptSubmit.submit,
-  sayTurn: paneId => sayRules.inSay(paneId),
-});
+
+// A sub-agent panel that opens or closes changes its lead's team (agent-teams.js refresh).
+graph.init(
+  (channel, payload) => {
+    toWindow(channel, payload);
+    if (channel === 'graph:state') teams.refresh();
+  },
+  {
+    ptys,
+    submit: promptSubmit.submit,
+    sayTurn: paneId => sayRules.inSay(paneId),
+  }
+);
 
 // Agent instances and task provenance for every CLI (agent-lifecycle.js): reuse, revive or a fresh
 // agent when a prompt quotes an earlier result.

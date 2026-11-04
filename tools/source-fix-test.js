@@ -1,9 +1,9 @@
 // Technically Not · tools/source-fix-test.js — plain Node test of desktop/source-fix.js ("Fix a
-// Technically Not bug from its source…"): the copy is made at the version's tag in the settings
-// folder, an untouched copy is used again and a touched one is not, a missing tag falls back to the
-// latest public code, the thread starts under a mark only pty:start can turn into the folder, and
-// its first prompt is the real playbook with every placeholder filled. git and the thread start are
-// stand-ins: no network, no window. Run: node tools/source-fix-test.js
+// Technically Not bug…", the thread's "..." menu row): the copy is made at the version's tag in the
+// settings folder, an untouched copy is used again and a touched one is not, a missing tag falls
+// back to the latest public code, the thread starts under a mark only pty:start can turn into the
+// folder, and its first prompt is the real playbook with every placeholder filled. git and the
+// thread start are stand-ins: no network, no window. Run: node tools/source-fix-test.js
 'use strict';
 const assert = require('assert');
 const fs = require('fs');

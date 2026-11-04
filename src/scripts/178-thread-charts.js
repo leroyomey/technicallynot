@@ -259,17 +259,44 @@
     if (text != null) node.textContent = text;
     return node;
   };
+
+  // A number with at most two decimals: the axis, a change between points.
   const shown = value =>
     Number.isInteger(value) ? String(value) : String(Math.round(value * 100) / 100);
 
-  function tableOf(head, rows) {
+  // A number with `decimals` decimals at most, trailing zeros left off.
+  const shownWith = decimals => value => {
+    if (decimals <= 2 || Number.isInteger(value)) return shown(value);
+    return String(Number(value.toFixed(decimals)));
+  };
+
+  // How many decimals a chart's values are written with: two, or as many more as it takes for two
+  // different values not to read the same (learned 2026-11-02, app review a4:
+  // 0.30000000000000004 against 0.30 read "0.3 → 0.3", hiding the very difference reported).
+  function decimalsFor(values) {
+    const distinct = [...new Set(values.filter(Number.isFinite))];
+    for (let decimals = 2; decimals < 20; decimals++) {
+      const texts = new Set(distinct.map(shownWith(decimals)));
+      if (texts.size === distinct.length) return decimals;
+    }
+    return 20;
+  }
+
+  // The writer of a chart's own values, worked out once per chart.
+  function writerOf(chart) {
+    if (chart.decimals == null)
+      chart.decimals = decimalsFor(chart.rows.flatMap(row => row.slice(1)));
+    return shownWith(chart.decimals);
+  }
+
+  function tableOf(head, rows, written = shown) {
     const table = make('table', 'tnt-chart-table');
     const top = table.insertRow();
     head.forEach(name => top.append(make('th', '', name)));
     rows.forEach(row => {
       const line = table.insertRow();
       row.forEach(
-        cell => (line.insertCell().textContent = typeof cell === 'number' ? shown(cell) : cell)
+        cell => (line.insertCell().textContent = typeof cell === 'number' ? written(cell) : cell)
       );
     });
     return table;
@@ -292,19 +319,20 @@
     if (two) box.append(legendOf(chart));
     const max = Math.max(...chart.rows.flatMap(row => row.slice(1).map(Math.abs))) || 1;
     const unit = chart.unit ? ' ' + chart.unit : '';
+    const written = writerOf(chart);
     for (const [label, ...values] of chart.rows) {
       const row = make('div', 'tnt-chart-row');
       row.tabIndex = 0;
       const said = two
-        ? chart.series.map((name, at) => name + ' ' + shown(values[at]) + unit).join(' · ')
-        : shown(values[0]) + unit;
+        ? chart.series.map((name, at) => name + ' ' + written(values[at]) + unit).join(' · ')
+        : written(values[0]) + unit;
       row.setAttribute('aria-label', label + ': ' + said);
       const top = make('div', 'tnt-chart-label');
       const right = make('span', '');
       if (two) {
-        right.append(shown(values[0]) + ' → ');
-        right.append(make('b', '', shown(values[1]) + unit));
-      } else right.textContent = shown(values[0]) + unit;
+        right.append(written(values[0]) + ' → ');
+        right.append(make('b', '', written(values[1]) + unit));
+      } else right.textContent = written(values[0]) + unit;
       top.append(make('span', '', label), right);
       row.append(top);
       values.forEach((value, at) => {
@@ -359,12 +387,13 @@
     const bottom = 26;
     const two = chart.series.length > 1;
     const unit = chart.unit ? ' ' + chart.unit : '';
+    const written = writerOf(chart);
 
     // The last value of each line is written after its end point, so the room on the right is
     // as wide as the longest of those words (user 2026-10-29: "7.57 M tokens" ran past the
     // chart's edge with a fixed 56 px). About 6.6 px a letter at the label's 11.5 px, plus the
     // 8 px gap after the point; never more than a third of the chart.
-    const endTexts = chart.series.map((_, index) => shown(chart.rows.at(-1)[index + 1]) + unit);
+    const endTexts = chart.series.map((_, index) => written(chart.rows.at(-1)[index + 1]) + unit);
     const longest = Math.max(0, ...endTexts.map(text => text.length));
     const right = Math.min(Math.round(width / 3), Math.max(56, Math.ceil(longest * 6.6) + 14));
     const all = chart.rows.flatMap(row => row.slice(1));
@@ -385,7 +414,10 @@
       (chart.title || 'Chart') +
         ': ' +
         chart.rows
-          .map(([label, ...values]) => label + ' ' + values.map(shown).join(' and ') + unit)
+          .map(
+            ([label, ...values]) =>
+              label + ' ' + values.map(value => written(value)).join(' and ') + unit
+          )
           .join(', ')
     );
     const draw = (tag, attributes, text) => {
@@ -457,8 +489,8 @@
     box.append(tip);
     chart.rows.forEach(([label, ...values], at) => {
       const said = two
-        ? chart.series.map((name, index) => name + ' ' + shown(values[index]) + unit).join(' · ')
-        : shown(values[0]) + unit;
+        ? chart.series.map((name, index) => name + ' ' + written(values[index]) + unit).join(' · ')
+        : written(values[0]) + unit;
       const before = at ? chart.rows[at - 1][1] : null;
 
       // the change from the point before, with its unit and a real minus sign (user 2026-10-29:
@@ -516,7 +548,8 @@
           ? tableOf(chart.table.head, chart.table.rows)
           : tableOf(
               ['', ...(chart.series.length > 1 ? chart.series : [chart.unit || 'Value'])],
-              chart.rows
+              chart.rows,
+              writerOf(chart)
             ),
     };
     const show = which => {

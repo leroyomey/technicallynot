@@ -21,8 +21,13 @@
   flex: none;
   max-width: 100%;
 }
+/* The title gives way before the name: the name says which thread this is. Shrinking by the same
+   share cut a 12-letter name to "Stream …" while the title kept 330 px (learned 2026-11-02). The
+   title takes only the room left after the name (a basis of 0, grown into what is free), so the
+   name is never shrunk by even a fraction of a pixel while the title has room: a fraction is enough
+   for its "…" to show. */
 .tnt-head-topic {
-  flex: 0 1 auto;
+  flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
   color: var(--pg-text-3);
@@ -192,9 +197,12 @@
 }
 
 /* A code block's copy icon (122 addCopyButtons, approved as place 1 of
-   docs/plans/design-concepts/code-copy.html): in the top right corner, faint until the pointer is
-   over the block, a check and "Copied" after a press. A long first line runs under it; a soft blur
-   fades the letters there (a color backing would show as a box, the panel color is see-through). */
+   docs/plans/design-concepts/code-copy.html): in the top right corner, shown while the pointer is
+   over the block or the block has the keyboard, a check and "Copied" after a press. A long first
+   line runs under it; a soft blur fades the letters there (a color backing would show as a box,
+   the panel color is see-through). At rest both are out of sight, so the code is never covered
+   while it is read (learned 2026-11-02, app review a7: the faint icon sat on the code of every
+   narrow block); under touch the icon stays (below). */
 .tnt-say .tnt-code {
   position: relative;
   margin: 0 0 10px;
@@ -219,6 +227,11 @@
   -webkit-mask-image: linear-gradient(to right, transparent, #000 50%);
   mask-image: linear-gradient(to right, transparent, #000 50%);
   pointer-events: none;
+  opacity: 0;
+  transition: opacity 140ms var(--pg-ease);
+}
+.tnt-say .tnt-code:is(:hover, :focus-within, .tnt-code-copied)::after {
+  opacity: 1;
 }
 .tnt-say .tnt-code-copy {
   position: absolute;
@@ -236,12 +249,13 @@
   background: var(--pg-panel);
   color: var(--pg-text-3);
   cursor: pointer;
-  opacity: 0.55;
+  opacity: 0;
   transition:
     opacity 140ms var(--pg-ease),
     color 140ms var(--pg-ease);
 }
 .tnt-say .tnt-code:hover .tnt-code-copy,
+.tnt-say .tnt-code:focus-within .tnt-code-copy,
 .tnt-say .tnt-code-copy:focus-visible,
 .tnt-say .tnt-code-copy[data-done] {
   opacity: 1;
@@ -318,7 +332,8 @@
   width: 124px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .tnt-say :is(.tnt-code-copy, .tnt-code-said) {
+  .tnt-say :is(.tnt-code-copy, .tnt-code-said),
+  .tnt-say .tnt-code::after {
     transition: none;
   }
 }
@@ -336,6 +351,7 @@
   }
   .tnt-say .tnt-code::after {
     height: 44px;
+    opacity: 1;
   }
   .tnt-say .tnt-code-said {
     top: 16px;
@@ -1518,7 +1534,13 @@ code.tnt-act-what {
   padding: 0 12px;
   border: 1px solid var(--pg-line);
   border-radius: var(--pg-r-sm);
+
+  /* what floats over the page takes --tnt-over with the menus' blur (27): without it the
+     conversation's letters showed through and "Latest" read as overlapping text (learned
+     2026-11-02, app review a16) */
   background: var(--tnt-over);
+  -webkit-backdrop-filter: blur(30px);
+  backdrop-filter: blur(30px);
   color: var(--pg-text-2);
   font: 500 12.5px/1 var(--pg-sans);
   white-space: nowrap;

@@ -4,8 +4,8 @@
  * keeps that order in blocks: a lead and its sub-agents (43's task-graph panels) stand
  * together, each sub-agent right after its lead, and a sub-agent never moves on its own
  * (`pinned`). The order is saved through 07 `TnaiTerminalWorkspaces.reordered()` (event
- * tnai:terminal-panes-reordered). Dragging an agent to another place went with the pages that
- * could be dragged on (the old Overview, the Agents list, the terminal grid).
+ * tnai:terminal-panes-reordered). An agent is dragged to another place in the thread list (119
+ * calls `move`, user 2026-11-02; check `tools/thread-order-check.js`).
  * window.TnaiAgentOrder (blocks, pinned, move, normalize).
  */
 (() => {

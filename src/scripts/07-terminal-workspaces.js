@@ -204,32 +204,55 @@
     paneGrid.append(empty);
   }
 
+  // The statuses 10 writes on a panel (data-status) that mean its agent is at work, as the
+  // Board's Working column reads them (156).
+  const WORKING = new Set(['working', 'starting', 'running', 'background', 'waiting-agents']);
+
+  // A workspace tab on All threads counts what the user sees there: threads, and how many of them
+  // are at work. A panel is a thread when it is a live session (as 119's thread list reads them)
+  // and not the hidden panel of Your terminal (136), which has its own tab in the side column.
+  function threadPanes(id) {
+    let live = null;
+    try {
+      const sessions = window.TnaiAgents?.sessions?.();
+      if (Array.isArray(sessions)) live = new Set(sessions.map(session => session.paneId));
+    } catch {}
+    const own = paneId => {
+      try {
+        return !!window.TnaiOwnTerminal?.owns?.(paneId);
+      } catch {
+        return false;
+      }
+    };
+    return panesFor(id).filter(pane => {
+      const paneId = pane.dataset.paneId;
+      if (own(paneId)) return false;
+      if (live) return live.has(paneId);
+      return Boolean(pane.querySelector('.terminal-provider-select')?.value);
+    });
+  }
+
   function updateCounts() {
     for (const workspace of store.workspaces) {
-      const running = panesFor(workspace.id).filter(p =>
-          ['working', 'running'].includes(p.dataset.state)
-        ).length,
-        selected = panesFor(workspace.id).filter(p =>
-          Boolean(p.querySelector('.terminal-provider-select')?.value)
-        ).length;
+      const threads = threadPanes(workspace.id);
+      const working = threads.filter(pane => WORKING.has(pane.dataset.status)).length;
       const tab = tabList.querySelector('[data-workspace-tab="' + CSS.escape(workspace.id) + '"]');
-      if (tab) {
-        const counts = tab.querySelector('.terminal-workspace-counts'),
-          key = running + '/' + selected;
-        if (counts.dataset.key === key && counts.childElementCount) continue;
-        counts.dataset.key = key;
-        counts.innerHTML = '';
-        const active = document.createElement('span');
-        active.textContent = running + ' running';
-        active.className = running ? 'is-running' : '';
-        const configured = document.createElement('span');
-        configured.textContent = selected + ' selected';
-        counts.append(active, configured);
-        tab.setAttribute(
-          'aria-label',
-          workspace.name + ', ' + running + ' agents running, ' + selected + ' connections selected'
-        );
-      }
+      if (!tab) continue;
+      const counts = tab.querySelector('.terminal-workspace-counts');
+      const key = threads.length + '/' + working;
+      if (counts.dataset.key === key && counts.childElementCount) continue;
+      counts.dataset.key = key;
+      const threadWords = threads.length + (threads.length === 1 ? ' thread' : ' threads');
+      const total = document.createElement('span');
+      total.textContent = threadWords;
+      const busy = document.createElement('span');
+      busy.textContent = working + ' working';
+      busy.className = working ? 'is-running' : '';
+      counts.replaceChildren(total, busy);
+      tab.setAttribute(
+        'aria-label',
+        workspace.name + ', ' + threadWords + ', ' + working + ' working'
+      );
     }
   }
 
@@ -355,6 +378,8 @@
       });
     },
     list: ({ all } = {}) => (all ? store.workspaces : mine()).map(w => ({ ...w })),
+    // 08 asks for the tab counts again after a panel closes
+    updateCounts,
     activeId: () => activeId,
     /* 90: show the workspace a clicked PS> command came from; false when it is not one of this project's */ activate(
       id
@@ -499,7 +524,7 @@
   statusObserver.observe(content, {
     subtree: true,
     attributes: true,
-    attributeFilter: ['data-state'],
+    attributeFilter: ['data-state', 'data-status'],
   });
 
   // Show one project's workspaces (09 fires `tnai:project-changed`); a project with none gets

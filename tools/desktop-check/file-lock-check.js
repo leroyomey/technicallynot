@@ -677,6 +677,50 @@ const changesFor = project =>
       teams.mates('A').length === 0 && teams.mates('B').join() === 'C',
       "a panel is on one team only (moving B ends A's team of one)"
     );
+
+    // Sub-agents inherit their lead's team (user 2026-11-02)
+    teams._test.reset();
+    let subPanels = [];
+    const seen = [];
+    teams.init(st => seen.push(st), { tree: () => subPanels });
+    teams.set('A', ['B']);
+    subPanels = [
+      { paneId: 'S1', parentPaneId: 'A' },
+      { paneId: 'S2', parentPaneId: 'S1' },
+    ];
+    teams.refresh();
+    check(
+      teams.teamOf('S1') === teams.teamOf('A') && teams.teamOf('S2') === teams.teamOf('A'),
+      'inherit: a sub-agent and its own sub-agent are on the lead team'
+    );
+    check(
+      teams.mates('B').sort().join() === 'A,S1,S2' &&
+        teams.inherited('S1') &&
+        !teams.inherited('A'),
+      'inherit: teammates list the sub-agents, marked as inherited'
+    );
+    check(
+      seen.length === 2 && seen[1].teams[0].inherited.join() === 'S1,S2',
+      'inherit: a new sub-agent panel tells the listener once'
+    );
+    teams.refresh();
+    check(seen.length === 2, 'inherit: no change, no second notice');
+    teams.set('A', ['B', 'S1']);
+    check(
+      teams.inherited('S1') && teams.state().teams[0].panes.length === 4,
+      'inherit: a Save with the sub-agent checked keeps it inherited, not stored'
+    );
+    teams.set('C', ['S2']);
+    check(
+      teams.teamOf('S2') === teams.teamOf('C') && teams.teamOf('S2') !== teams.teamOf('A'),
+      'inherit: a team the user sets on a sub-agent itself wins'
+    );
+    teams.set('A', []);
+    check(!teams.teamOf('S1') && !teams.teamOf('A'), 'inherit: the sub-agent leaves with its lead');
+    check(
+      /lead's team/.test(peers.teamNotice('S1', ['B'], true)),
+      'inherit: the sub-agent is told it is on its lead team'
+    );
     teams._test.reset();
     familyImpl = tree;
     teamImpl = () => false;

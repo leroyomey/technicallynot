@@ -1,5 +1,5 @@
 // Technically Not · 154-thread-actions.js — Desktop app only: the thread actions. A row of the open
-// thread's "..." menu (137, "Commit, pull request, review…"; it was an icon button of the top row
+// thread's "..." menu (137, "Commit and pull request…"; it was an icon button of the top row
 // until the user chose fewer buttons there, 2026-10-24, tab 5 of app-polish.html), and an icon
 // button in an All threads card's head (135 makes it, this file paints it). It is
 // shown only for a thread whose folder is in a git repository (153's facts), never for a plain
@@ -373,7 +373,7 @@
   }
 
   // ---------------------------------------------------------------- the thread's "..." menu row
-  // The open thread's actions are a row of its "..." menu (137, "Commit, pull request, review…"),
+  // The open thread's actions are a row of its "..." menu (137, "Commit and pull request…"),
   // no longer a button of the top row (user 2026-10-24, tab 5 of app-polish.html): the row shows
   // when this would, and opens this menu under the "..." button.
   function showsFor(paneId) {

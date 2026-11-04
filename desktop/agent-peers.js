@@ -286,10 +286,14 @@ async function board(paneId, project) {
 
 // The user changed this agent's team (main.js): the notice text, also queued for a Claude Code
 // agent's next tool call (forTool).
-function teamNotice(paneId, mates) {
+// inherited: a sub-agent that is on its lead's team (agent-teams.js), not one the user set on it.
+function teamNotice(paneId, mates, inherited = false) {
+  const joined = inherited
+    ? "You are on your lead's team (the user set it up) with "
+    : 'The user put you on a team with ';
   const text = mates.length
-    ? 'The user put you on a team with ' + mates.join(', ') + '. ' + TEAM_RULE + ' No reply needed.'
-    : 'The user took you off your team: file locks are your own again, so a file another agent edits is refused to you. No reply needed.';
+    ? joined + mates.join(', ') + '. ' + TEAM_RULE + ' No reply needed.'
+    : 'You are off your team: file locks are your own again, so a file another agent edits is refused to you. No reply needed.';
   queue(paneId, '• ' + text);
   seenTeam.delete(paneId); // the next prompt gets the live team again
   return text;

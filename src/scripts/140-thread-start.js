@@ -11,6 +11,8 @@
  * * Where This folder / Own worktree, the composer's own worktree box (35), shown only
  * * when the project can make a worktree
  * * one sentence what happens on Enter, and Cancel, which turns New thread off
+ * * It also shows when no thread is open, in place of 120's "No thread open" line (review b1,
+ * user 2026-11-02); then no tool is chosen yet and there is no Cancel.
  * * A press on a tool chooses it the way the Agent picker under the prompt box does (46): the same
  * * two calls, `startPick` and `newAgent`, so the picker and this screen always agree. The first
  * * prompt starts the agent as its own thread (11), which turns New thread off and hides the
@@ -63,9 +65,18 @@
   const toolsEl = root.querySelector('.tnt-start-tools');
   const whereRow = root.querySelector('.tnt-start-where');
   const noteText = root.querySelector('.tnt-start-note span');
+  const cancelButton = root.querySelector('.tnt-start-cancel');
 
   // ---------- what is true now ----------
   const armed = () => safe(() => !!live()?.newAgent?.(), false);
+
+  // No thread open: 120 shows its "No thread open" line. This screen stands in its place, as the
+  // first screen (user 2026-11-02, app review b1), without turning New thread on: a press on a
+  // tool does that.
+  function noThread(island) {
+    const none = island?.querySelector(':scope > .tnt-none');
+    return !!none && !none.hidden;
+  }
 
   function projectName() {
     const active = safe(() => window.TnaiProjects?.active?.(), '');
@@ -167,6 +178,12 @@
   }
 
   function paintNote() {
+    cancelButton.hidden = !armed();
+    if (!armed()) {
+      const pick = 'Pick who works on it, then type the task below and press Enter.';
+      if (noteText.textContent !== pick) noteText.textContent = pick;
+      return;
+    }
     const tool = safe(() => live()?.newAgent?.(), '') || 'The agent';
     const own = worktreeOffered() && !!worktreeBox()?.checked;
     const place = own ? ' in its own worktree' : '';
@@ -182,7 +199,8 @@
   function paint() {
     const island = document.querySelector('.tnt-view');
     const frame = window.TnaiThreads;
-    const show = !!island && armed() && safe(() => frame?.visible?.(), false);
+    const wanted = armed() || noThread(island);
+    const show = !!island && wanted && safe(() => frame?.visible?.(), false);
     if (island && root.parentNode !== island) island.append(root);
     island?.classList.toggle('tnt-starting', show);
     root.hidden = !show;
@@ -253,6 +271,10 @@
     'tnai:threads-hidden',
     'tnai:project-changed',
   ].forEach(name => window.addEventListener(name, paint));
+
+  // The list was redrawn: the open thread's session may have ended, and 120 shows or hides its
+  // "No thread open" line in its own listener, which runs after this one. Paint once it has.
+  window.addEventListener('tnai:threads-painted', () => queueMicrotask(paint));
 
   // A tool signed in or out, or installed, while the screen shows.
   window.TnaiAgents?.onChange?.(() => {

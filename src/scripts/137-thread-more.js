@@ -11,7 +11,7 @@
  *                 row reads "Back to the conversation". Only for a tool with a conversation.
  *   Smaller text / Larger text   the CLI screen's text size, while it shows (10 `stepFont`)
  *   Pop out into its own window / Back into the app   (162)
- *   Past conversations, Handoff history, Blur this thread, Commit, pull request, review…
+ *   Past conversations, Handoff history, Blur this thread, Commit and pull request…
  *                 were icons of the top row until 2026-10-24 (user, tab 5 of app-polish.html:
  *                 the top row keeps Preview, Split, Stop or Start and "..."); each is done by the
  *                 file that owns it (138, 102, 120 `TnaiThreadBlur`, 154)
@@ -20,7 +20,7 @@
  *                 it is stopped (10 `TnaiAgents.stop` / `start`)
  *   Open in VS Code / Cursor / File Explorer   the thread's own folder (its worktree when it has
  *                 one) in each editor found on this computer (desktop/open-in-editor.js)
- *   Fix a Technically Not bug from its source…   a new thread on the public source at this
+ *   Fix a Technically Not bug…   a new thread on the public source at this
  *                 version's tag, given this thread's details (198 `TnaiSourceFix`); agent threads
  *   Hand off to a fresh agent   54 `TnaiContextUpkeep.handOff`, shown only while the agent is
  *                 idle and can be handed off
@@ -297,7 +297,7 @@
     if (!card && window.TnaiThreadActions?.shows?.(paneId))
       rows.push({
         id: 'actions',
-        label: 'Commit, pull request, review…',
+        label: 'Commit and pull request…',
         icon: 'git-branch',
         go: openActions,
       });
@@ -306,7 +306,7 @@
     if (!card && window.TnaiPromptLibrary && session.agent !== 'Terminal')
       rows.push({
         id: 'library',
-        label: 'Saved prompts and recipes…',
+        label: 'Saved prompts…',
         icon: 'library',
         go: openLibrary,
       });
@@ -315,7 +315,7 @@
     if (!card && window.TnaiSourceFix?.can?.(paneId))
       rows.push({
         id: 'source-fix',
-        label: 'Fix a Technically Not bug from its source…',
+        label: 'Fix a Technically Not bug…',
         icon: 'triangle-alert',
         go: id => window.TnaiSourceFix.start(id),
       });

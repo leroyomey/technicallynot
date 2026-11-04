@@ -560,7 +560,11 @@
           head = el('header');
         head.append(
           el('b', '', SOURCES[source].group),
-          el('span', '', rows.length ? String(rows.length) : ''),
+          el(
+            'span',
+            '',
+            rows.length ? rows.length + (rows.length === 1 ? ' skill' : ' skills') : ''
+          ),
           el('small', '', SOURCES[source].note)
         );
         group.append(head);
@@ -654,8 +658,20 @@
       t.append(txt, el('i'));
       return t;
     });
+
+    // A plain shell (a Terminal thread, Your terminal of 136) can never take a skill (101
+    // `refusal`), so it is no place to drop one and is left out.
+    const plainShell = s => {
+      if (s.agent === 'Terminal') return true;
+      try {
+        return !!window.TnaiOwnTerminal?.owns?.(s.paneId);
+      } catch {
+        return false;
+      }
+    };
     live
       .filter(s => s.running && !s.customAgentId && !agents.some(a => a.paneId === s.paneId))
+      .filter(s => !plainShell(s))
       .forEach(s => {
         // 101: a running session takes a skill for the rest of its life (sent to it now, reminded
         // on each composer prompt).

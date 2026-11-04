@@ -233,8 +233,11 @@
     if (!scope) items = items.concat(fileHits);
     selected = Math.min(selected, Math.max(0, items.length - 1));
     list.replaceChildren();
+
+    // A group head counts its things: the Projects group's actions (Add, Show folder, New project)
+    // are not projects, so they are left out, and a head with none of its things shows no number.
     const counts = {};
-    for (const c of items) counts[c.group] = (counts[c.group] || 0) + 1;
+    for (const c of items) if (c.kind !== 'add') counts[c.group] = (counts[c.group] || 0) + 1;
     let group = '',
       folder = null;
     items.forEach((c, i) => {
@@ -246,7 +249,7 @@
         h.className = 'tnai-pal-group';
         h.textContent = group;
         n.className = 'tnai-pal-count';
-        n.textContent = counts[group];
+        n.textContent = counts[group] || '';
         h.append(n);
         list.append(h);
       }

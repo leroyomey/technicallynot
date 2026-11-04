@@ -188,7 +188,10 @@
       inferred = true;
       tip = 'The process printed output in the last few seconds (inferred from terminal output)';
     } else if (s.status === 'waiting') {
-      now = 'Quiet, probably waiting for you';
+      // the same words as the panel's state (10) and the thread's top row (120), so one state
+      // reads one way on one screen; "inferred" still follows it in the list (learned
+      // 2026-11-02, app review a14: "Quiet, probably waiting for you" beside "Waiting for input")
+      now = 'Waiting for input';
       inferred = true;
       tip = 'Running, but it has printed nothing for a few seconds (inferred from terminal output)';
     } else {

@@ -1653,11 +1653,21 @@ html[data-accent='purple'] {
 :root:not(#pg) footer.composer .tnai-pick:not([data-pick='agent']) .tnai-pick-btn > svg {
   opacity: 0.6;
 }
-:root:not(#pg) footer.composer .tnai-pick[data-pick='model']::before {
-  content: '·';
-  margin-right: 2px;
-  color: var(--pg-text-4);
-  line-height: 21px;
+
+/* The words and their arrow stay together: a pick keeps its 96 px floor (02), which sets the room
+   between the picks, and a short word ("Access") on a button stretched to that floor put its arrow
+   some 50 px away. The button takes the width of its words; the floor's spare room stays after it.
+   No "·" before Model: it parted Model from the agent pill, which is gone, and stood alone after
+   the agents' marks (learned 2026-11-02, app review a12). */
+:root:not(#pg) footer.composer .tnai-pick:not([data-pick='agent']) .tnai-pick-btn {
+  width: auto;
+}
+
+/* A plain shell thread (PowerShell) takes commands, not tasks: 46 marks the pickers and none of
+   Model, Effort and Access applies to it, so they leave instead of standing greyed (learned
+   2026-11-02, app review a13). */
+:root:not(#pg) footer.composer .tnai-pickers[data-shell] > .tnai-pick {
+  display: none;
 }
 /* Slim top bar, scaled down: 44px row on every page,
    incl. 21's Terminal and 38's composer-out rows. */

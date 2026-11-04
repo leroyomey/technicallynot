@@ -127,7 +127,7 @@ module.exports = win => {
       const root = files.root(),
         src =
           process.env.TNAI_PREVIEW_SITE ||
-          path.resolve(__dirname, '..', '..', '..', '..', 'Project TN.ai Landing Page');
+          path.resolve(__dirname, '..', '..', '..', '..', 'Shit', 'Project TN.ai Landing Page');
       const copied = fs.existsSync(src);
 
       // package.json first: the app reads its scripts when it appears, and written after a copy

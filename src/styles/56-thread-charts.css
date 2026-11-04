@@ -49,6 +49,13 @@
   background: var(--pg-panel-2);
   color: var(--pg-text);
 }
+
+/* Light is the look without data-theme (37's note): there --pg-panel-2 is a whiter white on the
+   card's own white and the pressed view showed no pill, so it takes the soft shade the other
+   switches show (learned 2026-11-02, app review a11). Dark keeps --pg-panel-2. */
+html:not([data-theme='dark']) .tnt-chart-switch button[aria-pressed='true'] {
+  background: var(--pg-panel-hover);
+}
 .tnt-chart-switch button:focus-visible,
 .tnt-chart-row:focus-visible {
   outline: 2px solid var(--pg-accent);

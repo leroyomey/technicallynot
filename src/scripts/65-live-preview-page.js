@@ -99,9 +99,15 @@
       step(
         'Pick your app’s dev script from ▶ Run above. It runs in a thread, and your app shows here once it prints its address.'
       );
+
+    // The address bar is the last way in. Alone (a folder with no dev scripts) it is one plain
+    // sentence, not a numbered list of one that starts with "Or".
+    const alone = !steps.childElementCount;
     step(
-      'Or type the address of a server already running on this computer, e.g. localhost:3000, in the address bar.'
+      (alone ? 'Type' : 'Or type') +
+        ' the address of a server already running on this computer, e.g. localhost:3000, in the address bar.'
     );
+    steps.classList.toggle('is-one', alone);
     node.replaceChildren(
       el('h2', '', adding && tabs.length ? 'New tab' : 'Nothing to preview yet'),
       steps,

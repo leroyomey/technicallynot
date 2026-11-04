@@ -1234,6 +1234,12 @@
   font: 12.5px/1.55 var(--pg-sans);
   text-align: left;
 }
+/* One step alone is a sentence, not a numbered list of one (65) */
+:root:not(#pg) .lp-blank ol.is-one {
+  padding: 0;
+  list-style: none;
+  text-align: center;
+}
 :root:not(#pg) .lp-blank li .lp-btn {
   margin-left: 4px;
 }

@@ -18,6 +18,8 @@
  * no timer. For tools other than Claude Code, "what it does now" is read from the terminal's
  * output, so the row says "inferred".
  *
+ * A thread is dragged to another place in its group, or moved with Alt+Up / Alt+Down; the new
+ * order is the panels' order underneath, kept and saved by 91 (`TnaiAgentOrder.move`).
  * A click or Enter opens the thread (`TnaiThreads.select`); the arrow keys move. While the Agents
  * and history page shows, the press chooses that agent on that page instead (25 has no list of its
  * own), and the row marked open is the agent that page shows. "New thread" is the prompt box's own
@@ -468,6 +470,9 @@
     const put = (thread, kid) => {
       const row = rowFor(thread.id, thread.id, false);
       alive.add(thread.id);
+
+      // a thread can be dragged to another place; a sub-agent's row moves with its lead
+      if (row.draggable !== !kid) row.draggable = !kid;
       findText.set(
         thread.id,
         searchable([thread.name, thread.tool, thread.task, thread.project?.name])
@@ -1098,6 +1103,127 @@
     // 175 opens the row the keys reached; a past conversation's row opens a popover that would
     // take the keyboard, so it is only reached, and Enter opens it.
     if (to.dataset.past) event.stopPropagation();
+  });
+
+  // ---------- moving a thread to another place (user 2026-11-02) ----------
+  // A thread's row is dragged above or below another thread of its group, or moved with Alt+Up and
+  // Alt+Down. The list's order is the order of the terminal panels underneath, which 91 keeps and
+  // saves (`TnaiAgentOrder.move`), so the new place stays after a restart, the keys follow it, and
+  // a lead's sub-agents move with it. A sub-agent's row, another computer's agent and a past
+  // conversation stay where they are, and nothing moves while the search narrows the list.
+  const gridOfPane = paneId =>
+    terminalPanels()?.querySelector('.terminal-pane[data-pane-id="' + CSS.escape(paneId) + '"]')
+      ?.parentElement || null;
+
+  function movable(row) {
+    if (!row?.classList.contains('tnt-th') || field.value) return false;
+    if (row.classList.contains('tnt-sub') || row.classList.contains('tnt-kid')) return false;
+    if (row.dataset.remote || row.dataset.past || !row.dataset.pane) return false;
+    return !!window.TnaiAgentOrder?.move;
+  }
+
+  // The heading a row stands under: two rows can trade places only under the same heading, and
+  // only inside one terminal workspace (91 moves panels within one).
+  function headingOf(row) {
+    let node = row.previousElementSibling;
+    while (node && !node.classList.contains('tnt-proj')) node = node.previousElementSibling;
+    return node;
+  }
+  const sameGroup = (first, second) =>
+    first !== second &&
+    headingOf(first) === headingOf(second) &&
+    gridOfPane(first.dataset.pane) === gridOfPane(second.dataset.pane);
+
+  // Puts the dragged thread right before or right after the other one.
+  function moveThread(row, target, place) {
+    const order = window.TnaiAgentOrder;
+    const id = row.dataset.pane;
+    const other = target.dataset.pane;
+    const moved = place === 'before' ? order.move(id, other) : order.move(id, '', other);
+    if (moved) refresh();
+    return moved;
+  }
+
+  let dragged = null;
+  let dropMark = null;
+
+  function clearDrop() {
+    dropMark?.removeAttribute('data-drop');
+    dropMark = null;
+  }
+
+  function endDrag() {
+    clearDrop();
+    dragged?.removeAttribute('data-dragging');
+    dragged = null;
+  }
+
+  // Where the pointer is over a row that can take the drop: its top half is "before", its
+  // bottom half "after".
+  function dropPlace(event) {
+    const target = event.target.closest?.('.tnt-th');
+    if (!dragged || !target || !movable(target) || !sameGroup(dragged, target)) return null;
+    const area = target.getBoundingClientRect();
+    const place = event.clientY < area.top + area.height / 2 ? 'before' : 'after';
+    return { target, place };
+  }
+
+  box.addEventListener('dragstart', event => {
+    const row = event.target.closest?.('.tnt-th');
+    if (!movable(row)) {
+      event.preventDefault();
+      return;
+    }
+    dragged = row;
+    row.setAttribute('data-dragging', '');
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', row.querySelector('b')?.textContent || '');
+  });
+
+  box.addEventListener('dragover', event => {
+    const drop = dropPlace(event);
+    if (!drop) {
+      clearDrop();
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    if (dropMark !== drop.target) clearDrop();
+    dropMark = drop.target;
+    if (dropMark.dataset.drop !== drop.place) dropMark.dataset.drop = drop.place;
+  });
+
+  box.addEventListener('dragleave', event => {
+    if (!box.contains(event.relatedTarget)) clearDrop();
+  });
+
+  box.addEventListener('drop', event => {
+    const drop = dropPlace(event);
+    const row = dragged;
+    endDrag();
+    if (!drop) return;
+    event.preventDefault();
+    moveThread(row, drop.target, drop.place);
+  });
+
+  box.addEventListener('dragend', endDrag);
+
+  // Alt+Up and Alt+Down: the same move from the keyboard, one thread at a time.
+  box.addEventListener('keydown', event => {
+    const up = event.key === 'ArrowUp';
+    if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    if (!up && event.key !== 'ArrowDown') return;
+    const row = event.target.closest?.('.tnt-th');
+    if (!movable(row)) return;
+    event.preventDefault();
+    const others = [...box.querySelectorAll('.tnt-th')].filter(
+      other => movable(other) && sameGroup(row, other)
+    );
+
+    // the nearest thread above (it stands before this row) or below (it stands after it)
+    const above = other => other.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING;
+    const next = up ? others.filter(above).pop() : others.find(other => !above(other));
+    if (next) moveThread(row, next, up ? 'before' : 'after');
   });
 
   // ---------- live, and only while the page shows ----------

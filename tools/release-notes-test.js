@@ -85,7 +85,7 @@ check(
 );
 
 // The website's own copy of the rule (changelog.js) must give the same order.
-const site = path.join(__dirname, '..', '..', 'Project TN.ai Landing Page', 'changelog.js');
+const site = path.join(__dirname, '..', '..', 'Shit', 'Project TN.ai Landing Page', 'changelog.js');
 if (fs.existsSync(site)) {
   const strip = l => l.map(x => x.replace(/^- /, ''));
   let web = null;

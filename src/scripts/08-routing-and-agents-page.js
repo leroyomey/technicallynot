@@ -622,6 +622,8 @@
         ?.classList.add('active');
   });
   window.addEventListener('tnai:terminal-pane-closed', () => {
+    // The tabs' counts are 07's (threads, and how many work)
+    window.TnaiTerminalWorkspaces?.updateCounts?.();
     document.querySelectorAll('.terminal-workspace-view').forEach(view => {
       const grid = view.querySelector('.terminal-workspace-grid');
       if (!grid) return;
@@ -639,23 +641,6 @@
       }
       grid.style.setProperty('--workspace-cols', n ? best.cols : 1);
       grid.style.setProperty('--workspace-rows', n ? Math.ceil(n / best.cols) : 1);
-      const tab = document.querySelector(
-          '[data-workspace-tab="' + CSS.escape(view.dataset.workspaceId) + '"]'
-        ),
-        counter = tab?.querySelector('.terminal-workspace-counts');
-      if (counter) {
-        counter.replaceChildren();
-        const running = panes.filter(p => ['working', 'running'].includes(p.dataset.state)).length,
-          selected = panes.filter(p =>
-            Boolean(p.querySelector('.terminal-provider-select')?.value)
-          ).length;
-        const r = document.createElement('span');
-        r.textContent = running + ' running';
-        r.className = running ? 'is-running' : '';
-        const c = document.createElement('span');
-        c.textContent = selected + ' selected';
-        counter.append(r, c);
-      }
     });
   });
   renderAgentPage();

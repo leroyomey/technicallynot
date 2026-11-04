@@ -125,7 +125,8 @@
   white-space: pre;
 }
 
-/* The thread's state in the app's words, in its status color. Hidden whole when the row is tight. */
+/* The thread's state in the app's words, in its status color. Its first words only when the row
+   is tight (below). */
 .tnt-head-state {
   --tone: var(--pg-idle);
   flex: none;
@@ -350,11 +351,16 @@ html.tnt-on:not(#tnt):not(#pg) .tnt-view .tnt-fold.tnt-head-named:not(#lp)[aria-
   }
 }
 
-/* In a narrow island the state word leaves whole before anything is cut. It left at 520px, which
-   was after the thread's name: beside the buttons the name was down to one letter by then. */
+/* In a narrow island the state steps down to its dot and its first words ("Exited" of "Exited ·
+   ended with an error", 120 writes them as data-short); the whole label is its tip. It never
+   leaves: the live state is the one thing the top row must always show, so the name gives way
+   first (learned 2026-11-02: at 1024 with the side column open the row showed no state at all). */
 @container tnt-main (max-width: 680px) {
-  .tnt-head-state {
+  .tnt-head-state > span {
     display: none;
+  }
+  .tnt-head-state::after {
+    content: attr(data-short);
   }
 }
 

@@ -1618,8 +1618,30 @@ body.tnai-composer-popout>.composer>.activityline,body.tnai-composer-popout>.com
         : 'How much new agents in this project may do without asking. Set when an agent starts.');
   }
 
+  // A plain shell thread (PowerShell, tool "Terminal") takes commands, not tasks: its prompt box
+  // says so, and the Model, Effort and Access picks leave (07 hides them while the box is marked),
+  // since none of them applies to a shell. The words the box had before come back when another
+  // thread is the target (learned 2026-11-02, app review a13: the agent's words and greyed agent
+  // picks stood under a PowerShell thread).
+  const SHELL_WORDS = 'Type a command…';
+  let shellShown = false;
+  let wordsBeforeShell = '';
+
+  function paintShell() {
+    const sub = subject();
+    const shell = sub.kind === 'live' && sub.agent === 'Terminal';
+    if (box.hasAttribute('data-shell') !== shell) box.toggleAttribute('data-shell', shell);
+    if (!prompt || shell === shellShown) return;
+    shellShown = shell;
+    if (shell) {
+      wordsBeforeShell = prompt.placeholder;
+      prompt.placeholder = SHELL_WORDS;
+    } else prompt.placeholder = wordsBeforeShell;
+  }
+
   function paint() {
     paintTo();
+    paintShell();
 
     // Leave an open menu alone; it repaints when it closes.
     if (menuSel) return;

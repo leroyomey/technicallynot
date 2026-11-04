@@ -64,6 +64,14 @@ const DAY = 24 * 60 * 60 * 1000;
     'started today, never ended → Done today',
     col({ status: 'exited', startedAt: now - 3600000 }) === 'done'
   );
+  check(
+    'exited with an error today → Needs you',
+    col({ status: 'error', startedAt: now - 3600000, endedAt: now - 1000 }) === 'needs'
+  );
+  check(
+    'exited with an error yesterday → Needs you',
+    col({ status: 'error', changes: { files: 2 }, endedAt: now - DAY }) === 'needs'
+  );
   check('nothing → no column', col(null) === '');
 }
 

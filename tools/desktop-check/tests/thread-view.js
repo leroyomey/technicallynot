@@ -155,13 +155,19 @@ try {
 
   // ---- A: nothing open ----
   await until(() => island.querySelector('.tnt-view'), 3000);
-  const none = island.querySelector('.tnt-none');
+
+  // Since 2026-11-02 (app review b1) the New thread screen (140) stands in place of the
+  // "No thread open" line, with no tool chosen and no Cancel.
+  await until(() => shown(island.querySelector('.tnt-start')), 3000);
+  const startScreen = island.querySelector('.tnt-start');
   check(
-    shown(none) &&
+    shown(startScreen) &&
+      !shown(island.querySelector('.tnt-none')) &&
+      !shown(island.querySelector('.tnt-start-cancel')) &&
       !shown(island.querySelector('.tnt-head')) &&
       !shown(island.querySelector('.tnt-term')),
-    'with no thread the island says so and shows no top row or terminal: "' +
-      (none?.textContent || '') +
+    'with no thread the island shows the New thread screen and no top row or terminal: "' +
+      (startScreen?.querySelector('h2')?.textContent || '') +
       '"'
   );
   await shot('thread-view-empty');

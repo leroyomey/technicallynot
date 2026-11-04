@@ -340,7 +340,10 @@
     let more = '';
     if (column === 'needs') {
       const decision = facts.decision;
-      body = `<p>${esc(decision?.question || thread.now || 'Waiting for you')}</p>`;
+
+      // A thread that exited with an error is here for its error: the panel's exit line (10)
+      const crash = facts.status === 'error' ? thread.label : '';
+      body = `<p>${esc(decision?.question || crash || thread.now || 'Waiting for you')}</p>`;
       if (decision)
         body +=
           '<div class="bd-opts">' +

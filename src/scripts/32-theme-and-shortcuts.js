@@ -748,6 +748,7 @@ ${DARK} .set-chip input:not(:checked){background:${off}}
         [[MOD(), 'J'], 'Your terminal, and back to the prompt box'],
         [['↑', '↓'], 'In the thread list (after a click in it): open the previous / next thread'],
         [['Home', 'End'], 'In the thread list: open the first / last thread'],
+        [['Alt', '↑', '↓'], 'In the thread list: move the focused thread up / down (or drag it)'],
         [[MOD(), 'Alt', '←', '→'], 'All threads: previous / next card'],
         [['←', '→'], 'All threads: previous / next card, when no text box has the keyboard'],
         [['Delete'], 'Close the focused thread in the list'],

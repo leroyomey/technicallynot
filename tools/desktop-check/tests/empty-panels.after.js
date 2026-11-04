@@ -68,7 +68,7 @@ try {
     'the saved list lost the empty ones (' + savedIds().length + ' entries)'
   );
   check(
-    limit.count(first) === 4 && /4 selected/.test(tabText(first)),
+    limit.count(first) === 4 && /4 threads/.test(tabText(first)),
     'the limit counts ' + limit.count(first) + ' and the tab says "' + tabText(first) + '"'
   );
 
@@ -138,7 +138,7 @@ try {
       limit.count(second)
   );
   check(
-    /0 selected/.test(tabText(second)) && spaces.list().some(w => w.id === second),
+    /0 threads/.test(tabText(second)) && spaces.list().some(w => w.id === second),
     'it is still a workspace, and its tab says "' + tabText(second) + '"'
   );
   check(
